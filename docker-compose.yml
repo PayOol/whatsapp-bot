@@ -6,7 +6,7 @@ services:
     container_name: whatsapp_bot
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     volumes:
       - whatsapp_data:/app
     environment:
