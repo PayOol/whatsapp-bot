@@ -723,6 +723,19 @@ client.on('group_join', async (notification) => {
     }
 });
 
+// ===========================================================
+// ✅ REJET AUTOMATIQUE DES APPELS ENTRANTS
+// ===========================================================
+client.on('call', async (call) => {
+    try {
+        addLog(`📞 Appel entrant de ${call.from} - Rejet automatique`);
+        await call.reject();
+        addLog(`🚫 Appel rejeté: ${call.from}`);
+    } catch (error) {
+        addLog(`❌ Erreur rejet appel: ${error.message}`);
+    }
+});
+
 client.on('auth_failure', (msg) => addLog(`❌ Échec auth: ${msg}`));
 client.on('disconnected', (reason) => { isConnected = false; addLog(`🔌 Déconnecté: ${reason}`); });
 
