@@ -507,7 +507,9 @@ function saveGroupExceptions() {
 }
 
 function isGroupExcluded(chat) {
+    if (!chat || !chat.id) return false;
     if (GROUP_EXCEPTIONS.excludedGroups.includes(chat.id._serialized)) return true;
+    if (!chat.name) return false;
     const name = chat.name.toLowerCase();
     return GROUP_EXCEPTIONS.excludedPatterns.some(p => name.includes(p.toLowerCase()));
 }
