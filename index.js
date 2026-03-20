@@ -561,9 +561,20 @@ function saveUserExceptions() {
 
 // Vérifier si un utilisateur est exclu de la surveillance des liens
 function isUserExcludedFromLinks(userId, participants = []) {
-    // Vérifier les exceptions explicites
-    const userException = USER_EXCEPTIONS.excludedUsers.find(u => u.id === userId);
-    if (userException && userException.linkException) return true;
+    // Extraire le numéro de l'ID WhatsApp
+    const userNumber = userId.split('@')[0];
+    
+    // Vérifier les exceptions explicites (par ID complet ou par numéro)
+    const userException = USER_EXCEPTIONS.excludedUsers.find(u => {
+        const exceptionId = typeof u === 'object' ? u.id : u;
+        const exceptionNumber = exceptionId.split('@')[0];
+        return exceptionId === userId || exceptionNumber === userNumber || exceptionId === userNumber;
+    });
+    
+    if (userException) {
+        const hasLinkException = typeof userException === 'object' ? userException.linkException : true;
+        if (hasLinkException) return true;
+    }
     
     // Vérifier si admin et exclusion des admins activée
     if (USER_EXCEPTIONS.excludedAdmins) {
@@ -575,8 +586,17 @@ function isUserExcludedFromLinks(userId, participants = []) {
 
 // Vérifier si un utilisateur est exclu du rejet d'appels
 function isUserExcludedFromCalls(userId) {
-    const userException = USER_EXCEPTIONS.excludedUsers.find(u => u.id === userId);
-    return userException && userException.callException;
+    // Extraire le numéro de l'ID WhatsApp (formats: numero@c.us, numero@lid, numero)
+    const callerNumber = userId.split('@')[0];
+    
+    // Vérifier si l'ID complet ou le numéro est dans les exceptions
+    const userException = USER_EXCEPTIONS.excludedUsers.find(u => {
+        const exceptionId = typeof u === 'object' ? u.id : u;
+        const exceptionNumber = exceptionId.split('@')[0];
+        return exceptionId === userId || exceptionNumber === callerNumber || exceptionId === callerNumber;
+    });
+    
+    return userException && (typeof userException === 'object' ? userException.callException : false);
 }
 
 // Ancienne fonction pour compatibilité (liens)
