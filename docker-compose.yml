@@ -4,6 +4,7 @@ services:
   whatsapp-bot:
     build: .
     container_name: whatsapp_bot
+    hostname: whatsapp-bot
     restart: unless-stopped
     ports:
       - "127.0.0.1:3000:3000"
