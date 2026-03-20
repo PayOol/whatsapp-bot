@@ -610,6 +610,13 @@
         .stat-detail-empty{text-align:center;color:var(--text-muted);padding:20px}
         .stat-detail-error{text-align:center;color:var(--danger);padding:20px}
         .loading-spinner{text-align:center;padding:20px;color:var(--text-muted)}
+        
+        /* User Exception Items */
+        .user-exception-item{display:flex;align-items:center;justify-content:space-between;background:var(--bg-elevated);padding:10px 14px;border-radius:var(--radius-md);margin-bottom:8px;gap:12px}
+        .user-exception-item .user-id{font-weight:500;font-size:0.9rem}
+        .exception-options{display:flex;gap:12px}
+        .exception-checkbox{display:flex;align-items:center;gap:4px;font-size:0.8rem;color:var(--text-secondary);cursor:pointer}
+        .exception-checkbox input{cursor:pointer}
 
         .stat-tile-value{
             font-size:2.2rem;
@@ -2197,12 +2204,28 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
 
             const container = document.getElementById('users-list');
             if (data.excludedUsers?.length) {
-                container.innerHTML = data.excludedUsers.map(u => `
-                    <span class="tag tag-user">
-                        👤 ${escapeHtml(u)}
-                        <button class="tag-remove" onclick="removeUserException('${escapeHtml(u)}')">✕</button>
-                    </span>
-                `).join('');
+                container.innerHTML = data.excludedUsers.map(u => {
+                    const userId = typeof u === 'object' ? u.id : u;
+                    const linkEx = typeof u === 'object' ? u.linkException : true;
+                    const callEx = typeof u === 'object' ? u.callException : false;
+                    return `
+                    <div class="user-exception-item">
+                        <span class="user-id">👤 ${escapeHtml(userId)}</span>
+                        <div class="exception-options">
+                            <label class="exception-checkbox">
+                                <input type="checkbox" ${linkEx ? 'checked' : ''} 
+                                    onchange="updateUserException('${escapeHtml(userId)}', 'link', this.checked)">
+                                � Liens
+                            </label>
+                            <label class="exception-checkbox">
+                                <input type="checkbox" ${callEx ? 'checked' : ''} 
+                                    onchange="updateUserException('${escapeHtml(userId)}', 'call', this.checked)">
+                                📞 Appels
+                            </label>
+                        </div>
+                        <button class="tag-remove" onclick="removeUserException('${escapeHtml(userId)}')">✕</button>
+                    </div>
+                `}).join('');
             } else {
                 container.innerHTML = `<div class="empty-state" style="padding:24px">
                     <div class="empty-state-icon" style="font-size:1.5rem">🛡️</div>
@@ -2237,7 +2260,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             await fetch('/api/users/exceptions', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId })
+                body: JSON.stringify({ userId, linkException: true, callException: false })
             });
             input.value = '';
             loadUserExceptions();
@@ -2256,6 +2279,23 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             });
             loadUserExceptions();
             showToast(`Utilisateur ${userId} retiré`, 'success');
+        } catch (e) {
+            showToast('Erreur', 'error');
+        }
+    }
+
+    async function updateUserException(userId, type, value) {
+        try {
+            const body = { userId };
+            if (type === 'link') body.linkException = value;
+            if (type === 'call') body.callException = value;
+            
+            await fetch('/api/users/exceptions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            showToast(`Option mise à jour pour ${userId}`, 'success');
         } catch (e) {
             showToast('Erreur', 'error');
         }

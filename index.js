@@ -458,6 +458,7 @@ function scheduleUnblock(userId, delay) {
 // ============================================================
 
 let GROUP_EXCEPTIONS = { excludedGroups: [], excludedPatterns: [] };
+// Structure: { excludedAdmins: true, excludedUsers: [{ id: 'xxx', linkException: true, callException: false }] }
 let USER_EXCEPTIONS = { excludedUsers: [], excludedAdmins: true };
 
 let STATS = { totalDeleted: 0, totalWarnings: 0, totalBanned: 0, totalCallsRejected: 0, adminGroups: 0 };
@@ -558,13 +559,29 @@ function saveUserExceptions() {
     try { fs.writeFileSync(USERS_FILE, JSON.stringify(USER_EXCEPTIONS, null, 2)); } catch (error) {}
 }
 
-function isUserExcluded(userId, participants = []) {
-    if (USER_EXCEPTIONS.excludedUsers.includes(userId)) return true;
+// Vérifier si un utilisateur est exclu de la surveillance des liens
+function isUserExcludedFromLinks(userId, participants = []) {
+    // Vérifier les exceptions explicites
+    const userException = USER_EXCEPTIONS.excludedUsers.find(u => u.id === userId);
+    if (userException && userException.linkException) return true;
+    
+    // Vérifier si admin et exclusion des admins activée
     if (USER_EXCEPTIONS.excludedAdmins) {
         const p = participants.find(p => p.id._serialized === userId);
         if (p && p.isAdmin) return true;
     }
     return false;
+}
+
+// Vérifier si un utilisateur est exclu du rejet d'appels
+function isUserExcludedFromCalls(userId) {
+    const userException = USER_EXCEPTIONS.excludedUsers.find(u => u.id === userId);
+    return userException && userException.callException;
+}
+
+// Ancienne fonction pour compatibilité (liens)
+function isUserExcluded(userId, participants = []) {
+    return isUserExcludedFromLinks(userId, participants);
 }
 
 // ============================================================
@@ -1202,6 +1219,12 @@ client.on('call', async (call) => {
 
         const callerId = call.from;
         addLog(`📞 Appel entrant de ${callerId}`);
+        
+        // ✅ Vérifier si l'utilisateur est exclu du rejet d'appels
+        if (isUserExcludedFromCalls(callerId)) {
+            addLog(`✅ ${callerId} exempté du rejet d'appels - appel ignoré`);
+            return;
+        }
 
         // ✅ Vérifier si déjà bloqué (avec vérification réelle WhatsApp)
         if (blockedUsers[callerId]) {
@@ -1504,21 +1527,39 @@ app.delete('/api/groups/exceptions', (req, res) => {
 });
 
 app.get('/api/users/exceptions', (req, res) => res.json(USER_EXCEPTIONS));
+
+// Ajouter ou mettre à jour une exception utilisateur
 app.post('/api/users/exceptions', (req, res) => {
     try {
-        const { userId } = req.body;
-        if (userId && !USER_EXCEPTIONS.excludedUsers.includes(userId)) {
-            USER_EXCEPTIONS.excludedUsers.push(userId);
-            saveUserExceptions();
+        const { userId, linkException, callException } = req.body;
+        if (!userId) return res.status(400).json({ success: false, message: 'userId requis' });
+        
+        // Chercher si l'utilisateur existe déjà
+        let userEntry = USER_EXCEPTIONS.excludedUsers.find(u => u.id === userId);
+        
+        if (userEntry) {
+            // Mettre à jour les options
+            if (linkException !== undefined) userEntry.linkException = linkException;
+            if (callException !== undefined) userEntry.callException = callException;
+        } else {
+            // Créer une nouvelle entrée
+            USER_EXCEPTIONS.excludedUsers.push({
+                id: userId,
+                linkException: linkException === true,
+                callException: callException === true
+            });
         }
+        
+        saveUserExceptions();
         res.json({ success: true, exceptions: USER_EXCEPTIONS });
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
+// Supprimer une exception utilisateur
 app.delete('/api/users/exceptions', (req, res) => {
     try {
         const { userId } = req.body;
-        USER_EXCEPTIONS.excludedUsers = USER_EXCEPTIONS.excludedUsers.filter(id => id !== userId);
+        USER_EXCEPTIONS.excludedUsers = USER_EXCEPTIONS.excludedUsers.filter(u => u.id !== userId);
         saveUserExceptions();
         res.json({ success: true, exceptions: USER_EXCEPTIONS });
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
