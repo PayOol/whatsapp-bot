@@ -1,7 +1,9 @@
 #!/bin/sh
 
 # Nettoyer les fichiers de verrouillage Chromium récursivement avec find
+echo "🔧 Nettoyage des fichiers de verrouillage Chromium..."
 find /app/.wwebjs_auth -name "Singleton*" -exec rm -f {} \; 2>/dev/null
+echo "   ✅ Nettoyage terminé"
 
 # Créer les fichiers JSON s'ils n'existent pas ou sont des répertoires
 # logs.json et warnings.json doivent être des tableaux
