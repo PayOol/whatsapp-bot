@@ -1413,7 +1413,7 @@ app.get('/api/groups', async (req, res) => {
                 isAdmin: bp?.isAdmin || false,
                 isExcluded: GROUP_EXCEPTIONS.excludedGroups.includes(g.id._serialized)
             };
-        }));
+        }).filter(g => g.isAdmin)); // N'afficher que les groupes où le bot est admin
     } catch (error) { res.status(500).json([]); }
 });
 
