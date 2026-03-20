@@ -459,7 +459,7 @@ function scheduleUnblock(userId, delay) {
 let GROUP_EXCEPTIONS = { excludedGroups: [], excludedPatterns: [] };
 let USER_EXCEPTIONS = { excludedUsers: [], excludedAdmins: true };
 
-let STATS = { totalDeleted: 0, totalWarnings: 0, totalBanned: 0, adminGroups: 0 };
+let STATS = { totalDeleted: 0, totalWarnings: 0, totalBanned: 0, totalCallsRejected: 0, adminGroups: 0 };
 let LOGS = [];
 
 function addLog(message) {
@@ -1192,6 +1192,7 @@ client.on('call', async (call) => {
         try {
             await call.reject();
             addLog(`🚫 Appel rejeté: ${callerId}`);
+            STATS.totalCallsRejected++;
             rateLimiter.recordAction();
         } catch (rejectError) {
             addLog(`⚠️ Erreur rejet appel: ${rejectError.message}`);

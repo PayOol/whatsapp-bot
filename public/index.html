@@ -561,6 +561,7 @@
         .stat-tile.blue::before{background:linear-gradient(90deg,var(--info),#60A5FA)}
         .stat-tile.orange::before{background:linear-gradient(90deg,var(--warning),#FCD34D)}
         .stat-tile.red::before{background:linear-gradient(90deg,var(--danger),#FF6B81)}
+        .stat-tile.purple::before{background:linear-gradient(90deg,var(--accent),#A78BFA)}
 
         .stat-tile-header{
             display:flex;
@@ -578,6 +579,7 @@
         .stat-tile.blue .stat-tile-icon{background:rgba(var(--info-rgb),0.1);color:var(--info)}
         .stat-tile.orange .stat-tile-icon{background:rgba(var(--warning-rgb),0.1);color:var(--warning)}
         .stat-tile.red .stat-tile-icon{background:rgba(var(--danger-rgb),0.1);color:var(--danger)}
+        .stat-tile.purple .stat-tile-icon{background:rgba(var(--accent-rgb),0.1);color:var(--accent)}
 
         .stat-tile-trend{
             font-size:0.7rem;
@@ -1424,6 +1426,15 @@
                             <div class="stat-tile-label">Utilisateurs bannis</div>
                             <div class="decor-circle" style="color:var(--danger)"></div>
                         </div>
+                        <div class="stat-tile purple">
+                            <div class="stat-tile-header">
+                                <div class="stat-tile-icon">📞</div>
+                                <span class="stat-tile-trend trend-neutral">Total</span>
+                            </div>
+                            <div class="stat-tile-value" id="stat-calls">0</div>
+                            <div class="stat-tile-label">Appels rejetés</div>
+                            <div class="decor-circle" style="color:var(--accent)"></div>
+                        </div>
                     </div>
 
                     <div class="cards-grid">
@@ -1936,6 +1947,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             animateValue('stat-deleted', s.totalDeleted || 0);
             animateValue('stat-warnings', s.totalWarnings || 0);
             animateValue('stat-banned', s.totalBanned || 0);
+            animateValue('stat-calls', s.totalCallsRejected || 0);
         } catch (e) {
             console.error('Stats load error:', e);
         }
