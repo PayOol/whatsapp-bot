@@ -492,7 +492,13 @@ function loadLogs() {
 
 function loadGroupExceptions() {
     try {
-        if (fs.existsSync(GROUPS_FILE)) GROUP_EXCEPTIONS = JSON.parse(fs.readFileSync(GROUPS_FILE, 'utf8'));
+        if (fs.existsSync(GROUPS_FILE)) {
+            const loaded = JSON.parse(fs.readFileSync(GROUPS_FILE, 'utf8'));
+            GROUP_EXCEPTIONS = { 
+                excludedGroups: loaded.excludedGroups || [], 
+                excludedPatterns: loaded.excludedPatterns || [] 
+            };
+        }
     } catch (error) {}
 }
 
