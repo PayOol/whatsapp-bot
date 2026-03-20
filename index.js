@@ -682,33 +682,6 @@ function containsLink(message) {
 // 🤖 CLIENT WHATSAPP
 // ============================================================
 
-// Nettoyer les fichiers de verrouillage Chromium pour permettre le redémarrage
-const authPath = path.join(__dirname, '.wwebjs_auth');
-console.log('🔧 Nettoyage des fichiers de verrouillage Chromium...');
-try {
-    const cleanLockFiles = (dir) => {
-        if (!fs.existsSync(dir)) return;
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
-        for (const entry of entries) {
-            const fullPath = path.join(dir, entry.name);
-            if (entry.name.startsWith('Singleton')) {
-                try {
-                    fs.unlinkSync(fullPath);
-                    console.log(`   ✓ Supprimé: ${entry.name}`);
-                } catch (err) {
-                    console.log(`   ✗ Erreur suppression ${entry.name}: ${err.message}`);
-                }
-            } else if (entry.isDirectory()) {
-                cleanLockFiles(fullPath);
-            }
-        }
-    };
-    cleanLockFiles(authPath);
-    console.log('   ✅ Nettoyage terminé');
-} catch (e) {
-    console.log('   ⚠️ Erreur nettoyage:', e.message);
-}
-
 const client = new Client({
     authStrategy: new LocalAuth({ dataPath: path.join(__dirname, '.wwebjs_auth') }),
     puppeteer: {
@@ -1480,6 +1453,33 @@ loadGroupExceptions();
 loadUserExceptions();
 loadProcessedMessages();
 loadCallSpamData();
+
+// Nettoyer les fichiers de verrouillage Chromium pour permettre le redémarrage
+const authPath = path.join(__dirname, '.wwebjs_auth');
+console.log('🔧 Nettoyage des fichiers de verrouillage Chromium...');
+try {
+    const cleanLockFiles = (dir) => {
+        if (!fs.existsSync(dir)) return;
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+            const fullPath = path.join(dir, entry.name);
+            if (entry.name.startsWith('Singleton')) {
+                try {
+                    fs.unlinkSync(fullPath);
+                    console.log(`   ✓ Supprimé: ${entry.name}`);
+                } catch (err) {
+                    console.log(`   ✗ Erreur suppression ${entry.name}: ${err.message}`);
+                }
+            } else if (entry.isDirectory()) {
+                cleanLockFiles(fullPath);
+            }
+        }
+    };
+    cleanLockFiles(authPath);
+    console.log('   ✅ Nettoyage terminé\n');
+} catch (e) {
+    console.log('   ⚠️ Erreur nettoyage:', e.message, '\n');
+}
 
 console.log('🚀 Démarrage du bot WhatsApp...');
 console.log('🧠 Mode comportement humain activé');
