@@ -9,7 +9,9 @@ services:
     ports:
       - "127.0.0.1:3000:3000"
     volumes:
-      - whatsapp_data:/app
+      - whatsapp_auth:/app/.wwebjs_auth
+      - whatsapp_cache:/app/.wwebjs_cache
+      - whatsapp_data:/app/data
     environment:
       - NODE_ENV=production
     # Nécessaire pour Chromium/Puppeteer
@@ -19,4 +21,6 @@ services:
       - seccomp:unconfined
 
 volumes:
+  whatsapp_auth:
+  whatsapp_cache:
   whatsapp_data:

@@ -308,14 +308,15 @@ Merci de respecter ces règles. Bonne discussion ! 🎉`
 // 📁 FICHIERS DE STOCKAGE
 // ============================================================
 
-const WARNINGS_FILE = path.join(__dirname, 'warnings.json');
-const CONFIG_FILE = path.join(__dirname, 'config.json');
-const LOGS_FILE = path.join(__dirname, 'logs.json');
-const GROUPS_FILE = path.join(__dirname, 'groups.json');
-const USERS_FILE = path.join(__dirname, 'users.json');
-const PROCESSED_FILE = path.join(__dirname, 'processed.json');
-const CALL_SPAM_FILE = path.join(__dirname, 'call_spam.json');
-const BLOCKED_USERS_FILE = path.join(__dirname, 'blocked_users.json');
+const DATA_DIR = path.join(__dirname, 'data');
+const WARNINGS_FILE = path.join(DATA_DIR, 'warnings.json');
+const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
+const LOGS_FILE = path.join(DATA_DIR, 'logs.json');
+const GROUPS_FILE = path.join(DATA_DIR, 'groups.json');
+const USERS_FILE = path.join(DATA_DIR, 'users.json');
+const PROCESSED_FILE = path.join(DATA_DIR, 'processed.json');
+const CALL_SPAM_FILE = path.join(DATA_DIR, 'call_spam.json');
+const BLOCKED_USERS_FILE = path.join(DATA_DIR, 'blocked_users.json');
 
 // ============================================================
 // ✅ SYSTÈME ANTI-DOUBLON
