@@ -1,8 +1,9 @@
 #!/bin/sh
 
-# Nettoyer tous les fichiers de verrouillage Chromium récursivement
-find /app/.wwebjs_auth -name "Singleton*" -type f -delete 2>/dev/null
-find /app/.wwebjs_auth -name "Singleton*" -type s -delete 2>/dev/null
+# Nettoyer tous les fichiers de verrouillage Chromium (session et sous-dossiers)
+rm -f /app/.wwebjs_auth/Singleton* 2>/dev/null
+rm -f /app/.wwebjs_auth/*/Singleton* 2>/dev/null
+rm -f /app/.wwebjs_auth/*/*/Singleton* 2>/dev/null
 
 # Créer les fichiers JSON s'ils n'existent pas ou sont des répertoires
 # logs.json et warnings.json doivent être des tableaux
