@@ -585,15 +585,20 @@ function isUserExcludedFromLinks(userId, participants = []) {
 }
 
 // Vérifier si un utilisateur est exclu du rejet d'appels
-function isUserExcludedFromCalls(userId) {
+function isUserExcludedFromCalls(userId, phoneNumber = null) {
     // Extraire le numéro de l'ID WhatsApp (formats: numero@c.us, numero@lid, numero)
     const callerNumber = userId.split('@')[0];
     
-    // Vérifier si l'ID complet ou le numéro est dans les exceptions
+    // Vérifier si l'ID complet, le numéro extrait, ou le numéro de téléphone est dans les exceptions
     const userException = USER_EXCEPTIONS.excludedUsers.find(u => {
         const exceptionId = typeof u === 'object' ? u.id : u;
         const exceptionNumber = exceptionId.split('@')[0];
-        return exceptionId === userId || exceptionNumber === callerNumber || exceptionId === callerNumber;
+        // Comparer avec l'ID, le numéro extrait, ou le numéro de téléphone réel
+        return exceptionId === userId || 
+               exceptionNumber === callerNumber || 
+               exceptionId === callerNumber ||
+               (phoneNumber && exceptionNumber === phoneNumber) ||
+               (phoneNumber && exceptionId === phoneNumber);
     });
     
     return userException && (typeof userException === 'object' ? userException.callException : false);
@@ -1240,9 +1245,19 @@ client.on('call', async (call) => {
         const callerId = call.from;
         addLog(`📞 Appel entrant de ${callerId}`);
         
-        // ✅ Vérifier si l'utilisateur est exclu du rejet d'appels
-        if (isUserExcludedFromCalls(callerId)) {
-            addLog(`✅ ${callerId} exempté du rejet d'appels - appel ignoré`);
+        // ✅ Récupérer le contact pour obtenir le numéro de téléphone réel
+        let callerNumber = callerId.split('@')[0];
+        try {
+            const contact = await client.getContactById(callerId);
+            if (contact && contact.number) {
+                callerNumber = contact.number;
+                addLog(`📱 Numéro associé: ${callerNumber}`);
+            }
+        } catch (e) {}
+        
+        // ✅ Vérifier si l'utilisateur est exclu du rejet d'appels (par ID ou numéro)
+        if (isUserExcludedFromCalls(callerId, callerNumber)) {
+            addLog(`✅ ${callerNumber} exempté du rejet d'appels - appel ignoré`);
             return;
         }
 
