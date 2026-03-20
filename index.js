@@ -463,14 +463,43 @@ let USER_EXCEPTIONS = { excludedUsers: [], excludedAdmins: true };
 let STATS = { totalDeleted: 0, totalWarnings: 0, totalBanned: 0, totalCallsRejected: 0, adminGroups: 0 };
 let LOGS = [];
 
+// Configuration de rétention des logs (en jours)
+const LOG_RETENTION_DAYS = 7; // Les logs de plus de 7 jours sont automatiquement supprimés
+
 function addLog(message) {
-    const timestamp = new Date().toLocaleString();
-    const logMessage = `[${timestamp}] ${message}`;
-    LOGS.push(logMessage);
-    if (LOGS.length > 100) LOGS.shift();
+    const now = new Date();
+    const logEntry = {
+        timestamp: now.toISOString(),
+        display: now.toLocaleString(),
+        message: message
+    };
+    LOGS.push(logEntry);
+    
+    // Nettoyage automatique si dépassement
+    if (LOGS.length > 500) cleanOldLogs();
+    
     try { fs.writeFileSync(LOGS_FILE, JSON.stringify(LOGS, null, 2)); } catch (e) {}
     console.log(message);
 }
+
+function cleanOldLogs() {
+    const cutoff = Date.now() - (LOG_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+    const before = LOGS.length;
+    LOGS = LOGS.filter(log => {
+        // Supporter les anciens logs (string) et nouveaux (objet)
+        const ts = typeof log === 'object' && log.timestamp ? new Date(log.timestamp).getTime() : Date.now();
+        return ts > cutoff;
+    });
+    if (LOGS.length < before) {
+        console.log(`🧹 Nettoyage logs: ${before - LOGS.length} entrées supprimées (>${LOG_RETENTION_DAYS} jours)`);
+    }
+}
+
+// Nettoyage périodique des logs (toutes les heures)
+setInterval(() => {
+    cleanOldLogs();
+    try { fs.writeFileSync(LOGS_FILE, JSON.stringify(LOGS, null, 2)); } catch (e) {}
+}, 60 * 60 * 1000);
 
 function loadConfig() {
     try {
@@ -487,7 +516,11 @@ function saveConfig() {
 
 function loadLogs() {
     try {
-        if (fs.existsSync(LOGS_FILE)) LOGS = JSON.parse(fs.readFileSync(LOGS_FILE, 'utf8'));
+        if (fs.existsSync(LOGS_FILE)) {
+            LOGS = JSON.parse(fs.readFileSync(LOGS_FILE, 'utf8'));
+            // Nettoyer les anciens logs au démarrage
+            cleanOldLogs();
+        }
     } catch (error) {}
 }
 
@@ -1342,7 +1375,14 @@ app.get('/api/stats', async (req, res) => {
     } catch (error) { res.json(STATS); }
 });
 
-app.get('/api/logs', (req, res) => res.json(LOGS));
+app.get('/api/logs', (req, res) => {
+    // Convertir les objets logs en format d'affichage pour l'interface
+    const formattedLogs = LOGS.map(log => {
+        if (typeof log === 'string') return log;
+        return `[${log.display}] ${log.message}`;
+    });
+    res.json(formattedLogs);
+});
 
 // API pour les détails des statistiques
 app.get('/api/stats/groups', async (req, res) => {
@@ -1365,22 +1405,34 @@ app.get('/api/stats/groups', async (req, res) => {
 });
 
 app.get('/api/stats/deleted', (req, res) => {
-    const deletedLogs = LOGS.filter(l => l.includes('supprimé') || l.includes('Supprimé'));
+    const deletedLogs = LOGS.filter(l => {
+        const msg = typeof l === 'object' ? l.message : l;
+        return msg.includes('supprimé') || msg.includes('Supprimé');
+    }).map(l => typeof l === 'object' ? `[${l.display}] ${l.message}` : l);
     res.json({ total: STATS.totalDeleted, recent: deletedLogs.slice(-20).reverse() });
 });
 
 app.get('/api/stats/warnings', (req, res) => {
-    const warningLogs = LOGS.filter(l => l.includes('avertissement') || l.includes('Avertissement'));
+    const warningLogs = LOGS.filter(l => {
+        const msg = typeof l === 'object' ? l.message : l;
+        return msg.includes('avertissement') || msg.includes('Avertissement');
+    }).map(l => typeof l === 'object' ? `[${l.display}] ${l.message}` : l);
     res.json({ total: STATS.totalWarnings, recent: warningLogs.slice(-20).reverse() });
 });
 
 app.get('/api/stats/banned', (req, res) => {
-    const bannedLogs = LOGS.filter(l => l.includes('banni') || l.includes('Banni') || l.includes('bloqué'));
+    const bannedLogs = LOGS.filter(l => {
+        const msg = typeof l === 'object' ? l.message : l;
+        return msg.includes('banni') || msg.includes('Banni') || msg.includes('bloqué');
+    }).map(l => typeof l === 'object' ? `[${l.display}] ${l.message}` : l);
     res.json({ total: STATS.totalBanned, recent: bannedLogs.slice(-20).reverse() });
 });
 
 app.get('/api/stats/calls', (req, res) => {
-    const callLogs = LOGS.filter(l => l.includes('Appel') || l.includes('appel') || l.includes('rejeté'));
+    const callLogs = LOGS.filter(l => {
+        const msg = typeof l === 'object' ? l.message : l;
+        return msg.includes('Appel') || msg.includes('appel') || msg.includes('rejeté');
+    }).map(l => typeof l === 'object' ? `[${l.display}] ${l.message}` : l);
     res.json({ total: STATS.totalCallsRejected, recent: callLogs.slice(-20).reverse() });
 });
 
