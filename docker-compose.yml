@@ -8,14 +8,7 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./.wwebjs_auth:/app/.wwebjs_auth
-      - ./.wwebjs_cache:/app/.wwebjs_cache
-      - ./warnings.json:/app/warnings.json
-      - ./blocked_users.json:/app/blocked_users.json
-      - ./logs.json:/app/logs.json
-      - ./groups.json:/app/groups.json
-      - ./call_spam.json:/app/call_spam.json
-      - ./config.json:/app/config.json
+      - whatsapp_data:/app
     environment:
       - NODE_ENV=production
     # Nécessaire pour Chromium/Puppeteer
@@ -23,3 +16,6 @@ services:
       - SYS_ADMIN
     security_opt:
       - seccomp:unconfined
+
+volumes:
+  whatsapp_data:
