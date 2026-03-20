@@ -1144,9 +1144,9 @@ client.on('message', async (message) => {
 // Message de bienvenue pour les groupes exclus (pas de surveillance des liens)
 const WELCOME_MESSAGE_EXCLUDED = `👋 Bienvenue {mention} dans *{group}* !
 
-🎉 *Bienvenue parmi nous !*
+🎉 Content de te voir parmi nous !
 
-N'hésitez pas à participer et à partager.
+N'hésite pas à participer et à partager.
 
 Bonne discussion ! 🙌`;
 
