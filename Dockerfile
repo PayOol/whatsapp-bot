@@ -24,10 +24,10 @@ RUN npm install
 # Copier le code source
 COPY . .
 
-# Créer les répertoires pour la persistance
-RUN mkdir -p /app/.wwebjs_auth /app/.wwebjs_cache
+# Rendre le script entrypoint exécutable
+RUN chmod +x /app/entrypoint.sh
 
 # Exposer le port pour Express (si utilisé)
 EXPOSE 3000
 
-CMD ["npm", "start"]
+CMD ["./entrypoint.sh"]
