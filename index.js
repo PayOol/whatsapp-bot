@@ -707,7 +707,12 @@ const client = new Client({
         args: [
             '--no-sandbox', 
             '--disable-setuid-sandbox',
-            '--disable-features=LockProfileCookieDirectories'
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--no-first-run',
+            '--no-zygote',
+            '--disable-gpu',
+            '--user-data-dir=/app/.wwebjs_auth'
         ]
     }
 });
