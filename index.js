@@ -1141,6 +1141,15 @@ client.on('message', async (message) => {
 // 👋 HANDLER BIENVENUE
 // ============================================================
 
+// Message de bienvenue pour les groupes exclus (pas de surveillance des liens)
+const WELCOME_MESSAGE_EXCLUDED = `👋 Bienvenue {mention} dans *{group}* !
+
+🎉 *Bienvenue parmi nous !*
+
+N'hésitez pas à participer et à partager.
+
+Bonne discussion ! 🙌`;
+
 client.on('group_join', async (notification) => {
     try {
         if (!CONFIG.WELCOME_ENABLED) return;
@@ -1164,7 +1173,11 @@ client.on('group_join', async (notification) => {
         );
 
         const mention = `@${contact.number}`;
-        const welcomeMessage = CONFIG.WELCOME_MESSAGE
+        
+        // Vérifier si le groupe est exclu
+        const isExcluded = isGroupExcluded(chat);
+        
+        const welcomeMessage = (isExcluded ? WELCOME_MESSAGE_EXCLUDED : CONFIG.WELCOME_MESSAGE)
             .replace(/{mention}/g, mention)
             .replace(/{group}/g, chat.name)
             .replace(/{maxWarnings}/g, CONFIG.MAX_WARNINGS);
@@ -1173,7 +1186,7 @@ client.on('group_join', async (notification) => {
             mentions: [contact.id._serialized]
         }, 0);
 
-        addLog(`👋 Bienvenue envoyé à ${contact.number} dans ${chat.name}`);
+        addLog(`👋 Bienvenue envoyé à ${contact.number} dans ${chat.name}${isExcluded ? ' (groupe exclu)' : ''}`);
     } catch (error) {
         addLog(`❌ Erreur bienvenue: ${error.message}`);
     }
