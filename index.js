@@ -1344,6 +1344,46 @@ app.get('/api/stats', async (req, res) => {
 
 app.get('/api/logs', (req, res) => res.json(LOGS));
 
+// API pour les détails des statistiques
+app.get('/api/stats/groups', async (req, res) => {
+    try {
+        if (!isConnected) return res.json({ groups: [] });
+        const chats = await client.getChats();
+        const groups = [];
+        for (const g of chats.filter(c => c.isGroup)) {
+            const bp = g.participants?.find(p => p.id._serialized === client.info.wid._serialized);
+            if (bp?.isAdmin) {
+                groups.push({
+                    name: g.name,
+                    id: g.id._serialized,
+                    participants: g.participants?.length || 0
+                });
+            }
+        }
+        res.json({ groups, total: groups.length });
+    } catch (error) { res.json({ groups: [], total: 0 }); }
+});
+
+app.get('/api/stats/deleted', (req, res) => {
+    const deletedLogs = LOGS.filter(l => l.includes('supprimé') || l.includes('Supprimé'));
+    res.json({ total: STATS.totalDeleted, recent: deletedLogs.slice(-20).reverse() });
+});
+
+app.get('/api/stats/warnings', (req, res) => {
+    const warningLogs = LOGS.filter(l => l.includes('avertissement') || l.includes('Avertissement'));
+    res.json({ total: STATS.totalWarnings, recent: warningLogs.slice(-20).reverse() });
+});
+
+app.get('/api/stats/banned', (req, res) => {
+    const bannedLogs = LOGS.filter(l => l.includes('banni') || l.includes('Banni') || l.includes('bloqué'));
+    res.json({ total: STATS.totalBanned, recent: bannedLogs.slice(-20).reverse() });
+});
+
+app.get('/api/stats/calls', (req, res) => {
+    const callLogs = LOGS.filter(l => l.includes('Appel') || l.includes('appel') || l.includes('rejeté'));
+    res.json({ total: STATS.totalCallsRejected, recent: callLogs.slice(-20).reverse() });
+});
+
 app.post('/api/scan', async (req, res) => {
     try {
         if (!isConnected) return res.status(400).json({ success: false, message: 'Bot non connecté' });

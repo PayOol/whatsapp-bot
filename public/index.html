@@ -580,6 +580,9 @@
         .stat-tile.orange .stat-tile-icon{background:rgba(var(--warning-rgb),0.1);color:var(--warning)}
         .stat-tile.red .stat-tile-icon{background:rgba(var(--danger-rgb),0.1);color:var(--danger)}
         .stat-tile.purple .stat-tile-icon{background:rgba(var(--accent-rgb),0.1);color:var(--accent)}
+        
+        .stat-tile.clickable{cursor:pointer;transition:transform 0.2s,box-shadow 0.2s}
+        .stat-tile.clickable:hover{transform:translateY(-4px);box-shadow:0 8px 32px rgba(0,0,0,0.3)}
 
         .stat-tile-trend{
             font-size:0.7rem;
@@ -589,6 +592,24 @@
         }
         .trend-up{background:rgba(var(--primary-rgb),0.1);color:var(--success)}
         .trend-neutral{background:rgba(255,255,255,0.05);color:var(--text-muted)}
+
+        /* Stat Modal */
+        .modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:none;align-items:center;justify-content:center;z-index:1000;backdrop-filter:blur(4px)}
+        .modal-overlay.active{display:flex}
+        .modal-content{background:var(--bg-card);border-radius:var(--radius-xl);max-width:500px;width:90%;max-height:80vh;overflow:auto;box-shadow:var(--shadow-lg)}
+        .modal-header{display:flex;align-items:center;justify-content:space-between;padding:20px;border-bottom:1px solid var(--border)}
+        .modal-header h3{font-size:1.2rem;font-weight:600}
+        .modal-close{background:none;border:none;font-size:1.5rem;color:var(--text-muted);cursor:pointer;padding:4px 8px}
+        .modal-close:hover{color:var(--text-primary)}
+        #stat-modal-content{padding:20px}
+        .stat-detail-count{font-size:1.5rem;font-weight:700;margin-bottom:16px;text-align:center}
+        .stat-detail-list{display:flex;flex-direction:column;gap:8px}
+        .stat-detail-item{background:var(--bg-elevated);padding:12px;border-radius:var(--radius-md);font-size:0.85rem}
+        .stat-detail-name{font-weight:500}
+        .stat-detail-meta{color:var(--text-muted);font-size:0.75rem;margin-left:8px}
+        .stat-detail-empty{text-align:center;color:var(--text-muted);padding:20px}
+        .stat-detail-error{text-align:center;color:var(--danger);padding:20px}
+        .loading-spinner{text-align:center;padding:20px;color:var(--text-muted)}
 
         .stat-tile-value{
             font-size:2.2rem;
@@ -1390,7 +1411,7 @@
 
                     <!-- Stats -->
                     <div class="stats-row">
-                        <div class="stat-tile green">
+                        <div class="stat-tile green clickable" onclick="showStatModal('groups')">
                             <div class="stat-tile-header">
                                 <div class="stat-tile-icon">👥</div>
                                 <span class="stat-tile-trend trend-up">Actif</span>
@@ -1399,7 +1420,7 @@
                             <div class="stat-tile-label">Groupes administrés</div>
                             <div class="decor-circle" style="color:var(--success)"></div>
                         </div>
-                        <div class="stat-tile blue">
+                        <div class="stat-tile blue clickable" onclick="showStatModal('deleted')">
                             <div class="stat-tile-header">
                                 <div class="stat-tile-icon">🗑️</div>
                                 <span class="stat-tile-trend trend-neutral">Total</span>
@@ -1408,7 +1429,7 @@
                             <div class="stat-tile-label">Liens supprimés</div>
                             <div class="decor-circle" style="color:var(--info)"></div>
                         </div>
-                        <div class="stat-tile orange">
+                        <div class="stat-tile orange clickable" onclick="showStatModal('warnings')">
                             <div class="stat-tile-header">
                                 <div class="stat-tile-icon">⚠️</div>
                                 <span class="stat-tile-trend trend-neutral">Total</span>
@@ -1417,7 +1438,7 @@
                             <div class="stat-tile-label">Avertissements</div>
                             <div class="decor-circle" style="color:var(--warning)"></div>
                         </div>
-                        <div class="stat-tile red">
+                        <div class="stat-tile red clickable" onclick="showStatModal('banned')">
                             <div class="stat-tile-header">
                                 <div class="stat-tile-icon">🚫</div>
                                 <span class="stat-tile-trend trend-neutral">Total</span>
@@ -1426,7 +1447,7 @@
                             <div class="stat-tile-label">Utilisateurs bannis</div>
                             <div class="decor-circle" style="color:var(--danger)"></div>
                         </div>
-                        <div class="stat-tile purple">
+                        <div class="stat-tile purple clickable" onclick="showStatModal('calls')">
                             <div class="stat-tile-header">
                                 <div class="stat-tile-icon">📞</div>
                                 <span class="stat-tile-trend trend-neutral">Total</span>
@@ -2315,6 +2336,82 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
 
     // Load theme on start
     document.addEventListener('DOMContentLoaded', loadTheme);
+    
+    // ============================================================
+    // 📊 STAT MODALS
+    // ============================================================
+    const statConfig = {
+        groups: { title: 'Groupes administrés', icon: '👥', color: 'var(--success)' },
+        deleted: { title: 'Liens supprimés', icon: '🗑️', color: 'var(--info)' },
+        warnings: { title: 'Avertissements', icon: '⚠️', color: 'var(--warning)' },
+        banned: { title: 'Utilisateurs bannis', icon: '🚫', color: 'var(--danger)' },
+        calls: { title: 'Appels rejetés', icon: '📞', color: 'var(--accent)' }
+    };
+    
+    async function showStatModal(type) {
+        const config = statConfig[type];
+        const modal = document.getElementById('stat-modal');
+        const title = document.getElementById('stat-modal-title');
+        const content = document.getElementById('stat-modal-content');
+        
+        title.innerHTML = `<span style="color:${config.color}">${config.icon}</span> ${config.title}`;
+        content.innerHTML = '<div class="loading-spinner">Chargement...</div>';
+        modal.classList.add('active');
+        
+        try {
+            const res = await fetch(`/api/stats/${type}`);
+            const data = await res.json();
+            
+            let html = '';
+            if (type === 'groups') {
+                html = `<div class="stat-detail-count">${data.total} groupe(s)</div>`;
+                if (data.groups.length > 0) {
+                    html += '<div class="stat-detail-list">';
+                    data.groups.forEach(g => {
+                        html += `<div class="stat-detail-item">
+                            <span class="stat-detail-name">${g.name}</span>
+                            <span class="stat-detail-meta">${g.participants} participants</span>
+                        </div>`;
+                    });
+                    html += '</div>';
+                }
+            } else {
+                html = `<div class="stat-detail-count">${data.total} au total</div>`;
+                if (data.recent && data.recent.length > 0) {
+                    html += '<div class="stat-detail-list">';
+                    data.recent.forEach(log => {
+                        html += `<div class="stat-detail-item">${log}</div>`;
+                    });
+                    html += '</div>';
+                } else {
+                    html += '<div class="stat-detail-empty">Aucune activité récente</div>';
+                }
+            }
+            content.innerHTML = html;
+        } catch (e) {
+            content.innerHTML = '<div class="stat-detail-error">Erreur de chargement</div>';
+        }
+    }
+    
+    function closeStatModal() {
+        document.getElementById('stat-modal').classList.remove('active');
+    }
+    
+    // Close modal on backdrop click
+    document.addEventListener('click', (e) => {
+        if (e.target.id === 'stat-modal') closeStatModal();
+    });
     </script>
+
+    <!-- Stat Modal -->
+    <div id="stat-modal" class="modal-overlay">
+        <div class="modal-content stat-modal-content">
+            <div class="modal-header">
+                <h3 id="stat-modal-title"></h3>
+                <button class="modal-close" onclick="closeStatModal()">×</button>
+            </div>
+            <div id="stat-modal-content"></div>
+        </div>
+    </div>
 </body>
 </html>
