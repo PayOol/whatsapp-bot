@@ -682,6 +682,24 @@ function containsLink(message) {
 // 🤖 CLIENT WHATSAPP
 // ============================================================
 
+// Nettoyer les fichiers de verrouillage Chromium pour permettre le redémarrage
+const authPath = path.join(__dirname, '.wwebjs_auth');
+try {
+    const cleanLockFiles = (dir) => {
+        if (!fs.existsSync(dir)) return;
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+            const fullPath = path.join(dir, entry.name);
+            if (entry.name.startsWith('Singleton')) {
+                fs.unlinkSync(fullPath);
+            } else if (entry.isDirectory()) {
+                cleanLockFiles(fullPath);
+            }
+        }
+    };
+    cleanLockFiles(authPath);
+} catch (e) {}
+
 const client = new Client({
     authStrategy: new LocalAuth({ dataPath: path.join(__dirname, '.wwebjs_auth') }),
     puppeteer: {
