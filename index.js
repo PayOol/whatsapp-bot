@@ -457,7 +457,7 @@ function scheduleUnblock(userId, delay) {
 // 📋 EXCEPTIONS GROUPES & UTILISATEURS
 // ============================================================
 
-let GROUP_EXCEPTIONS = { excludedGroups: [], excludedPatterns: [] };
+let GROUP_EXCEPTIONS = { excludedGroups: [], excludedPatterns: [], excludedWelcome: [] };
 // Structure: { excludedAdmins: true, excludedUsers: [{ id: 'xxx', linkException: true, callException: false }] }
 let USER_EXCEPTIONS = { excludedUsers: [], excludedAdmins: true };
 
@@ -531,7 +531,8 @@ function loadGroupExceptions() {
             const loaded = JSON.parse(fs.readFileSync(GROUPS_FILE, 'utf8'));
             GROUP_EXCEPTIONS = { 
                 excludedGroups: loaded.excludedGroups || [], 
-                excludedPatterns: loaded.excludedPatterns || [] 
+                excludedPatterns: loaded.excludedPatterns || [],
+                excludedWelcome: loaded.excludedWelcome || []
             };
         }
     } catch (error) {}
@@ -1202,6 +1203,12 @@ client.on('group_join', async (notification) => {
         const botP = participants.find(p => p.id._serialized === botId);
         if (!botP || !botP.isAdmin) return;
 
+        // Vérifier si le bienvenue est désactivé pour ce groupe
+        if (GROUP_EXCEPTIONS.excludedWelcome.includes(chat.id._serialized)) {
+            addLog(`🔇 Bienvenue désactivé pour ${chat.name}`);
+            return;
+        }
+
         let newMemberId = notification.recipient;
         if (notification.id?.participant) newMemberId = notification.id.participant;
 
@@ -1216,7 +1223,7 @@ client.on('group_join', async (notification) => {
 
         const mention = `@${contact.number}`;
         
-        // Vérifier si le groupe est exclu
+        // Vérifier si le groupe est exclu (surveillance liens)
         const isExcluded = isGroupExcluded(chat);
         
         const welcomeMessage = (isExcluded ? WELCOME_MESSAGE_EXCLUDED : CONFIG.WELCOME_MESSAGE)
@@ -1556,6 +1563,27 @@ app.delete('/api/groups/exceptions', (req, res) => {
         const { groupId, pattern } = req.body;
         if (groupId) GROUP_EXCEPTIONS.excludedGroups = GROUP_EXCEPTIONS.excludedGroups.filter(id => id !== groupId);
         if (pattern) GROUP_EXCEPTIONS.excludedPatterns = GROUP_EXCEPTIONS.excludedPatterns.filter(p => p !== pattern);
+        saveGroupExceptions();
+        res.json({ success: true, exceptions: GROUP_EXCEPTIONS });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+// Gérer l'option de bienvenue par groupe
+app.post('/api/groups/welcome', (req, res) => {
+    try {
+        const { groupId, enabled } = req.body;
+        if (!groupId) return res.status(400).json({ success: false, message: 'groupId requis' });
+        
+        if (enabled === false) {
+            // Désactiver le bienvenue pour ce groupe
+            if (!GROUP_EXCEPTIONS.excludedWelcome.includes(groupId)) {
+                GROUP_EXCEPTIONS.excludedWelcome.push(groupId);
+            }
+        } else {
+            // Réactiver le bienvenue
+            GROUP_EXCEPTIONS.excludedWelcome = GROUP_EXCEPTIONS.excludedWelcome.filter(id => id !== groupId);
+        }
+        
         saveGroupExceptions();
         res.json({ success: true, exceptions: GROUP_EXCEPTIONS });
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }

@@ -975,6 +975,9 @@
             border-color:rgba(var(--warning-rgb),0.3);
             background:rgba(var(--warning-rgb),0.04);
         }
+        .group-actions{display:flex;align-items:center;gap:12px}
+        .welcome-toggle{display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text-secondary);cursor:pointer}
+        .welcome-toggle input{cursor:pointer}
 
         .group-left{
             display:flex;align-items:center;gap:14px;
@@ -2078,10 +2081,16 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
     /* ═══════════════════════════════════════
        GROUPS
        ═══════════════════════════════════════ */
+    let groupExceptions = { excludedGroups: [], excludedPatterns: [], excludedWelcome: [] };
+    
     async function loadGroups() {
         try {
-            const res = await fetch('/api/groups');
-            const groups = await res.json();
+            const [groupsRes, exceptionsRes] = await Promise.all([
+                fetch('/api/groups'),
+                fetch('/api/groups/exceptions')
+            ]);
+            const groups = await groupsRes.json();
+            groupExceptions = await exceptionsRes.json();
             const container = document.getElementById('groups-list');
 
             if (!groups.length) {
@@ -2092,8 +2101,11 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                 return;
             }
 
-            container.innerHTML = groups.map(g => `
-                <div class="group-card ${g.isExcluded ? 'excluded' : ''}">
+            container.innerHTML = groups.map(g => {
+                const isExcluded = groupExceptions.excludedGroups.includes(g.id);
+                const welcomeDisabled = groupExceptions.excludedWelcome.includes(g.id);
+                return `
+                <div class="group-card ${isExcluded ? 'excluded' : ''}">
                     <div class="group-left">
                         <div class="group-avatar">👥</div>
                         <div class="group-details">
@@ -2104,18 +2116,38 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                                     ? '<span class="badge badge-success"><span class="badge-dot"></span> Admin</span>'
                                     : '<span class="badge badge-danger"><span class="badge-dot"></span> Non admin</span>'
                                 }
-                                ${g.isExcluded ? '<span class="badge badge-warning"><span class="badge-dot"></span> Exclu</span>' : ''}
+                                ${isExcluded ? '<span class="badge badge-warning"><span class="badge-dot"></span> Exclu</span>' : ''}
                             </div>
                         </div>
                     </div>
-                    <button class="btn ${g.isExcluded ? 'btn-primary' : 'btn-ghost'} btn-sm"
-                            onclick="toggleGroupException('${g.id}',${!g.isExcluded})">
-                        ${g.isExcluded ? '✅ Activer' : '🚫 Exclure'}
-                    </button>
+                    <div class="group-actions">
+                        <label class="welcome-toggle" title="${welcomeDisabled ? 'Réactiver le message de bienvenue' : 'Désactiver le message de bienvenue'}">
+                            <input type="checkbox" ${!welcomeDisabled ? 'checked' : ''} 
+                                onchange="toggleGroupWelcome('${g.id}', this.checked)">
+                            👋 Bienvenue
+                        </label>
+                        <button class="btn ${isExcluded ? 'btn-primary' : 'btn-ghost'} btn-sm"
+                                onclick="toggleGroupException('${g.id}',${!isExcluded})">
+                            ${isExcluded ? '✅ Activer' : '🚫 Exclure'}
+                        </button>
+                    </div>
                 </div>
-            `).join('');
+            `}).join('');
         } catch (e) {
             console.error('Groups error:', e);
+        }
+    }
+
+    async function toggleGroupWelcome(groupId, enabled) {
+        try {
+            await fetch('/api/groups/welcome', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ groupId, enabled })
+            });
+            showToast(enabled ? '👋 Message de bienvenue activé' : '🔇 Message de bienvenue désactivé', 'success');
+        } catch (e) {
+            showToast('Action impossible', 'error');
         }
     }
 
