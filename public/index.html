@@ -2429,6 +2429,49 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
     /* ═══════════════════════════════════════
        LOGS
        ═══════════════════════════════════════ */
+    function formatLogIcon(msg) {
+        // Remplacer les tags par des icônes Font Awesome
+        const iconMap = {
+            '[OK]': '<i class="fas fa-check-circle" style="color:var(--success)"></i>',
+            '[X]': '<i class="fas fa-times-circle" style="color:var(--danger)"></i>',
+            '[!]': '<i class="fas fa-exclamation-circle" style="color:var(--warning)"></i>',
+            '[SCAN]': '<i class="fas fa-search" style="color:var(--info)"></i>',
+            '[LINK]': '<i class="fas fa-link" style="color:var(--info)"></i>',
+            '[STATS]': '<i class="fas fa-chart-bar" style="color:var(--accent)"></i>',
+            '[CONFIG]': '<i class="fas fa-cog" style="color:var(--text-secondary)"></i>',
+            '[MENU]': '<i class="fas fa-list-alt" style="color:var(--info)"></i>',
+            '[EDIT]': '<i class="fas fa-edit" style="color:var(--warning)"></i>',
+            '[SUPPR]': '<i class="fas fa-trash-alt" style="color:var(--danger)"></i>',
+            '[TEST]': '<i class="fas fa-flask" style="color:var(--accent)"></i>',
+            '[WEBHOOK]': '<i class="fas fa-plug" style="color:var(--info)"></i>',
+            '[UNBLOCK]': '<i class="fas fa-unlock" style="color:var(--success)"></i>',
+            '[BLOCK]': '<i class="fas fa-lock" style="color:var(--danger)"></i>',
+            '[REJECT]': '<i class="fas fa-phone-slash" style="color:var(--danger)"></i>',
+            '[LOCK]': '<i class="fas fa-lock" style="color:var(--danger)"></i>',
+            '[SPAM]': '<i class="fas fa-exclamation-triangle" style="color:var(--warning)"></i>',
+            '[TIMER]': '<i class="fas fa-clock" style="color:var(--text-secondary)"></i>',
+            '[MSG]': '<i class="fas fa-comment" style="color:var(--info)"></i>',
+            '[DIAG]': '<i class="fas fa-stethoscope" style="color:var(--accent)"></i>',
+            '[MUTE]': '<i class="fas fa-volume-mute" style="color:var(--text-muted)"></i>',
+            '[BIENVENUE]': '<i class="fas fa-hand-wave" style="color:var(--success)"></i>',
+            '[LEAVE]': '<i class="fas fa-sign-out-alt" style="color:var(--warning)"></i>',
+            '[GROUPS]': '<i class="fas fa-users" style="color:var(--info)"></i>',
+            '[NEW]': '<i class="fas fa-plus-circle" style="color:var(--success)"></i>',
+            '[START]': '<i class="fas fa-play" style="color:var(--success)"></i>',
+            '[WAIT]': '<i class="fas fa-hourglass-half" style="color:var(--warning)"></i>',
+            '[CALL]': '<i class="fas fa-phone" style="color:var(--info)"></i>',
+            '[EXCL]': '<i class="fas fa-ban" style="color:var(--text-muted)"></i>',
+            '[DECO]': '<i class="fas fa-plug" style="color:var(--danger)"></i>',
+            '[TARGET]': '<i class="fas fa-bullseye" style="color:var(--accent)"></i>'
+        };
+        
+        let result = msg;
+        for (const [tag, icon] of Object.entries(iconMap)) {
+            result = result.replace(tag, icon);
+        }
+        return result;
+    }
+
     async function refreshLogs() {
         try {
             const res = await fetch(getApiUrl('/api/logs'));
@@ -2451,13 +2494,13 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                 const msg = parts[1] || log;
 
                 let cls = '';
-                if (msg.toLowerCase().includes('supprim') || msg.toLowerCase().includes('banni')) cls = 'error';
-                else if (msg.toLowerCase().includes('avertissement')) cls = 'warning';
-                else if (msg.toLowerCase().includes('bienvenue') || msg.toLowerCase().includes('connect')) cls = 'success';
+                if (msg.includes('[X]') || msg.toLowerCase().includes('supprim') || msg.toLowerCase().includes('banni') || msg.toLowerCase().includes('erreur')) cls = 'error';
+                else if (msg.includes('[!]') || msg.toLowerCase().includes('avertissement')) cls = 'warning';
+                else if (msg.includes('[OK]') || msg.toLowerCase().includes('bienvenue') || msg.toLowerCase().includes('connect')) cls = 'success';
 
                 return `<div class="log-row">
                     <span class="log-time">${escapeHtml(time)}</span>
-                    <span class="log-msg ${cls}">${escapeHtml(msg)}</span>
+                    <span class="log-msg ${cls}">${formatLogIcon(escapeHtml(msg))}</span>
                 </div>`;
             }).join('');
 
