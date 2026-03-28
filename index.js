@@ -1476,14 +1476,14 @@ async function scanAllGroups() {
     const chats = await client.getChats();
     const botId = client.info.wid._serialized;
     
-    // Filtrer les groupes où le bot est encore participant
+    // Filtrer uniquement les groupes où le bot est admin
     const groups = chats.filter(c => {
         if (!c.isGroup) return false;
         const botParticipant = c.participants?.find(p => p.id._serialized === botId);
-        return !!botParticipant; // Bot doit être dans le groupe
+        return botParticipant?.isAdmin; // Bot doit être admin
     });
     
-    addLog(`📊 ${groups.length} groupes détectés`);
+    addLog(`📊 ${groups.length} groupes administrés détectés`);
 
     let totalDeleted = 0, totalScanned = 0, totalWarned = 0;
 
