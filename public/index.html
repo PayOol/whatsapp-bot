@@ -1325,6 +1325,24 @@
             color:var(--text-muted);
             white-space:nowrap;
         }
+        .chart-bar-value{
+            position:absolute;
+            top:-20px;
+            left:50%;
+            transform:translateX(-50%);
+            font-size:0.7rem;
+            font-weight:600;
+            color:var(--primary);
+            white-space:nowrap;
+        }
+        .chart-loading,.chart-empty{
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            height:100%;
+            color:var(--text-muted);
+            font-size:0.85rem;
+        }
 
         /* ═══════════════════════════════════════
            EMPTY STATES
@@ -1343,6 +1361,88 @@
             color:var(--text-muted);
             max-width:300px;
             margin:0 auto;
+        }
+
+        /* ═══════════════════════════════════════
+           SESSIONS SIDEBAR
+           ═══════════════════════════════════════ */
+        .sessions-sidebar-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-bottom: 8px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .session-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            transition: all var(--transition-fast);
+        }
+        .session-item:hover {
+            background: var(--bg-card-hover);
+            border-color: var(--border-light);
+        }
+        .session-item.active {
+            border-color: var(--primary);
+            background: rgba(var(--primary-rgb), 0.08);
+        }
+        .session-status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .session-status-dot.connected { background: var(--success); }
+        .session-status-dot.pending { background: var(--warning); animation: pulse 1.5s infinite; }
+        .session-status-dot.disconnected { background: var(--danger); }
+        .session-status-dot.stopped { background: var(--text-muted); }
+        .session-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .session-name {
+            font-size: 0.8rem;
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .session-phone {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+        }
+        .session-actions {
+            display: flex;
+            gap: 4px;
+        }
+        .session-action-btn {
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: none;
+            background: transparent;
+            color: var(--text-muted);
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.75rem;
+            transition: all var(--transition-fast);
+        }
+        .session-action-btn:hover {
+            background: rgba(255,255,255,0.1);
+            color: var(--text-primary);
+        }
+        .session-action-btn.danger:hover {
+            background: rgba(var(--danger-rgb), 0.2);
+            color: var(--danger);
         }
 
         /* ═══════════════════════════════════════
@@ -1468,6 +1568,16 @@
             </div>
 
             <nav class="sidebar-nav">
+                <div class="nav-group">
+                    <div class="nav-group-label">Sessions</div>
+                    <div id="sessions-list" class="sessions-sidebar-list">
+                        <!-- Sessions will be loaded here -->
+                    </div>
+                    <button class="btn btn-primary btn-sm" style="width:100%;margin-top:8px" onclick="showNewSessionModal()">
+                        ➕ Nouvelle session
+                    </button>
+                </div>
+                
                 <div class="nav-group">
                     <div class="nav-group-label">Principal</div>
                     <div class="nav-link active" data-page="dashboard" onclick="navigateTo('dashboard',this)">
@@ -1643,13 +1753,7 @@
                             </div>
                             <div class="card-body">
                                 <div class="chart-placeholder" id="activity-chart">
-                                    <div class="chart-bar" style="height:30%"><span class="chart-bar-label">Lun</span></div>
-                                    <div class="chart-bar" style="height:55%"><span class="chart-bar-label">Mar</span></div>
-                                    <div class="chart-bar" style="height:40%"><span class="chart-bar-label">Mer</span></div>
-                                    <div class="chart-bar" style="height:75%"><span class="chart-bar-label">Jeu</span></div>
-                                    <div class="chart-bar" style="height:60%"><span class="chart-bar-label">Ven</span></div>
-                                    <div class="chart-bar" style="height:45%"><span class="chart-bar-label">Sam</span></div>
-                                    <div class="chart-bar" style="height:90%"><span class="chart-bar-label">Dim</span></div>
+                                    <div class="chart-loading">Chargement…</div>
                                 </div>
                             </div>
                         </div>
@@ -2128,6 +2232,10 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         setInterval(checkStatus, 5000);
         setInterval(refreshLogs, 10000);
         setInterval(loadStats, 30000);
+        setInterval(loadActivityChart, 60000);
+        
+        // Charger le chart d'activité au démarrage
+        loadActivityChart();
     });
 
     /* ═══════════════════════════════════════
@@ -2135,7 +2243,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
        ═══════════════════════════════════════ */
     async function loadConfig() {
         try {
-            const res = await fetch('/api/config');
+            const res = await fetch(getApiUrl('/api/config'));
             const cfg = await res.json();
 
             document.getElementById('maxWarnings').value = cfg.MAX_WARNINGS || 3;
@@ -2171,7 +2279,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             const res = await fetch('/api/config', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(config)
+                body: JSON.stringify(addSessionIdToBody(config))
             });
             const result = await res.json();
 
@@ -2190,7 +2298,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
        ═══════════════════════════════════════ */
     async function loadStats() {
         try {
-            const res = await fetch('/api/stats');
+            const res = await fetch(getApiUrl('/api/stats'));
             const s = await res.json();
 
             animateValue('stat-groups', s.adminGroups || 0);
@@ -2200,6 +2308,36 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             animateValue('stat-calls', s.totalCallsRejected || 0);
         } catch (e) {
             console.error('Stats load error:', e);
+        }
+    }
+    
+    async function loadActivityChart() {
+        try {
+            const res = await fetch(getApiUrl('/api/stats/activity'));
+            const data = await res.json();
+            const container = document.getElementById('activity-chart');
+            
+            if (!data.days || data.days.length === 0) {
+                container.innerHTML = '<div class="chart-empty">Aucune donnée</div>';
+                return;
+            }
+            
+            const maxCount = data.maxCount || 1;
+            let html = '';
+            
+            data.days.forEach(d => {
+                const height = maxCount > 0 ? Math.round((d.count / maxCount) * 100) : 0;
+                const minHeight = d.count > 0 ? Math.max(height, 5) : 2;
+                html += `<div class="chart-bar" style="height:${minHeight}%" title="${d.count} actions le ${d.date}">
+                    <span class="chart-bar-value">${d.count > 0 ? d.count : ''}</span>
+                    <span class="chart-bar-label">${d.day}</span>
+                </div>`;
+            });
+            
+            container.innerHTML = html;
+        } catch (e) {
+            console.error('Activity chart error:', e);
+            document.getElementById('activity-chart').innerHTML = '<div class="chart-empty">Erreur de chargement</div>';
         }
     }
 
@@ -2292,8 +2430,9 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
        ═══════════════════════════════════════ */
     async function refreshLogs() {
         try {
-            const res = await fetch('/api/logs');
-            const logs = await res.json();
+            const res = await fetch(getApiUrl('/api/logs'));
+            const data = await res.json();
+            const logs = data.logs || data;
 
             const c1 = document.getElementById('logs-container');
             const c2 = document.getElementById('logs-page-container');
@@ -2343,11 +2482,12 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
     async function loadGroups() {
         try {
             const [groupsRes, exceptionsRes] = await Promise.all([
-                fetch('/api/groups'),
-                fetch('/api/groups/exceptions')
+                fetch(getApiUrl('/api/groups')),
+                fetch(getApiUrl('/api/groups/exceptions'))
             ]);
             const groups = await groupsRes.json();
-            groupExceptions = await exceptionsRes.json();
+            const exceptionsData = await exceptionsRes.json();
+            groupExceptions = exceptionsData.sessionId ? exceptionsData : { excludedGroups: [], excludedPatterns: [], excludedWelcome: [] };
             const container = document.getElementById('groups-list');
 
             if (!groups.length) {
@@ -2400,7 +2540,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             await fetch('/api/groups/welcome', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ groupId, enabled })
+                body: JSON.stringify(addSessionIdToBody({ groupId, enabled }))
             });
             showToast(enabled ? '👋 Message de bienvenue activé' : '🔇 Message de bienvenue désactivé', 'success');
         } catch (e) {
@@ -2413,7 +2553,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             await fetch('/api/groups/exceptions', {
                 method: exclude ? 'POST' : 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ groupId })
+                body: JSON.stringify(addSessionIdToBody({ groupId }))
             });
             loadGroups();
             showToast(exclude ? 'Groupe exclu de la surveillance' : 'Groupe réactivé', 'success');
@@ -2507,7 +2647,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             const res = await fetch('/api/groups/leave', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ groupId })
+                body: JSON.stringify(addSessionIdToBody({ groupId }))
             });
             const result = await res.json();
             
@@ -2550,7 +2690,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
        ═══════════════════════════════════════ */
     async function loadPatterns() {
         try {
-            const res = await fetch('/api/groups/exceptions');
+            const res = await fetch(getApiUrl('/api/groups/exceptions'));
             const data = await res.json();
             const container = document.getElementById('patterns-list');
 
@@ -2578,7 +2718,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             await fetch('/api/groups/exceptions', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ pattern })
+                body: JSON.stringify(addSessionIdToBody({ pattern }))
             });
             input.value = '';
             loadPatterns();
@@ -2594,7 +2734,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             await fetch('/api/groups/exceptions', {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ pattern })
+                body: JSON.stringify(addSessionIdToBody({ pattern }))
             });
             loadPatterns();
             loadGroups();
@@ -2609,7 +2749,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
        ═══════════════════════════════════════ */
     async function loadUserExceptions() {
         try {
-            const res = await fetch('/api/users/exceptions');
+            const res = await fetch(getApiUrl('/api/users/exceptions'));
             const data = await res.json();
 
             document.getElementById('excludeAdmins').checked = data.excludedAdmins !== false;
@@ -2672,7 +2812,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             await fetch('/api/users/exceptions', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId, linkException: true, callException: false })
+                body: JSON.stringify(addSessionIdToBody({ userId, linkException: true, callException: false }))
             });
             input.value = '';
             loadUserExceptions();
@@ -2687,7 +2827,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             await fetch('/api/users/exceptions', {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId })
+                body: JSON.stringify(addSessionIdToBody({ userId }))
             });
             loadUserExceptions();
             showToast(`Utilisateur ${userId} retiré`, 'success');
@@ -2705,7 +2845,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             await fetch('/api/users/exceptions', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body)
+                body: JSON.stringify(addSessionIdToBody(body))
             });
             showToast(`Option mise à jour pour ${userId}`, 'success');
         } catch (e) {
@@ -2722,7 +2862,11 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         showToast('Scan en cours…', 'warning', 'Veuillez patienter');
 
         try {
-            const res = await fetch('/api/scan', { method: 'POST' });
+            const res = await fetch('/api/scan', { 
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(addSessionIdToBody({}))
+            });
             const result = await res.json();
             showToast(`Scan terminé : ${result.totalDeleted} lien(s) supprimé(s)`, 'success', 'Scan complet');
             loadStats();
@@ -2736,7 +2880,11 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         if (!confirm('Effacer tous les avertissements ? Cette action est irréversible.')) return;
 
         try {
-            await fetch('/api/warnings', { method: 'DELETE' });
+            await fetch('/api/warnings', { 
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(addSessionIdToBody({}))
+            });
             showToast('Tous les avertissements ont été effacés', 'success');
             loadStats();
         } catch (e) {
@@ -2790,6 +2938,22 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
     document.addEventListener('DOMContentLoaded', loadTheme);
     
     // ============================================================
+    // 🔧 HELPER FOR SESSION-AWARE API CALLS
+    // ============================================================
+    function getApiUrl(endpoint, useActiveSession = true) {
+        if (!useActiveSession || !activeSessionId) return endpoint;
+        const separator = endpoint.includes('?') ? '&' : '?';
+        return `${endpoint}${separator}sessionId=${activeSessionId}`;
+    }
+    
+    function addSessionIdToBody(body = {}) {
+        if (activeSessionId) {
+            body.sessionId = activeSessionId;
+        }
+        return body;
+    }
+    
+    // ============================================================
     // 📊 STAT MODALS
     // ============================================================
     const statConfig = {
@@ -2811,7 +2975,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         modal.classList.add('active');
         
         try {
-            const res = await fetch(`/api/stats/${type}`);
+            const res = await fetch(getApiUrl(`/api/stats/${type}`));
             const data = await res.json();
             
             let html = '';
@@ -2863,8 +3027,9 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
     
     async function loadMenus() {
         try {
-            const res = await fetch('/api/menus');
-            const menus = await res.json();
+            const res = await fetch(getApiUrl('/api/menus'));
+            const data = await res.json();
+            const menus = data.menus || data;
             const container = document.getElementById('menus-list');
             
             const menuArray = Object.values(menus);
@@ -3120,7 +3285,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             const res = await fetch(url, {
                 method,
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(menuData)
+                body: JSON.stringify(addSessionIdToBody(menuData))
             });
             
             const result = await res.json();
@@ -3145,7 +3310,11 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         if (!confirm('Supprimer ce menu ?')) return;
         
         try {
-            await fetch(`/api/menus/${menuId}`, { method: 'DELETE' });
+            await fetch(`/api/menus/${menuId}`, { 
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(addSessionIdToBody({}))
+            });
             showToast('Menu supprimé', 'success');
             loadMenus();
         } catch (e) {
@@ -3155,7 +3324,11 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
     
     async function testMenu(menuId) {
         try {
-            const res = await fetch(`/api/menus/${menuId}/test`, { method: 'POST' });
+            const res = await fetch(`/api/menus/${menuId}/test`, { 
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(addSessionIdToBody({}))
+            });
             const result = await res.json();
             
             if (result.success) {
@@ -3177,13 +3350,166 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
     
     async function loadMenusData() {
         try {
-            const res = await fetch('/api/menus');
-            interactiveMenus = await res.json();
+            const res = await fetch(getApiUrl('/api/menus'));
+            const data = await res.json();
+            interactiveMenus = data.menus || data;
             loadMenus();
         } catch (e) {
             console.error('Erreur chargement menus:', e);
         }
     }
+    
+    // ============================================================
+    // 📱 SESSIONS MANAGEMENT
+    // ============================================================
+    
+    let allSessions = [];
+    let activeSessionId = null;
+    
+    async function loadSessions() {
+        try {
+            const res = await fetch('/api/sessions');
+            const data = await res.json();
+            allSessions = data.sessions || [];
+            activeSessionId = data.activeSessionId;
+            renderSessionsList();
+        } catch (e) {
+            console.error('Erreur chargement sessions:', e);
+        }
+    }
+    
+    function renderSessionsList() {
+        const container = document.getElementById('sessions-list');
+        if (!allSessions.length) {
+            container.innerHTML = '<div style="padding:10px;color:var(--text-muted);font-size:0.8rem">Aucune session</div>';
+            return;
+        }
+        
+        container.innerHTML = allSessions.map(session => {
+            const isActive = session.id === activeSessionId;
+            const statusClass = session.status === 'connected' ? 'connected' : 
+                               session.status === 'qr' ? 'pending' :
+                               session.status === 'stopped' ? 'stopped' : 'disconnected';
+            const displayName = session.name || session.id.split('_').slice(-1)[0];
+            const phone = session.phoneNumber || '';
+            
+            return `
+                <div class="session-item ${isActive ? 'active' : ''}" onclick="activateSession('${session.id}')">
+                    <div class="session-status-dot ${statusClass}"></div>
+                    <div class="session-info">
+                        <div class="session-name">${escapeHtml(displayName)}</div>
+                        <div class="session-phone">${phone ? '📱 ' + phone : getStatusText(session.status)}</div>
+                    </div>
+                    <div class="session-actions">
+                        ${session.status === 'connected' ? 
+                            `<button class="session-action-btn" onclick="event.stopPropagation();showSessionQR('${session.id}')" title="QR Code">📱</button>` : 
+                            session.status === 'qr' ?
+                            `<button class="session-action-btn" onclick="event.stopPropagation();showSessionQR('${session.id}')" title="QR Code">📱</button>` : ''
+                        }
+                        <button class="session-action-btn danger" onclick="event.stopPropagation();deleteSession('${session.id}')" title="Supprimer">🗑️</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+    
+    function getStatusText(status) {
+        const statusMap = {
+            'connected': '✅ Connecté',
+            'qr': '⏳ QR Code',
+            'pending': '⏳ En attente',
+            'disconnected': '❌ Déconnecté',
+            'auth_failure': '❌ Échec auth',
+            'stopped': '⏹️ Arrêté'
+        };
+        return statusMap[status] || status;
+    }
+    
+    async function activateSession(sessionId) {
+        try {
+            const res = await fetch(`/api/sessions/${sessionId}/activate`, { method: 'POST' });
+            const result = await res.json();
+            if (result.success) {
+                activeSessionId = sessionId;
+                loadSessions();
+                // Recharger toutes les données pour la nouvelle session active
+                loadStats();
+                loadActivityChart();
+                loadConfig();
+                loadGroups();
+                loadUserExceptions();
+                loadPatterns();
+                loadMenus();
+                refreshLogs();
+                showToast('Session activée', 'success');
+            }
+        } catch (e) {
+            showToast('Erreur activation', 'error');
+        }
+    }
+    
+    async function deleteSession(sessionId) {
+        if (!confirm('Supprimer cette session ? Les données d\'authentification seront perdues.')) return;
+        
+        try {
+            const res = await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' });
+            const result = await res.json();
+            if (result.success) {
+                loadSessions();
+                showToast('Session supprimée', 'success');
+            }
+        } catch (e) {
+            showToast('Erreur suppression', 'error');
+        }
+    }
+    
+    async function showNewSessionModal() {
+        const name = prompt('Nom de la nouvelle session (optionnel):', '');
+        if (name === null) return; // Cancelled
+        
+        try {
+            const res = await fetch('/api/sessions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: name || 'Nouvelle session' })
+            });
+            const result = await res.json();
+            
+            if (result.success) {
+                showToast('Session créée! Scannez le QR code.', 'success');
+                loadSessions();
+                // Show QR modal after a short delay
+                setTimeout(() => checkStatus(), 2000);
+            } else {
+                showToast(result.message || 'Erreur', 'error');
+            }
+        } catch (e) {
+            showToast('Erreur création session', 'error');
+        }
+    }
+    
+    async function showSessionQR(sessionId) {
+        try {
+            const res = await fetch(`/api/sessions/${sessionId}`);
+            const session = await res.json();
+            
+            if (session.currentQR) {
+                showQRCode(session.currentQR);
+            } else if (session.status === 'connected') {
+                showToast('Session déjà connectée', 'success');
+            } else {
+                showToast('QR code non disponible', 'warning');
+            }
+        } catch (e) {
+            showToast('Erreur récupération QR', 'error');
+        }
+    }
+    
+    // Load sessions on startup and refresh periodically
+    document.addEventListener('DOMContentLoaded', () => {
+        loadSessions();
+        setInterval(loadSessions, 10000);
+    });
     </script>
 
     <!-- Stat Modal -->
