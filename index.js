@@ -165,7 +165,7 @@ class RateLimiter {
     async waitUntilAllowed() {
         while (!this.canAct()) {
             const waitTime = HumanBehavior.gaussianRandom(5000, 2000);
-            addLog(`⏳ Rate limiter : pause de ${Math.round(waitTime / 1000)}s`);
+            addLog(`[WAIT] Rate limiter : pause de ${Math.round(waitTime / 1000)}s`);
             await new Promise(resolve => setTimeout(resolve, waitTime));
         }
     }
@@ -211,9 +211,9 @@ async function sendMessageHumanized(chat, text, options = {}, triggerMessageLeng
 
     } catch (error) {
         if (sessionData) {
-            sessionData.addLog(`❌ Erreur envoi humanisé: ${error.message}`);
+            sessionData.addLog(`[X] Erreur envoi humanise: ${error.message}`);
         } else {
-            addLog(`❌ Erreur envoi humanisé: ${error.message}`);
+            addLog(`[X] Erreur envoi humanise: ${error.message}`);
         }
         throw error;
     }
@@ -300,14 +300,14 @@ async function deleteMessageHumanized(message) {
                     return result;
                 });
 
-                addLog(`🔬 ══════ DIAGNOSTIC SUPPRESSION ══════`);
-                addLog(`🔬 Store: ${JSON.stringify(diag.store)}`);
-                addLog(`🔬 Chat proto: ${JSON.stringify(diag.chat)}`);
-                addLog(`🔬 Msg proto: ${JSON.stringify(diag.msg)}`);
-                addLog(`🔬 WWebJS: ${JSON.stringify(diag.wwebjs)}`);
-                addLog(`🔬 ═════════════════════════════════════`);
+                addLog(`DIAGNOSTIC SUPPRESSION`);
+                addLog(`Store: ${JSON.stringify(diag.store)}`);
+                addLog(`Chat proto: ${JSON.stringify(diag.chat)}`);
+                addLog(`Msg proto: ${JSON.stringify(diag.msg)}`);
+                addLog(`WWebJS: ${JSON.stringify(diag.wwebjs)}`);
+                addLog(`==========================================`);
             } catch (e) {
-                addLog(`⚠️ Diagnostic échoué: ${e.message}`);
+                addLog(`Diagnostic echoue: ${e.message}`);
             }
         }
 
@@ -332,18 +332,18 @@ async function deleteMessageHumanized(message) {
         // TENTATIVE 1 : message.delete(true) — API lib
         // ══════════════════════════════════════════════
         try {
-            addLog(`🗑️ T1: message.delete(true)...`);
+            addLog(`T1: message.delete(true)...`);
             await message.delete(true);
             await new Promise(r => setTimeout(r, 2000));
 
             if (await isMessageRevoked()) {
-                addLog(`✅ Supprimé pour TOUS via message.delete(true)`);
+                addLog(`[OK] Supprime pour TOUS via message.delete(true)`);
                 rateLimiter.recordAction();
                 return true;
             }
-            addLog(`⚠️ T1: message.delete(true) exécuté mais message toujours là`);
+            addLog(`[!] T1: message.delete(true) execute mais message toujours la`);
         } catch (e) {
-            addLog(`⚠️ T1 erreur: ${e.message}`);
+            addLog(`[!] T1 erreur: ${e.message}`);
         }
 
         // ══════════════════════════════════════════════
@@ -351,7 +351,7 @@ async function deleteMessageHumanized(message) {
         // les signatures connues + vérification
         // ══════════════════════════════════════════════
         try {
-            addLog(`🗑️ T2: evaluate multi-méthodes...`);
+            addLog(`T2: evaluate multi-methodes...`);
 
             const result = await client.pupPage.evaluate(async (id) => {
                 const msg = window.Store.Msg.get(id);
@@ -467,28 +467,28 @@ async function deleteMessageHumanized(message) {
                 return { status: 'FAILED', log };
             }, msgId);
 
-            addLog(`🔧 T2 résultat: ${JSON.stringify(result)}`);
+            addLog(`T2 resultat: ${JSON.stringify(result)}`);
 
             if (result.status === 'OK') {
-                addLog(`✅ Supprimé pour TOUS via ${result.method}`);
+                addLog(`[OK] Supprime pour TOUS via ${result.method}`);
                 rateLimiter.recordAction();
                 return true;
             }
 
             if (result.log) {
                 for (const entry of result.log) {
-                    addLog(`   └─ ${entry.name}: ${entry.ok ? '✓ appelé' : '✗ erreur'} → ${entry.revoked ? 'REVOQUÉ ✅' : entry.err || 'pas revoqué'}`);
+                    addLog(`   |- ${entry.name}: ${entry.ok ? 'appele' : 'erreur'} -> ${entry.revoked ? 'REVOQUE [OK]' : entry.err || 'pas revoque'}`);
                 }
             }
         } catch (e) {
-            addLog(`⚠️ T2 erreur: ${e.message}`);
+            addLog(`[!] T2 erreur: ${e.message}`);
         }
 
         // ══════════════════════════════════════════════
         // TENTATIVE 3 : Re-fetch message + delete
         // ══════════════════════════════════════════════
         try {
-            addLog(`🗑️ T3: re-fetch + delete...`);
+            addLog(`T3: re-fetch + delete...`);
             const chat = await message.getChat();
             const messages = await chat.fetchMessages({ limit: 50 });
             const target = messages.find(m => m.id._serialized === msgId);
@@ -498,23 +498,23 @@ async function deleteMessageHumanized(message) {
                 await new Promise(r => setTimeout(r, 2000));
 
                 if (await isMessageRevoked()) {
-                    addLog(`✅ Supprimé pour TOUS via re-fetch + delete`);
+                    addLog(`[OK] Supprime pour TOUS via re-fetch + delete`);
                     rateLimiter.recordAction();
                     return true;
                 }
-                addLog(`⚠️ T3: re-fetch delete exécuté mais message toujours là`);
+                addLog(`[!] T3: re-fetch delete execute mais message toujours la`);
             } else {
-                addLog(`⚠️ T3: message non trouvé dans les 50 derniers`);
+                addLog(`[!] T3: message non trouve dans les 50 derniers`);
             }
         } catch (e) {
-            addLog(`⚠️ T3 erreur: ${e.message}`);
+            addLog(`[!] T3 erreur: ${e.message}`);
         }
 
         // ══════════════════════════════════════════════
         // TENTATIVE 4 : Protocole brut via sendRevoke
         // ══════════════════════════════════════════════
         try {
-            addLog(`🗑️ T4: protocole brut...`);
+            addLog(`T4: protocole brut...`);
 
             const result4 = await client.pupPage.evaluate(async (id) => {
                 const msg = window.Store.Msg.get(id);
@@ -556,22 +556,22 @@ async function deleteMessageHumanized(message) {
                 return { methods, revoked };
             }, msgId);
 
-            addLog(`🔧 T4 résultat: ${JSON.stringify(result4)}`);
+            addLog(`T4 resultat: ${JSON.stringify(result4)}`);
 
             if (result4.revoked) {
-                addLog(`✅ Supprimé pour TOUS via protocole brut`);
+                addLog(`[OK] Supprime pour TOUS via protocole brut`);
                 rateLimiter.recordAction();
                 return true;
             }
         } catch (e) {
-            addLog(`⚠️ T4 erreur: ${e.message}`);
+            addLog(`[!] T4 erreur: ${e.message}`);
         }
 
-        addLog(`❌ ÉCHEC TOTAL: message ${msgId} NON supprimé pour les autres`);
+        addLog(`[X] ECHEC TOTAL: message ${msgId} NON supprime pour les autres`);
         return false;
 
     } catch (error) {
-        addLog(`❌ Erreur suppression: ${error.message}`);
+        addLog(`[X] Erreur suppression: ${error.message}`);
         return false;
     }
 }
@@ -939,7 +939,7 @@ function loadProcessedMessages() {
         if (fs.existsSync(PROCESSED_FILE)) {
             const data = fs.readFileSync(PROCESSED_FILE, 'utf8');
             JSON.parse(data).forEach(id => processedMessages.add(id));
-            console.log(`📋 ${processedMessages.size} messages déjà traités chargés`);
+            console.log(`${processedMessages.size} messages deja traites charges`);
         }
     } catch (error) {
         console.error('Erreur chargement messages traités:', error);
@@ -1117,7 +1117,7 @@ async function sendInteractiveMenu(chat, menuId, options = {}) {
             return sent;
         }
     } catch (error) {
-        addLog(`❌ Erreur envoi menu ${menuId}: ${error.message}`);
+        addLog(`[X] Erreur envoi menu ${menuId}: ${error.message}`);
         console.error('Erreur menu:', error);
         return null;
     }
@@ -1176,7 +1176,7 @@ async function executeMenuAction(chat, userId, action, menu) {
 
         case 'link':
             if (action.whitelist) {
-                addLog(`✅ Lien autorisé via menu: ${action.whitelist}`);
+                addLog(`[OK] Lien autorise via menu: ${action.whitelist}`);
                 return await sendMessageHumanized(chat,
                     `✅ Voici le lien autorisé: ${action.whitelist}`, {}, 0);
             }
@@ -1214,9 +1214,9 @@ async function executeMenuAction(chat, userId, action, menu) {
                             timestamp: Date.now()
                         })
                     });
-                    addLog(`🔔 Webhook appelé: ${action.webhook}`);
+                    addLog(`[WEBHOOK] Webhook appele: ${action.webhook}`);
                 } catch (e) {
-                    addLog(`❌ Erreur webhook: ${e.message}`);
+                    addLog(`[X] Erreur webhook: ${e.message}`);
                 }
             }
             break;
@@ -1298,9 +1298,9 @@ function scheduleUnblock(userId, delay) {
                 delete callSpamTracker[userId];
                 delete unblockTimers[userId];
                 saveCallSpamData();
-                addLog(`🔓 ${userId} débloqué automatiquement`);
+                addLog(`[UNBLOCK] ${userId} debloque automatiquement`);
             } catch (error) {
-                addLog(`❌ Erreur déblocage auto ${userId}: ${error.message}`);
+                addLog(`[X] Erreur deblocage auto ${userId}: ${error.message}`);
             }
         }
     }, delay);
@@ -1341,7 +1341,7 @@ function cleanOldLogs() {
         return ts > cutoff;
     });
     if (LOGS.length < before) {
-        console.log(`🧹 Nettoyage logs: ${before - LOGS.length} entrées supprimées (>${LOG_RETENTION_DAYS} jours)`);
+        console.log(`Nettoyage logs: ${before - LOGS.length} entrees supprimees (>${LOG_RETENTION_DAYS} jours)`);
     }
 }
 
@@ -1554,7 +1554,7 @@ function containsLink(message) {
 
     for (const p of linkPatterns) {
         if (new RegExp(p.source, p.flags).test(clean)) {
-            addLog(`🔍 Lien standard détecté: "${text.substring(0, 80)}"`);
+            addLog(`[LINK] Lien standard detecte: "${text.substring(0, 80)}"`);
             return true;
         }
     }
@@ -1588,7 +1588,7 @@ function containsLink(message) {
     });
 
     if (valid.length > 0) {
-        addLog(`🔍 Domaine détecté: "${text.substring(0, 80)}": ${valid.join(', ')}`);
+        addLog(`[LINK] Domaine detecte: "${text.substring(0, 80)}": ${valid.join(', ')}`);
         return true;
     }
 
@@ -1741,8 +1741,8 @@ class SessionManager {
                 this.sessionsList[sessionId].status = 'qr';
                 this.saveSessionsList();
             }
-            addLog(`📱 [${sessionId}] QR code généré`);
-            console.log(`\n📱 [${sessionId}] Scannez ce QR code avec WhatsApp:\n`);
+            addLog(`[${sessionId}] QR code genere`);
+            console.log(`\n[${sessionId}] Scannez ce QR code avec WhatsApp:\n`);
             qrcode.generate(qr, { small: true });
         });
 
@@ -1758,19 +1758,19 @@ class SessionManager {
                 this.sessionsList[sessionId].pushName = session.data.pushName;
                 this.saveSessionsList();
             }
-            addLog(`✅ [${sessionId}] Bot connecté et prêt!`);
+            addLog(`[OK] [${sessionId}] Bot connecte et pret!`);
             
             // Toutes les sessions démarrent leurs processus
             restoreUnblockTimers(sessionId);
             startPresenceManager(sessionId);
             if (CONFIG.AUTO_SCAN_ENABLED) {
                 const startupDelay = HumanBehavior.gaussianRandom(15000, 8000);
-                addLog(`⏳ [${sessionId}] Premier scan dans ${Math.round(startupDelay / 1000)}s...`);
+                addLog(`[TIMER] [${sessionId}] Premier scan dans ${Math.round(startupDelay / 1000)}s...`);
                 await new Promise(r => setTimeout(r, startupDelay));
                 try {
                     await scanAllGroups(sessionId);
                 } catch (scanError) {
-                    addLog(`❌ [${sessionId}] Erreur scan initial: ${scanError.message}`);
+                    addLog(`[X] [${sessionId}] Erreur scan initial: ${scanError.message}`);
                 }
             }
             scheduleNextScan(sessionId);
@@ -1783,7 +1783,7 @@ class SessionManager {
                 this.sessionsList[sessionId].status = 'auth_failure';
                 this.saveSessionsList();
             }
-            addLog(`❌ [${sessionId}] Échec auth: ${msg}`);
+            addLog(`[X] [${sessionId}] Echec auth: ${msg}`);
         });
 
         client.on('disconnected', (reason) => {
@@ -1793,7 +1793,7 @@ class SessionManager {
                 this.sessionsList[sessionId].status = 'disconnected';
                 this.saveSessionsList();
             }
-            addLog(`🔌 [${sessionId}] Déconnecté: ${reason}`);
+            addLog(`[DECO] [${sessionId}] Deconnecte: ${reason}`);
         });
 
         // Message handler - Toutes les sessions traitent les messages
@@ -1816,7 +1816,7 @@ class SessionManager {
         const session = this.sessions.get(sessionId);
         if (session && session.client) {
             session.client.initialize();
-            addLog(`🚀 [${sessionId}] Session démarrée`);
+            addLog(`[START] [${sessionId}] Session demarree`);
             return true;
         }
         return false;
@@ -1830,10 +1830,10 @@ class SessionManager {
                 session.data.status = 'stopped';
                 this.sessionsList[sessionId].status = 'stopped';
                 this.saveSessionsList();
-                addLog(`🛑 [${sessionId}] Session arrêtée`);
+                addLog(`[STOP] [${sessionId}] Session arretee`);
                 return true;
             } catch (e) {
-                addLog(`❌ [${sessionId}] Erreur arrêt: ${e.message}`);
+                addLog(`[X] [${sessionId}] Erreur arret: ${e.message}`);
                 return false;
             }
         }
@@ -1850,7 +1850,7 @@ class SessionManager {
                 fs.rmSync(authPath, { recursive: true, force: true });
             }
         } catch (e) {
-            addLog(`⚠️ [${sessionId}] Erreur suppression dossier auth: ${e.message}`);
+            addLog(`[!] [${sessionId}] Erreur suppression dossier auth: ${e.message}`);
         }
 
         this.sessions.delete(sessionId);
@@ -1861,7 +1861,7 @@ class SessionManager {
         }
         
         this.saveSessionsList();
-        addLog(`🗑️ [${sessionId}] Session supprimée`);
+        addLog(`[SUPPR] [${sessionId}] Session supprimee`);
         return true;
     }
 
@@ -1869,7 +1869,7 @@ class SessionManager {
         if (this.sessionsList[sessionId]) {
             this.activeSessionId = sessionId;
             this.saveSessionsList();
-            addLog(`🎯 Session active: ${sessionId}`);
+            addLog(`[TARGET] Session active: ${sessionId}`);
             return true;
         }
         return false;
@@ -1952,29 +1952,29 @@ async function scanOldMessages(chat, limit = 100, sessionId = null) {
     // Récupérer le client de la session
     const sessionClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : client;
     if (!sessionClient || !sessionClient.info) {
-        if (sessionData) sessionData.addLog(`⚠️ Client non disponible pour le scan`);
-        else addLog(`⚠️ Client non disponible pour le scan`);
+        if (sessionData) sessionData.addLog(`[!] Client non disponible pour le scan`);
+        else addLog(`[!] Client non disponible pour le scan`);
         return { deleted: 0, scanned: 0, warned: 0 };
     }
     
     const log = (msg) => sessionData ? sessionData.addLog(msg) : addLog(msg);
     
     if (sessionData && sessionData.isGroupExcluded(chat)) {
-        log(`🚫 Groupe ${chat.name} exclu`);
+        log(`[EXCL] Groupe ${chat.name} exclu`);
         return { deleted: 0, scanned: 0, warned: 0 };
     } else if (!sessionData && isGroupExcluded(chat)) {
-        log(`🚫 Groupe ${chat.name} exclu`);
+        log(`[EXCL] Groupe ${chat.name} exclu`);
         return { deleted: 0, scanned: 0, warned: 0 };
     }
 
-    log(`🔍 Scan de ${chat.name}...`);
+    log(`[SCAN] Scan de ${chat.name}...`);
 
     const botId = sessionClient.info.wid._serialized;
     const participants = chat.participants || [];
     const botP = participants.find(p => p.id._serialized === botId);
 
     if (!botP || !botP.isAdmin) {
-        log(`⚠️ Pas admin dans ${chat.name}`);
+        log(`[!] Pas admin dans ${chat.name}`);
         return { deleted: 0, scanned: 0, warned: 0 };
     }
 
@@ -2107,11 +2107,11 @@ async function scanOldMessages(chat, limit = 100, sessionId = null) {
                 }
             }
         } catch (error) {
-            log(`⚠️ Erreur traitement: ${error.message}`);
+            log(`[!] Erreur traitement: ${error.message}`);
         }
     }
 
-    log(`✅ Scan ${chat.name}: ${scanned} scannés, ${deleted} supprimés, ${warned} avertis`);
+    log(`[OK] Scan ${chat.name}: ${scanned} scans, ${deleted} supprimes, ${warned} avertis`);
     if (sessionData) sessionData.saveStats();
     return { deleted, scanned, warned };
 }
@@ -2120,11 +2120,11 @@ async function scanAllGroups(sessionId = null) {
     // Récupérer le client de la session
     const sessionClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : client;
     if (!sessionClient || !sessionClient.info) {
-        addLog(`⚠️ [${sessionId}] Client non disponible pour le scan`);
+        addLog(`[!] [${sessionId}] Client non disponible pour le scan`);
         return { totalDeleted: 0, totalScanned: 0, totalWarned: 0 };
     }
     
-    addLog('🔍 ========== SCAN AUTOMATIQUE ==========');
+    addLog('[SCAN] ========== SCAN AUTOMATIQUE ==========');
     const chats = await sessionClient.getChats();
     const botId = sessionClient.info.wid._serialized;
     
@@ -2135,7 +2135,7 @@ async function scanAllGroups(sessionId = null) {
         return botParticipant?.isAdmin; // Bot doit être admin
     });
     
-    addLog(`📊 ${groups.length} groupes administrés détectés`);
+    addLog(`[STATS] ${groups.length} groupes administres detectes`);
 
     let totalDeleted = 0, totalScanned = 0, totalWarned = 0;
 
@@ -2150,8 +2150,8 @@ async function scanAllGroups(sessionId = null) {
         await HumanBehavior.naturalDelay(HumanBehavior.interGroupDelay());
     }
 
-    addLog('✅ ========== FIN DU SCAN ==========');
-    addLog(`📊 Total: ${totalScanned} scannés, ${totalDeleted} supprimés, ${totalWarned} avertis`);
+    addLog('[OK] ========== FIN DU SCAN ==========');
+    addLog(`Total: ${totalScanned} scans, ${totalDeleted} supprimes, ${totalWarned} avertis`);
     return { totalDeleted, totalScanned, totalWarned };
 }
 
@@ -2166,7 +2166,7 @@ function scheduleNextScan(sessionId) {
     const jitter = HumanBehavior.gaussianRandom(0, baseMs * 0.2);
     const nextScanMs = baseMs + jitter;
 
-    addLog(`⏰ [${sessionId}] Prochain scan dans ${Math.round(nextScanMs / 3600000 * 10) / 10}h`);
+    addLog(`[TIMER] [${sessionId}] Prochain scan dans ${Math.round(nextScanMs / 3600000 * 10) / 10}h`);
 
     // Clear existing timer for this session
     if (scanTimers.has(sessionId)) {
@@ -2176,11 +2176,11 @@ function scheduleNextScan(sessionId) {
     const timer = setTimeout(async () => {
         const session = sessionManager.sessions.get(sessionId);
         if (CONFIG.AUTO_SCAN_ENABLED && session && session.data.status === 'connected') {
-            addLog(`⏰ [${sessionId}] Scan automatique programmé...`);
+            addLog(`[TIMER] [${sessionId}] Scan automatique programme...`);
             try {
                 await scanAllGroups(sessionId);
             } catch (scanError) {
-                addLog(`❌ [${sessionId}] Erreur scan programmé: ${scanError.message}`);
+                addLog(`[X] [${sessionId}] Erreur scan programme: ${scanError.message}`);
             }
         }
         scheduleNextScan(sessionId);
@@ -2260,7 +2260,7 @@ async function handleMessage(client, message, sessionId) {
         if (message.type === 'buttons_response' || message.type === 'list_response') {
             const responseId = message.selectedButtonId || message.selectedRowId;
             if (responseId) {
-                sessionData.addLog(`📱 Réponse menu: ${responseId} de ${senderId}`);
+                sessionData.addLog(`Menu reponse: ${responseId} de ${senderId}`);
                 await handleMenuResponse(message, responseId, sessionData);
                 return;
             }
@@ -2295,14 +2295,14 @@ async function handleMessage(client, message, sessionId) {
                 const items = latestSession.buttons || latestSession.rows || [];
                 if (selectedNumber >= 1 && selectedNumber <= items.length) {
                     const selectedItem = items[selectedNumber - 1];
-                    sessionData.addLog(`📱 Réponse menu textuel: ${selectedNumber} (${selectedItem.text || selectedItem.title}) de ${senderId}`);
+                    sessionData.addLog(`Menu reponse textuel: ${selectedNumber} (${selectedItem.text || selectedItem.title}) de ${senderId}`);
 
                     if (selectedItem.response) {
                         await sendMessageHumanized(chat, selectedItem.response, {}, messageText.length, sessionData);
                     } else if (selectedItem.nextMenu) {
                         await sendInteractiveMenu(chat, selectedItem.nextMenu, sessionData);
                     } else {
-                        await sendMessageHumanized(chat, `✅ Vous avez sélectionné: ${selectedItem.text || selectedItem.title}`, {}, messageText.length, sessionData);
+                        await sendMessageHumanized(chat, `[OK] Vous avez selectionne: ${selectedItem.text || selectedItem.title}`, {}, messageText.length, sessionData);
                     }
                     return;
                 }
@@ -2317,7 +2317,7 @@ async function handleMessage(client, message, sessionId) {
             if (menu.groupId && chat.id._serialized !== menu.groupId) continue;
 
             if (triggerText === menu.trigger.toLowerCase()) {
-                sessionData.addLog(`📱 Menu déclenché: ${menuId} par ${senderId}`);
+                sessionData.addLog(`Menu declenche: ${menuId} par ${senderId}`);
                 await sendInteractiveMenu(chat, menuId, sessionData);
                 return;
             }
@@ -2442,7 +2442,7 @@ async function handleMessage(client, message, sessionId) {
                     report += `\n🌐 *WWebJS:*\n\`${(diag.wwebjs || []).join(', ')}\`\n`;
 
                     await sendMessageHumanized(chat, report, {}, 10);
-                    addLog(`🔬 [${sessionId}] Diagnostic envoyé dans ${chat.name}`);
+                    addLog(`[DIAG] [${sessionId}] Diagnostic envoye dans ${chat.name}`);
                 } catch (error) {
                     await sendMessageHumanized(chat, `❌ Erreur: ${error.message}`, {}, 10);
                 }
@@ -2494,7 +2494,7 @@ async function handleMessage(client, message, sessionId) {
         const wasDeleted = await deleteMessageHumanized(message);
         if (wasDeleted) {
             sessionData.stats.totalDeleted++;
-            sessionData.addLog(`🗑️ Message supprimé de ${authorId} dans ${chat.name}`);
+            sessionData.addLog(`[SUPPR] Message supprime de ${authorId} dans ${chat.name}`);
         }
 
         // ══════════════════════════════════════════════════════
@@ -2517,9 +2517,9 @@ async function handleMessage(client, message, sessionId) {
 
                 sessionData.resetWarnings(chat.id._serialized, authorId);
                 sessionData.stats.totalBanned++;
-                sessionData.addLog(`🚫 ${authorId} banni de ${chat.name}`);
+                sessionData.addLog(`[BAN] ${authorId} banni de ${chat.name}`);
             } catch (banError) {
-                sessionData.addLog(`❌ Erreur ban: ${banError.message}`);
+                sessionData.addLog(`[X] Erreur ban: ${banError.message}`);
                 await sendMessageHumanized(chat,
                     `⚠️ ${mention} a atteint la limite mais je n'ai pas pu le bannir.`,
                     { mentions: [contact.id._serialized] },
@@ -2534,7 +2534,7 @@ async function handleMessage(client, message, sessionId) {
             await sendMessageHumanized(chat, warnMsg, {
                 mentions: [contact.id._serialized]
             }, messageBodyLength, sessionData);
-            sessionData.addLog(`⚠️ Avertissement ${warningCount}/${sessionData.config.MAX_WARNINGS} pour ${authorId} dans ${chat.name}`);
+            sessionData.addLog(`[!] Avertissement ${warningCount}/${sessionData.config.MAX_WARNINGS} pour ${authorId} dans ${chat.name}`);
         }
         sessionData.saveStats();
     } catch (error) {
@@ -2567,7 +2567,7 @@ async function handleGroupJoin(client, notification, sessionId) {
         if (!botP || !botP.isAdmin) return;
 
         if (sessionData.groupExceptions.excludedWelcome.includes(chat.id._serialized)) {
-            sessionData.addLog(`🔇 Bienvenue désactivé pour ${chat.name}`);
+            sessionData.addLog(`[MUTE] Bienvenue desactivee pour ${chat.name}`);
             return;
         }
 
@@ -2594,9 +2594,9 @@ async function handleGroupJoin(client, notification, sessionId) {
             mentions: [contact.id._serialized]
         }, 0, sessionData);
 
-        sessionData.addLog(`👋 Bienvenue envoyé à ${contact.number} dans ${chat.name}${isExcluded ? ' (groupe exclu)' : ''}`);
+        sessionData.addLog(`[BIENVENUE] Bienvenue envoye a ${contact.number} dans ${chat.name}${isExcluded ? ' (groupe exclu)' : ''}`);
     } catch (error) {
-        sessionData.addLog(`❌ Erreur bienvenue: ${error.message}`);
+        sessionData.addLog(`[X] Erreur bienvenue: ${error.message}`);
     }
 }
 
@@ -2611,14 +2611,14 @@ async function handleCall(client, call, sessionId) {
         if (!sessionData.config.CALL_REJECT_ENABLED) return;
 
         const callerId = call.from;
-        sessionData.addLog(`📞 Appel entrant de ${callerId}`);
+        sessionData.addLog(`[CALL] Appel entrant de ${callerId}`);
 
         let callerNumber = callerId.split('@')[0];
         try {
             const contact = await client.getContactById(callerId);
             if (contact && contact.number) {
                 callerNumber = contact.number;
-                sessionData.addLog(`📱 Numéro associé: ${callerNumber}`);
+                sessionData.addLog(`Numero associe: ${callerNumber}`);
             }
         } catch (e) {}
 
@@ -2630,7 +2630,7 @@ async function handleCall(client, call, sessionId) {
         });
         
         if (userException && (typeof userException === 'object' ? userException.callException : false)) {
-            sessionData.addLog(`✅ ${callerNumber} exempté du rejet d'appels - appel ignoré`);
+            sessionData.addLog(`[OK] ${callerNumber} exempté du rejet d'appels - appel ignoré`);
             return;
         }
 
@@ -2638,12 +2638,12 @@ async function handleCall(client, call, sessionId) {
             try {
                 const contact = await client.getContactById(callerId);
                 if (contact.isBlocked) {
-                    sessionData.addLog(`⛔ ${callerId} déjà bloqué`);
+                    sessionData.addLog(`[BLOCK] ${callerId} deja bloque`);
                     await HumanBehavior.naturalDelay(HumanBehavior.callRejectDelay());
                     try { await call.reject(); } catch (e) {}
                     return;
                 } else {
-                    sessionData.addLog(`🔓 ${callerId} débloqué manuellement, mise à jour`);
+                    sessionData.addLog(`[UNBLOCK] ${callerId} debloque manuellement, mise a jour`);
                     delete sessionData.blockedUsers[callerId];
                     delete sessionData.callSpamTracker[callerId];
                     if (sessionData.unblockTimers[callerId]) {
@@ -2653,17 +2653,17 @@ async function handleCall(client, call, sessionId) {
                     sessionData.saveCallSpamData();
                 }
             } catch (e) {
-                sessionData.addLog(`⚠️ Erreur vérification blocage: ${e.message}`);
+                sessionData.addLog(`[!] Erreur verification blocage: ${e.message}`);
             }
         }
 
         try {
             await call.reject();
-            sessionData.addLog(`🚫 Appel rejeté: ${callerId}`);
+            sessionData.addLog(`[REJECT] Appel rejete: ${callerId}`);
             sessionData.stats.totalCallsRejected++;
             rateLimiter.recordAction();
         } catch (rejectError) {
-            sessionData.addLog(`⚠️ Erreur rejet appel: ${rejectError.message}`);
+            sessionData.addLog(`[!] Erreur rejet appel: ${rejectError.message}`);
         }
 
         // Ajouter l'appel au tracker
@@ -2675,10 +2675,10 @@ async function handleCall(client, call, sessionId) {
         const callCount = sessionData.callSpamTracker[callerId].length;
         sessionData.saveCallSpamData();
         
-        sessionData.addLog(`📊 ${callerId}: ${callCount}/${sessionData.config.CALL_SPAM_THRESHOLD} appels`);
+        sessionData.addLog(`[STATS] ${callerId}: ${callCount}/${sessionData.config.CALL_SPAM_THRESHOLD} appels`);
 
         if (callCount >= sessionData.config.CALL_SPAM_THRESHOLD) {
-            sessionData.addLog(`🚫 SPAM: ${callerId} — ${callCount} appels → BLOCAGE`);
+            sessionData.addLog(`[SPAM] SPAM: ${callerId} - ${callCount} appels -> BLOCAGE`);
 
             try {
                 const postCallDelay = HumanBehavior.postCallMessageDelay();
@@ -2688,7 +2688,7 @@ async function handleCall(client, call, sessionId) {
                 const blockMsg = MessagePool.pick(MessagePool.callBlocked);
                 await sendMessageHumanized(chat, blockMsg, {}, 0, sessionData);
             } catch (msgError) {
-                sessionData.addLog(`⚠️ Message pré-blocage échoué: ${msgError.message}`);
+                sessionData.addLog(`[!] Message pre-blocage echoue: ${msgError.message}`);
             }
 
             await HumanBehavior.naturalDelay(HumanBehavior.blockDelay());
@@ -2704,7 +2704,7 @@ async function handleCall(client, call, sessionId) {
                     callCount: callCount
                 };
                 sessionData.saveCallSpamData();
-                sessionData.addLog(`🔒 ${callerId} bloqué pour spam d'appels`);
+                sessionData.addLog(`[LOCK] ${callerId} bloque pour spam d'appels`);
 
                 // Planifier le déblocage
                 const blockDuration = sessionData.config.CALL_BLOCK_DURATION_MIN * 60 * 1000;
@@ -2719,22 +2719,22 @@ async function handleCall(client, call, sessionId) {
                             delete sessionData.callSpamTracker[callerId];
                             delete sessionData.unblockTimers[callerId];
                             sessionData.saveCallSpamData();
-                            sessionData.addLog(`🔓 ${callerId} débloqué automatiquement`);
+                            sessionData.addLog(`[UNBLOCK] ${callerId} debloque automatiquement`);
                         } catch (error) {
-                            sessionData.addLog(`❌ Erreur déblocage auto ${callerId}: ${error.message}`);
+                            sessionData.addLog(`[X] Erreur deblocage auto ${callerId}: ${error.message}`);
                         }
                     }
                 }, blockDuration);
 
             } catch (blockError) {
-                sessionData.addLog(`❌ Erreur blocage: ${blockError.message}`);
+                sessionData.addLog(`[X] Erreur blocage: ${blockError.message}`);
             }
             sessionData.saveStats();
             return;
         }
 
         const msgDelay = HumanBehavior.postCallMessageDelay();
-        sessionData.addLog(`⏳ Message dans ${Math.round(msgDelay / 1000)}s...`);
+        sessionData.addLog(`[TIMER] Message dans ${Math.round(msgDelay / 1000)}s...`);
         await HumanBehavior.naturalDelay(msgDelay);
 
         try {
@@ -2744,14 +2744,14 @@ async function handleCall(client, call, sessionId) {
                 MessagePool.callRejections, remaining
             );
             await sendMessageHumanized(chat, rejectMsg, {}, 0, sessionData);
-            sessionData.addLog(`💬 Message envoyé à ${callerId}`);
+            sessionData.addLog(`[MSG] Message envoye a ${callerId}`);
         } catch (msgError) {
-            sessionData.addLog(`❌ Erreur message post-appel: ${msgError.message}`);
+            sessionData.addLog(`[X] Erreur message post-appel: ${msgError.message}`);
         }
 
     } catch (error) {
         const sessionData = getSessionData(sessionId);
-        sessionData.addLog(`❌ Erreur handler appel: ${error.message}`);
+        sessionData.addLog(`[X] Erreur handler appel: ${error.message}`);
     }
 }
 
@@ -2779,7 +2779,7 @@ app.post('/api/sessions', (req, res) => {
         const { name } = req.body;
         const sessionData = sessionManager.createSession(null, name || 'New Session');
         sessionManager.startSession(sessionData.id);
-        addLog(`📱 Nouvelle session créée: ${sessionData.id}`);
+        addLog(`[NEW] Nouvelle session creee: ${sessionData.id}`);
         res.json({ success: true, session: sessionData });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -2884,10 +2884,10 @@ app.post('/api/config', (req, res) => {
         
         if (sessionData) {
             sessionData.saveConfig();
-            sessionData.addLog('⚙️ Configuration mise à jour');
+            sessionData.addLog('[CONFIG] Configuration mise a jour');
         } else {
             saveConfig();
-            addLog('⚙️ Configuration mise à jour');
+            addLog('[CONFIG] Configuration mise a jour');
         }
         res.json({ success: true, message: 'Configuration enregistrée', sessionId: sessionId || 'global' });
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
@@ -3058,8 +3058,8 @@ app.post('/api/scan', async (req, res) => {
         if (!activeClient) return res.status(400).json({ success: false, message: 'Aucune session active' });
         
         const sessionData = sessionId ? getSessionData(sessionId) : null;
-        if (sessionData) sessionData.addLog('🔍 Scan manuel via interface');
-        else addLog('🔍 Scan manuel via interface');
+        if (sessionData) sessionData.addLog('[SCAN] Scan manuel via interface');
+        else addLog('[SCAN] Scan manuel via interface');
         
         const result = await scanAllGroups(sessionId);
         res.json({ success: true, sessionId: sessionId || 'global', ...result });
@@ -3074,10 +3074,10 @@ app.delete('/api/warnings', (req, res) => {
         if (sessionData) {
             sessionData.warnings = {};
             sessionData.saveWarnings();
-            sessionData.addLog('🗑️ Avertissements effacés');
+            sessionData.addLog('[SUPPR] Avertissements effaces');
         } else {
             fs.writeFileSync(WARNINGS_FILE, JSON.stringify({}));
-            addLog('🗑️ Avertissements effacés');
+            addLog('[SUPPR] Avertissements effaces');
         }
         res.json({ success: true, sessionId: sessionId || 'global' });
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
@@ -3112,8 +3112,8 @@ app.get('/api/groups/all', async (req, res) => {
         const sessionData = sessionId ? getSessionData(sessionId) : null;
         
         if (!activeClient) {
-            if (sessionData) sessionData.addLog('⚠️ /api/groups/all: Aucune session active');
-            else addLog('⚠️ /api/groups/all: Aucune session active');
+            if (sessionData) sessionData.addLog('[!] /api/groups/all: Aucune session active');
+            else addLog('[!] /api/groups/all: Aucune session active');
             return res.json([]);
         }
         const chats = await activeClient.getChats();
@@ -3133,14 +3133,14 @@ app.get('/api/groups/all', async (req, res) => {
             });
         }
         
-        if (sessionData) sessionData.addLog(`📋 /api/groups/all: ${groups.length} groupes trouvés`);
-        else addLog(`📋 /api/groups/all: ${groups.length} groupes trouvés`);
+        if (sessionData) sessionData.addLog(`[GROUPS] /api/groups/all: ${groups.length} groupes trouves`);
+        else addLog(`[GROUPS] /api/groups/all: ${groups.length} groupes trouves`);
         res.json(groups);
     } catch (error) {
         const sessionId = req.query.sessionId || sessionManager.activeSessionId;
         const sessionData = sessionId ? getSessionData(sessionId) : null;
-        if (sessionData) sessionData.addLog(`❌ Erreur /api/groups/all: ${error.message}`);
-        else addLog(`❌ Erreur /api/groups/all: ${error.message}`);
+        if (sessionData) sessionData.addLog(`[X] Erreur /api/groups/all: ${error.message}`);
+        else addLog(`[X] Erreur /api/groups/all: ${error.message}`);
         res.status(500).json([]);
     }
 });
@@ -3168,14 +3168,14 @@ app.post('/api/groups/leave', async (req, res) => {
             // Ignore si non supporté
         }
         
-        if (sessionData) sessionData.addLog(`🚪 Bot a quitté le groupe: ${groupName}`);
-        else addLog(`🚪 Bot a quitté le groupe: ${groupName}`);
+        if (sessionData) sessionData.addLog(`[LEAVE] Bot a quitte le groupe: ${groupName}`);
+        else addLog(`[LEAVE] Bot a quitte le groupe: ${groupName}`);
         res.json({ success: true, message: 'Groupe quitté' });
     } catch (error) {
         const sessionId = req.body.sessionId || sessionManager.activeSessionId;
         const sessionData = sessionId ? getSessionData(sessionId) : null;
-        if (sessionData) sessionData.addLog(`❌ Erreur quitter groupe: ${error.message}`);
-        else addLog(`❌ Erreur quitter groupe: ${error.message}`);
+        if (sessionData) sessionData.addLog(`[X] Erreur quitter groupe: ${error.message}`);
+        else addLog(`[X] Erreur quitter groupe: ${error.message}`);
         res.status(500).json({ success: false, message: error.message });
     }
 });
@@ -3199,14 +3199,14 @@ app.delete('/api/groups/delete', async (req, res) => {
         }
 
         await chat.leave();
-        if (sessionData) sessionData.addLog(`🗑️ Groupe supprimé (bot était admin): ${chat.name}`);
-        else addLog(`🗑️ Groupe supprimé (bot était admin): ${chat.name}`);
+        if (sessionData) sessionData.addLog(`[SUPPR] Groupe supprime (bot etait admin): ${chat.name}`);
+        else addLog(`[SUPPR] Groupe supprime (bot etait admin): ${chat.name}`);
         res.json({ success: true, message: 'Groupe quitté (suppression complète non supportée par l\'API)' });
     } catch (error) {
         const sessionId = req.body.sessionId || sessionManager.activeSessionId;
         const sessionData = sessionId ? getSessionData(sessionId) : null;
-        if (sessionData) sessionData.addLog(`❌ Erreur suppression groupe: ${error.message}`);
-        else addLog(`❌ Erreur suppression groupe: ${error.message}`);
+        if (sessionData) sessionData.addLog(`[X] Erreur suppression groupe: ${error.message}`);
+        else addLog(`[X] Erreur suppression groupe: ${error.message}`);
         res.status(500).json({ success: false, message: error.message });
     }
 });
@@ -3369,10 +3369,10 @@ app.post('/api/blocked/unblock', async (req, res) => {
         
         if (sessionData) {
             sessionData.saveCallSpamData();
-            sessionData.addLog(`🔓 ${userId} débloqué manuellement`);
+            sessionData.addLog(`[UNBLOCK] ${userId} debloque manuellement`);
         } else {
             saveCallSpamData();
-            addLog(`🔓 ${userId} débloqué manuellement`);
+            addLog(`[UNBLOCK] ${userId} debloque manuellement`);
         }
         res.json({ success: true, sessionId: sessionId || 'global', message: 'Débloqué' });
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
@@ -3415,8 +3415,8 @@ app.post('/api/menus', (req, res) => {
         const sessionData = sessionId ? getSessionData(sessionId) : null;
         
         const menu = createMenu(req.body, sessionData);
-        if (sessionData) sessionData.addLog(`📱 Menu créé: ${menu.id}`);
-        else addLog(`📱 Menu créé: ${menu.id}`);
+        if (sessionData) sessionData.addLog(`[MENU] Menu cree: ${menu.id}`);
+        else addLog(`[MENU] Menu cree: ${menu.id}`);
         res.json({ success: true, sessionId: sessionId || 'global', menu });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -3442,10 +3442,10 @@ app.put('/api/menus/:id', (req, res) => {
         
         if (sessionData) {
             sessionData.saveMenus();
-            sessionData.addLog(`📝 Menu mis à jour: ${menuId}`);
+            sessionData.addLog(`[EDIT] Menu mis a jour: ${menuId}`);
         } else {
             saveMenus();
-            addLog(`📝 Menu mis à jour: ${menuId}`);
+            addLog(`[EDIT] Menu mis a jour: ${menuId}`);
         }
         res.json({ success: true, sessionId: sessionId || 'global', menu: menus[menuId] });
     } catch (error) {
@@ -3468,10 +3468,10 @@ app.delete('/api/menus/:id', (req, res) => {
         
         if (sessionData) {
             sessionData.saveMenus();
-            sessionData.addLog(`🗑️ Menu supprimé: ${menuId}`);
+            sessionData.addLog(`[SUPPR] Menu supprime: ${menuId}`);
         } else {
             saveMenus();
-            addLog(`🗑️ Menu supprimé: ${menuId}`);
+            addLog(`[SUPPR] Menu supprime: ${menuId}`);
         }
         res.json({ success: true, sessionId: sessionId || 'global' });
     } catch (error) {
@@ -3515,15 +3515,15 @@ app.post('/api/menus/:id/test', async (req, res) => {
         }
 
         await sendInteractiveMenu(targetChat, menuId, sessionData);
-        if (sessionData) sessionData.addLog(`🧪 Menu testé: ${menuId} dans ${targetChat.name}`);
-        else addLog(`🧪 Menu testé: ${menuId} dans ${targetChat.name}`);
+        if (sessionData) sessionData.addLog(`[TEST] Menu teste: ${menuId} dans ${targetChat.name}`);
+        else addLog(`[TEST] Menu teste: ${menuId} dans ${targetChat.name}`);
         res.json({ success: true, sessionId: sessionId || 'global', groupName: targetChat.name });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
 });
 
-app.listen(PORT, () => console.log(`🌐 Interface web: http://localhost:${PORT}`));
+app.listen(PORT, () => console.log(`Interface web: http://localhost:${PORT}`));
 
 // ============================================================
 // 🚀 DÉMARRAGE
@@ -3537,8 +3537,8 @@ loadProcessedMessages();
 loadCallSpamData();
 loadMenus();
 
-console.log('🚀 Démarrage du bot WhatsApp...');
-console.log('🧠 Mode comportement humain activé');
+console.log('Demarrage du bot WhatsApp...');
+console.log('Mode comportement humain active');
 console.log('   ├─ Délais gaussiens (non uniformes)');
 console.log('   ├─ Simulation de frappe (typing indicator)');
 console.log('   ├─ Rate limiter (8 actions/min, 120/h)');
@@ -3550,7 +3550,7 @@ console.log('   └─ Multi-sessions activé');
 
 // Créer une session par défaut si aucune n'existe
 if (Object.keys(sessionManager.sessionsList).length === 0) {
-    console.log('📱 Création de la session initiale...');
+    console.log('Creation de la session initiale...');
     const defaultSession = sessionManager.createSession('session_default', 'Session principale');
     sessionManager.setActiveSession('session_default');
 }
@@ -3574,10 +3574,10 @@ const updateClientReference = () => {
 // Mettre à jour toutes les 5 secondes
 setInterval(updateClientReference, 5000);
 updateClientReference();
-console.log('   ├─ Jitter sur les intervalles de scan');
-console.log('   └─ 🗑️ Suppression V3 avec VÉRIFICATION post-delete');
+console.log('   |- Jitter sur les intervalles de scan');
+console.log('   |- Suppression V3 avec VERIFICATION post-delete');
 console.log('');
-console.log('📋 Commandes admin dans les groupes:');
+console.log('Commandes admin dans les groupes:');
 console.log('   ├─ !scan        → Scanner le groupe actuel');
 console.log('   ├─ !scanall     → Scanner tous les groupes');
 console.log('   ├─ !diagdelete  → Diagnostic des méthodes de suppression');

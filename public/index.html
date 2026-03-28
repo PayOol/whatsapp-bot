@@ -1520,7 +1520,7 @@
     <div class="qr-modal" id="qr-modal" style="display:none">
         <div class="qr-modal-content">
             <div class="qr-modal-header">
-                <h3>📱 Connexion WhatsApp</h3>
+                <h3>Connexion WhatsApp</h3>
                 <p>Scannez ce QR code avec votre téléphone</p>
             </div>
             <div class="qr-code-container" id="qr-code-container">
@@ -1574,30 +1574,30 @@
                         <!-- Sessions will be loaded here -->
                     </div>
                     <button class="btn btn-primary btn-sm" style="width:100%;margin-top:8px" onclick="showNewSessionModal()">
-                        ➕ Nouvelle session
+                        + Nouvelle session
                     </button>
                 </div>
                 
                 <div class="nav-group">
                     <div class="nav-group-label">Principal</div>
                     <div class="nav-link active" data-page="dashboard" onclick="navigateTo('dashboard',this)">
-                        <span class="nav-icon">📊</span>
+                        <span class="nav-icon">TD</span>
                         <span class="nav-label">Tableau de bord</span>
                     </div>
                     <div class="nav-link" data-page="config" onclick="navigateTo('config',this)">
-                        <span class="nav-icon">⚙️</span>
+                        <span class="nav-icon">CF</span>
                         <span class="nav-label">Configuration</span>
                     </div>
                     <div class="nav-link" data-page="groups" onclick="navigateTo('groups',this)">
-                        <span class="nav-icon">👥</span>
+                        <span class="nav-icon">GR</span>
                         <span class="nav-label">Groupes</span>
                     </div>
                     <div class="nav-link" data-page="users" onclick="navigateTo('users',this)">
-                        <span class="nav-icon">🛡️</span>
+                        <span class="nav-icon">UT</span>
                         <span class="nav-label">Utilisateurs</span>
                     </div>
                     <div class="nav-link" data-page="menus" onclick="navigateTo('menus',this)">
-                        <span class="nav-icon">📱</span>
+                        <span class="nav-icon">ME</span>
                         <span class="nav-label">Menus</span>
                     </div>
                 </div>
@@ -1605,7 +1605,7 @@
                 <div class="nav-group">
                     <div class="nav-group-label">Surveillance</div>
                     <div class="nav-link" data-page="logs" onclick="navigateTo('logs',this)">
-                        <span class="nav-icon">📜</span>
+                        <span class="nav-icon">LG</span>
                         <span class="nav-label">Logs</span>
                         <span class="nav-badge" id="logs-count" style="display:none">0</span>
                     </div>
@@ -1615,7 +1615,7 @@
             <div class="sidebar-footer">
                 <div class="theme-toggle-section">
                     <button class="theme-toggle-btn" onclick="toggleTheme()" id="theme-btn">
-                        <span class="theme-icon" id="theme-icon">🌙</span>
+                        <span class="theme-icon" id="theme-icon">D</span>
                         <span class="theme-label" id="theme-label">Mode clair</span>
                     </button>
                 </div>
@@ -1646,7 +1646,7 @@
                             <p class="page-subtitle">Vue d'ensemble de l'activité et des performances du bot</p>
                         </div>
                         <button class="btn btn-ghost btn-sm" onclick="loadStats();refreshLogs()">
-                            🔄 Actualiser
+                            Actualiser
                         </button>
                     </div>
 
@@ -1654,7 +1654,7 @@
                     <div class="stats-row">
                         <div class="stat-tile green clickable" onclick="showStatModal('groups')">
                             <div class="stat-tile-header">
-                                <div class="stat-tile-icon">👥</div>
+                                <div class="stat-tile-icon">GR</div>
                                 <span class="stat-tile-trend trend-up">Actif</span>
                             </div>
                             <div class="stat-tile-value" id="stat-groups">0</div>
@@ -1663,7 +1663,7 @@
                         </div>
                         <div class="stat-tile blue clickable" onclick="showStatModal('deleted')">
                             <div class="stat-tile-header">
-                                <div class="stat-tile-icon">🗑️</div>
+                                <div class="stat-tile-icon">DL</div>
                                 <span class="stat-tile-trend trend-neutral">Total</span>
                             </div>
                             <div class="stat-tile-value" id="stat-deleted">0</div>
@@ -1672,7 +1672,7 @@
                         </div>
                         <div class="stat-tile orange clickable" onclick="showStatModal('warnings')">
                             <div class="stat-tile-header">
-                                <div class="stat-tile-icon">⚠️</div>
+                                <div class="stat-tile-icon">AV</div>
                                 <span class="stat-tile-trend trend-neutral">Total</span>
                             </div>
                             <div class="stat-tile-value" id="stat-warnings">0</div>
@@ -1681,7 +1681,7 @@
                         </div>
                         <div class="stat-tile red clickable" onclick="showStatModal('banned')">
                             <div class="stat-tile-header">
-                                <div class="stat-tile-icon">🚫</div>
+                                <div class="stat-tile-icon">BN</div>
                                 <span class="stat-tile-trend trend-neutral">Total</span>
                             </div>
                             <div class="stat-tile-value" id="stat-banned">0</div>
@@ -1690,7 +1690,7 @@
                         </div>
                         <div class="stat-tile purple clickable" onclick="showStatModal('calls')">
                             <div class="stat-tile-header">
-                                <div class="stat-tile-icon">📞</div>
+                                <div class="stat-tile-icon">AP</div>
                                 <span class="stat-tile-trend trend-neutral">Total</span>
                             </div>
                             <div class="stat-tile-value" id="stat-calls">0</div>
@@ -1704,35 +1704,35 @@
                         <div class="card">
                             <div class="card-header">
                                 <h3 class="card-title">
-                                    <span class="card-title-icon">⚡</span>
+                                    <span class="card-title-icon">AR</span>
                                     Actions rapides
                                 </h3>
                             </div>
                             <div class="card-body">
                                 <div class="actions-grid">
                                     <div class="action-card" onclick="triggerScan()">
-                                        <div class="action-icon green">🔍</div>
+                                        <div class="action-icon green">SC</div>
                                         <div class="action-text">
                                             <h4>Scanner les groupes</h4>
                                             <p>Analyser tous les messages</p>
                                         </div>
                                     </div>
                                     <div class="action-card" onclick="clearWarnings()">
-                                        <div class="action-icon red">🗑️</div>
+                                        <div class="action-icon red">EA</div>
                                         <div class="action-text">
                                             <h4>Effacer avertissements</h4>
                                             <p>Réinitialiser les compteurs</p>
                                         </div>
                                     </div>
                                     <div class="action-card" onclick="navigateTo('config',document.querySelector('[data-page=config]'))">
-                                        <div class="action-icon blue">⚙️</div>
+                                        <div class="action-icon blue">CF</div>
                                         <div class="action-text">
                                             <h4>Configuration</h4>
                                             <p>Modifier les paramètres</p>
                                         </div>
                                     </div>
                                     <div class="action-card" onclick="navigateTo('groups',document.querySelector('[data-page=groups]'))">
-                                        <div class="action-icon orange">👥</div>
+                                        <div class="action-icon orange">GR</div>
                                         <div class="action-text">
                                             <h4>Gérer les groupes</h4>
                                             <p>Exceptions et exclusions</p>
@@ -1746,7 +1746,7 @@
                         <div class="card">
                             <div class="card-header">
                                 <h3 class="card-title">
-                                    <span class="card-title-icon">📈</span>
+                                    <span class="card-title-icon">AC</span>
                                     Activité récente
                                 </h3>
                                 <span class="badge badge-info"><span class="badge-dot"></span> 7 derniers jours</span>
@@ -1763,17 +1763,17 @@
                     <div class="card">
                         <div class="card-header">
                             <h3 class="card-title">
-                                <span class="card-title-icon">📜</span>
+                                <span class="card-title-icon">EV</span>
                                 Derniers événements
                             </h3>
                             <button class="btn btn-ghost btn-sm" onclick="refreshLogs()">
-                                🔄 Rafraîchir
+                                Rafraîchir
                             </button>
                         </div>
                         <div class="card-body" style="padding:0">
                             <div class="logs-box" id="logs-container" style="max-height:300px">
                                 <div class="log-empty">
-                                    <div class="log-empty-icon">📋</div>
+                                    <div class="log-empty-icon">LG</div>
                                     <p>Chargement des logs…</p>
                                 </div>
                             </div>
@@ -1835,7 +1835,7 @@
                                     </div>
                                     <div class="setting-row" style="padding-top:4px;border-bottom:none">
                                         <div class="setting-info">
-                                            <div class="setting-icon">🔄</div>
+                                            <div class="setting-icon">SA</div>
                                             <div class="setting-text">
                                                 <h4>Scan automatique</h4>
                                                 <p>Scanner les groupes périodiquement</p>
@@ -1854,7 +1854,7 @@
                         <div class="card">
                             <div class="card-header">
                                 <h3 class="card-title">
-                                    <span class="card-title-icon">⏱️</span>
+                                    <span class="card-title-icon">DL</span>
                                     Délais anti-détection
                                 </h3>
                             </div>
@@ -1877,14 +1877,14 @@
                         <div class="card">
                             <div class="card-header">
                                 <h3 class="card-title">
-                                    <span class="card-title-icon">👋</span>
+                                    <span class="card-title-icon">MB</span>
                                     Message de bienvenue
                                 </h3>
                             </div>
                             <div class="card-body">
                                 <div class="setting-row" style="padding-top:0">
                                     <div class="setting-info">
-                                        <div class="setting-icon">🔔</div>
+                                        <div class="setting-icon">AC</div>
                                         <div class="setting-text">
                                             <h4>Activer le message de bienvenue</h4>
                                             <p>Envoyer un message aux nouveaux membres</p>
@@ -1912,10 +1912,10 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
 
                         <div class="btn-group" style="margin-top:8px">
                             <button type="submit" class="btn btn-primary">
-                                💾 Enregistrer les modifications
+                                Enregistrer les modifications
                             </button>
                             <button type="button" class="btn btn-ghost" onclick="loadConfig()">
-                                ↩️ Réinitialiser
+                                Reinitialiser
                             </button>
                         </div>
                     </form>
@@ -1932,8 +1932,8 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
 
                     <!-- Tabs -->
                     <div class="tabs-container">
-                        <button class="tab-btn active" onclick="switchGroupTab('admin')" id="tab-admin">👑 Groupes administrés</button>
-                        <button class="tab-btn" onclick="switchGroupTab('all')" id="tab-all">🌐 Total des groupes</button>
+                        <button class="tab-btn active" onclick="switchGroupTab('admin')" id="tab-admin">Groupes administres</button>
+                        <button class="tab-btn" onclick="switchGroupTab('all')" id="tab-all">Total des groupes</button>
                     </div>
 
                     <!-- Tab Admin -->
@@ -1941,16 +1941,16 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                     <div class="card">
                         <div class="card-header">
                             <h3 class="card-title">
-                                <span class="card-title-icon">🏷️</span>
-                                Exclusions par motif
-                            </h3>
+                                    <span class="card-title-icon">EX</span>
+                                    Exclusions par motif
+                                </h3>
                         </div>
                         <div class="card-body">
                             <div class="input-with-btn">
                                 <input type="text" class="form-input" id="patternException" placeholder="Ex: Test, Admin, Staff…"
                                        onkeydown="if(event.key==='Enter'){event.preventDefault();addPatternException()}">
                                 <button class="btn btn-ghost" onclick="addPatternException()">
-                                    ➕ Ajouter
+                                    + Ajouter
                                 </button>
                             </div>
                             <p class="form-hint">Les groupes dont le nom contient ce mot seront automatiquement exclus de la surveillance</p>
@@ -1961,17 +1961,17 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                     <div class="card">
                         <div class="card-header">
                             <h3 class="card-title">
-                                <span class="card-title-icon">👥</span>
+                                <span class="card-title-icon">GA</span>
                                 Liste des groupes administrés
                             </h3>
                             <button class="btn btn-ghost btn-sm" onclick="loadGroups()">
-                                🔄 Rafraîchir
+                                Rafraichir
                             </button>
                         </div>
                         <div class="card-body" style="padding:16px">
                             <div class="group-grid" id="groups-list">
                                 <div class="empty-state">
-                                    <div class="empty-state-icon">🔌</div>
+                                    <div class="empty-state-icon">--</div>
                                     <p class="empty-state-text">Chargement des groupes…</p>
                                 </div>
                             </div>
@@ -1984,18 +1984,18 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                     <div class="card">
                         <div class="card-header">
                             <h3 class="card-title">
-                                <span class="card-title-icon">🌐</span>
+                                <span class="card-title-icon">TG</span>
                                 Tous les groupes
                             </h3>
                             <button class="btn btn-ghost btn-sm" onclick="loadAllGroups()">
-                                🔄 Rafraîchir
+                                Rafraichir
                             </button>
                         </div>
                         <div class="card-body" style="padding:16px">
                             <p class="form-hint" style="margin-bottom:12px">Liste de tous les groupes où le bot est présent, qu'il soit admin ou non</p>
                             <div class="group-grid" id="all-groups-list">
                                 <div class="empty-state">
-                                    <div class="empty-state-icon">🔌</div>
+                                    <div class="empty-state-icon">--</div>
                                     <p class="empty-state-text">Chargement des groupes…</p>
                                 </div>
                             </div>
@@ -2016,14 +2016,14 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                     <div class="card">
                         <div class="card-header">
                             <h3 class="card-title">
-                                <span class="card-title-icon">👑</span>
+                                <span class="card-title-icon">PA</span>
                                 Protection des administrateurs
                             </h3>
                         </div>
                         <div class="card-body">
                             <div class="setting-row" style="padding-top:0;border-bottom:none">
                                 <div class="setting-info">
-                                    <div class="setting-icon">🛡️</div>
+                                    <div class="setting-icon">EX</div>
                                     <div class="setting-text">
                                         <h4>Exclure les admins automatiquement</h4>
                                         <p>Les administrateurs peuvent partager des liens librement</p>
@@ -2040,7 +2040,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                     <div class="card">
                         <div class="card-header">
                             <h3 class="card-title">
-                                <span class="card-title-icon">✅</span>
+                                <span class="card-title-icon">LB</span>
                                 Liste blanche
                             </h3>
                         </div>
@@ -2049,7 +2049,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                                 <input type="text" class="form-input" id="userException" placeholder="Numéro WhatsApp (ex: 237682167016)"
                                        onkeydown="if(event.key==='Enter'){event.preventDefault();addUserException()}">
                                 <button class="btn btn-ghost" onclick="addUserException()">
-                                    ➕ Ajouter
+                                    + Ajouter
                                 </button>
                             </div>
                             <p class="form-hint">Entrez le numéro WhatsApp sans le symbole + ni espaces</p>
@@ -2066,7 +2066,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                             <p class="page-subtitle">Créez des menus avec boutons et listes pour vos groupes WhatsApp</p>
                         </div>
                         <button class="btn btn-primary btn-sm" onclick="showMenuEditor()">
-                            ➕ Nouveau menu
+                            + Nouveau menu
                         </button>
                     </div>
 
@@ -2075,13 +2075,13 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                         <div class="card">
                             <div class="card-header">
                                 <h3 class="card-title">
-                                    <span class="card-title-icon">📋</span>
-                                    Menus configurés
+                                    <span class="card-title-icon">MC</span>
+                                    Menus configures
                                 </h3>
                             </div>
                             <div class="card-body" id="menus-list">
                                 <div class="empty-state">
-                                    <div class="empty-state-icon">📱</div>
+                                    <div class="empty-state-icon">--</div>
                                     <p class="empty-state-text">Aucun menu configuré. Créez votre premier menu interactif.</p>
                                 </div>
                             </div>
@@ -2091,23 +2091,23 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                         <div class="card">
                             <div class="card-header">
                                 <h3 class="card-title">
-                                    <span class="card-title-icon">💡</span>
+                                    <span class="card-title-icon">GU</span>
                                     Guide d'utilisation
                                 </h3>
                             </div>
                             <div class="card-body">
                                 <div style="font-size:0.85rem;color:var(--text-secondary);line-height:1.8">
-                                    <p><strong>📱 Types de menus :</strong></p>
+                                    <p><strong>Types de menus :</strong></p>
                                     <ul style="margin:8px 0 16px 20px">
                                         <li><strong>Boutons</strong> — Jusqu'à 3 boutons cliquables</li>
                                         <li><strong>Liste</strong> — Jusqu'à 10 options organisées par sections</li>
                                     </ul>
-                                    <p><strong>⚡ Déclencheurs :</strong></p>
+                                    <p><strong>Declencheurs :</strong></p>
                                     <ul style="margin:8px 0 16px 20px">
                                         <li>Les utilisateurs tapent le mot-clé pour afficher le menu</li>
                                         <li>Exemple: "menu", "aide", "catalogue"</li>
                                     </ul>
-                                    <p><strong>🎯 Actions disponibles :</strong></p>
+                                    <p><strong>Actions disponibles :</strong></p>
                                     <ul style="margin:8px 0 0 20px">
                                         <li>Envoyer un message</li>
                                         <li>Afficher un sous-menu</li>
@@ -2128,21 +2128,21 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                             <p class="page-subtitle">Historique détaillé de toutes les actions du bot</p>
                         </div>
                         <button class="btn btn-ghost btn-sm" onclick="refreshLogs()">
-                            🔄 Rafraîchir
+                            Rafraichir
                         </button>
                     </div>
 
                     <div class="card">
                         <div class="card-header">
                             <h3 class="card-title">
-                                <span class="card-title-icon">📜</span>
-                                Tous les événements
+                                <span class="card-title-icon">EV</span>
+                                Tous les evenements
                             </h3>
                         </div>
                         <div class="card-body" style="padding:0">
                             <div class="logs-box" id="logs-page-container" style="max-height:640px">
                                 <div class="log-empty">
-                                    <div class="log-empty-icon">📋</div>
+                                    <div class="log-empty-icon">LG</div>
                                     <p>Chargement des logs…</p>
                                 </div>
                             </div>
@@ -2186,13 +2186,13 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
        ═══════════════════════════════════════ */
     function showToast(message, type = 'success', title = null) {
         const container = document.getElementById('toast-container');
-        const icons = { success: '✅', error: '❌', warning: '⚠️' };
+        const icons = { success: '[OK]', error: '[X]', warning: '[!]' };
         const titles = { success: 'Succès', error: 'Erreur', warning: 'Attention' };
 
         const toast = document.createElement('div');
         toast.className = `toast toast-${type}`;
         toast.innerHTML = `
-            <div class="toast-icon">${icons[type] || '✅'}</div>
+            <div class="toast-icon">${icons[type] || '[OK]'}</div>
             <div class="toast-body">
                 <div class="toast-title">${title || titles[type] || 'Info'}</div>
                 <div class="toast-msg">${message}</div>
@@ -2438,7 +2438,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             const c2 = document.getElementById('logs-page-container');
 
             if (!logs.length) {
-                const empty = `<div class="log-empty"><div class="log-empty-icon">📋</div><p>Aucun événement enregistré</p></div>`;
+                const empty = `<div class="log-empty"><div class="log-empty-icon">LG</div><p>Aucun événement enregistré</p></div>`;
                 c1.innerHTML = empty;
                 c2.innerHTML = empty;
                 return;
@@ -2697,8 +2697,8 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             if (data.excludedPatterns?.length) {
                 container.innerHTML = data.excludedPatterns.map(p => `
                     <span class="tag">
-                        🚫 ${escapeHtml(p)}
-                        <button class="tag-remove" onclick="removePattern('${escapeHtml(p)}')">✕</button>
+                        [X] ${escapeHtml(p)}
+                        <button class="tag-remove" onclick="removePattern('${escapeHtml(p)}')">x</button>
                     </span>
                 `).join('');
             } else {
@@ -2762,25 +2762,25 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                     const callEx = typeof u === 'object' ? u.callException : false;
                     return `
                     <div class="user-exception-item">
-                        <span class="user-id">👤 ${escapeHtml(userId)}</span>
+                        <span class="user-id">ID: ${escapeHtml(userId)}</span>
                         <div class="exception-options">
                             <label class="exception-checkbox">
                                 <input type="checkbox" ${linkEx ? 'checked' : ''} 
                                     onchange="updateUserException('${escapeHtml(userId)}', 'link', this.checked)">
-                                � Liens
+                                Liens
                             </label>
                             <label class="exception-checkbox">
                                 <input type="checkbox" ${callEx ? 'checked' : ''} 
                                     onchange="updateUserException('${escapeHtml(userId)}', 'call', this.checked)">
-                                📞 Appels
+                                Appels
                             </label>
                         </div>
-                        <button class="tag-remove" onclick="removeUserException('${escapeHtml(userId)}')">✕</button>
+                        <button class="tag-remove" onclick="removeUserException('${escapeHtml(userId)}')">x</button>
                     </div>
                 `}).join('');
             } else {
                 container.innerHTML = `<div class="empty-state" style="padding:24px">
-                    <div class="empty-state-icon" style="font-size:1.5rem">🛡️</div>
+                    <div class="empty-state-icon" style="font-size:1.5rem">--</div>
                     <p class="empty-state-text" style="font-size:0.8rem">Aucun utilisateur en liste blanche</p>
                 </div>`;
             }
@@ -2911,12 +2911,12 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         
         if (html.getAttribute('data-theme') === 'light') {
             html.removeAttribute('data-theme');
-            icon.textContent = '🌙';
+            icon.textContent = 'D';
             label.textContent = 'Mode clair';
             localStorage.setItem('theme', 'dark');
         } else {
             html.setAttribute('data-theme', 'light');
-            icon.textContent = '☀️';
+            icon.textContent = 'L';
             label.textContent = 'Mode sombre';
             localStorage.setItem('theme', 'light');
         }
@@ -2929,7 +2929,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         
         if (saved === 'light') {
             document.documentElement.setAttribute('data-theme', 'light');
-            icon.textContent = '☀️';
+            icon.textContent = 'L';
             label.textContent = 'Mode sombre';
         }
     }
@@ -2957,11 +2957,11 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
     // 📊 STAT MODALS
     // ============================================================
     const statConfig = {
-        groups: { title: 'Groupes administrés', icon: '👥', color: 'var(--success)' },
-        deleted: { title: 'Liens supprimés', icon: '🗑️', color: 'var(--info)' },
-        warnings: { title: 'Avertissements', icon: '⚠️', color: 'var(--warning)' },
-        banned: { title: 'Utilisateurs bannis', icon: '🚫', color: 'var(--danger)' },
-        calls: { title: 'Appels rejetés', icon: '📞', color: 'var(--accent)' }
+        groups: { title: 'Groupes administrés', icon: 'GR', color: 'var(--success)' },
+        deleted: { title: 'Liens supprimés', icon: 'DL', color: 'var(--info)' },
+        warnings: { title: 'Avertissements', icon: 'AV', color: 'var(--warning)' },
+        banned: { title: 'Utilisateurs bannis', icon: 'BN', color: 'var(--danger)' },
+        calls: { title: 'Appels rejetés', icon: 'AP', color: 'var(--accent)' }
     };
     
     async function showStatModal(type) {
@@ -3036,7 +3036,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             
             if (!menuArray.length) {
                 container.innerHTML = `<div class="empty-state">
-                    <div class="empty-state-icon">📱</div>
+                    <div class="empty-state-icon">--</div>
                     <p class="empty-state-text">Aucun menu configuré. Créez votre premier menu interactif.</p>
                 </div>`;
                 return;
@@ -3045,7 +3045,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             container.innerHTML = menuArray.map(menu => `
                 <div class="group-card" style="margin-bottom:12px">
                     <div class="group-left">
-                        <div class="group-avatar">${menu.type === 'buttons' ? '🔘' : '📋'}</div>
+                        <div class="group-avatar">${menu.type === 'buttons' ? '[B]' : '[L]'}</div>
                         <div class="group-details">
                             <div class="group-name">${escapeHtml(menu.title)}</div>
                             <div class="group-meta">
@@ -3058,9 +3058,9 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                         </div>
                     </div>
                     <div class="group-actions">
-                        <button class="btn btn-ghost btn-sm" onclick="testMenu('${menu.id}')">🧪 Tester</button>
-                        <button class="btn btn-ghost btn-sm" onclick="editMenu('${menu.id}')">✏️ Modifier</button>
-                        <button class="btn btn-danger btn-sm" onclick="deleteMenu('${menu.id}')">🗑️</button>
+                        <button class="btn btn-ghost btn-sm" onclick="testMenu('${menu.id}')">Tester</button>
+                        <button class="btn btn-ghost btn-sm" onclick="editMenu('${menu.id}')">Modifier</button>
+                        <button class="btn btn-danger btn-sm" onclick="deleteMenu('${menu.id}')">Suppr.</button>
                     </div>
                 </div>
             `).join('');
@@ -3398,15 +3398,15 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                     <div class="session-status-dot ${statusClass}"></div>
                     <div class="session-info">
                         <div class="session-name">${escapeHtml(displayName)}</div>
-                        <div class="session-phone">${phone ? '📱 ' + phone : getStatusText(session.status)}</div>
+                        <div class="session-phone">${phone ? 'Tel: ' + phone : getStatusText(session.status)}</div>
                     </div>
                     <div class="session-actions">
                         ${session.status === 'connected' ? 
-                            `<button class="session-action-btn" onclick="event.stopPropagation();showSessionQR('${session.id}')" title="QR Code">📱</button>` : 
+                            `<button class="session-action-btn" onclick="event.stopPropagation();showSessionQR('${session.id}')" title="QR Code">QR</button>` : 
                             session.status === 'qr' ?
-                            `<button class="session-action-btn" onclick="event.stopPropagation();showSessionQR('${session.id}')" title="QR Code">📱</button>` : ''
+                            `<button class="session-action-btn" onclick="event.stopPropagation();showSessionQR('${session.id}')" title="QR Code">QR</button>` : ''
                         }
-                        <button class="session-action-btn danger" onclick="event.stopPropagation();deleteSession('${session.id}')" title="Supprimer">🗑️</button>
+                        <button class="session-action-btn danger" onclick="event.stopPropagation();deleteSession('${session.id}')" title="Supprimer">X</button>
                     </div>
                 </div>
             `;
@@ -3415,12 +3415,12 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
     
     function getStatusText(status) {
         const statusMap = {
-            'connected': '✅ Connecté',
-            'qr': '⏳ QR Code',
-            'pending': '⏳ En attente',
-            'disconnected': '❌ Déconnecté',
-            'auth_failure': '❌ Échec auth',
-            'stopped': '⏹️ Arrêté'
+            'connected': '[OK] Connecte',
+            'qr': '[...] QR Code',
+            'pending': '[...] En attente',
+            'disconnected': '[X] Deconnecte',
+            'auth_failure': '[X] Echec auth',
+            'stopped': '[_] Arrete'
         };
         return statusMap[status] || status;
     }
@@ -3527,7 +3527,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
     <div id="menu-editor-modal" class="modal-overlay">
         <div class="modal-content" style="max-width:600px;max-height:90vh;overflow-y:auto">
             <div class="modal-header">
-                <h3 id="menu-editor-title">📱 Créer un menu</h3>
+                <h3 id="menu-editor-title">Creer un menu</h3>
                 <button class="modal-close" onclick="closeMenuEditor()">×</button>
             </div>
             <div style="padding:20px">
@@ -3560,7 +3560,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                     
                     <div class="setting-row">
                         <div class="setting-info">
-                            <div class="setting-icon">✅</div>
+                            <div class="setting-icon">[OK]</div>
                             <div class="setting-text">
                                 <h4>Menu actif</h4>
                                 <p>Le menu répondra aux déclencheurs</p>
@@ -3591,7 +3591,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                     </div>
                     
                     <div class="btn-group" style="margin-top:24px">
-                        <button type="submit" class="btn btn-primary">💾 Enregistrer</button>
+                        <button type="submit" class="btn btn-primary">Enregistrer</button>
                         <button type="button" class="btn btn-ghost" onclick="closeMenuEditor()">Annuler</button>
                     </div>
                 </form>
