@@ -1474,7 +1474,15 @@ async function scanOldMessages(chat, limit = 100) {
 async function scanAllGroups() {
     addLog('🔍 ========== SCAN AUTOMATIQUE ==========');
     const chats = await client.getChats();
-    const groups = chats.filter(c => c.isGroup);
+    const botId = client.info.wid._serialized;
+    
+    // Filtrer les groupes où le bot est encore participant
+    const groups = chats.filter(c => {
+        if (!c.isGroup) return false;
+        const botParticipant = c.participants?.find(p => p.id._serialized === botId);
+        return !!botParticipant; // Bot doit être dans le groupe
+    });
+    
     addLog(`📊 ${groups.length} groupes détectés`);
 
     let totalDeleted = 0, totalScanned = 0, totalWarned = 0;
