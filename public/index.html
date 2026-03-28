@@ -2489,9 +2489,11 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             }
 
             const html = logs.slice().reverse().map(log => {
-                const parts = log.split('] ');
-                const time = parts[0] ? parts[0].replace('[', '') + '' : '';
-                const msg = parts[1] || log;
+                // Le format est: [date/heure] message
+                // On doit séparer la date du message sans couper les tags
+                const match = log.match(/^\[([^\]]+)\] (.+)$/);
+                const time = match ? match[1] : '';
+                const msg = match ? match[2] : log;
 
                 let cls = '';
                 if (msg.includes('[X]') || msg.toLowerCase().includes('supprim') || msg.toLowerCase().includes('banni') || msg.toLowerCase().includes('erreur')) cls = 'error';
