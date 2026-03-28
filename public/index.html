@@ -6,6 +6,7 @@
     <title>WhatsApp Bot — PayOol™</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%2325D366'/%3E%3Cpath d='M16 6c-5.5 0-10 4.5-10 10 0 1.8.5 3.5 1.3 5L6 26l5.2-1.3c1.4.7 3 1.1 4.7 1.1 5.5 0 10-4.5 10-10S21.5 6 16 6zm4.7 13.5c-.3.5-1.1.8-1.8.8-.5 0-1.1-.1-1.9-.5-2.2-1-3.5-3.2-3.6-3.4-.1-.2-.8-1.1-.8-2.1s.5-1.5.7-1.7c.2-.2.4-.3.6-.3h.5c.2 0 .4 0 .5.4.2.5.7 1.7.7 1.8.1.1.1.3 0 .4-.1.2-.1.3-.2.4l-.3.4c-.1.1-.2.3-.1.5.1.2.5.8 1.1 1.4.8.7 1.4 1 1.6 1.1.2.1.4.1.5-.1.1-.2.5-.6.7-.8.2-.2.3-.2.5-.1l1.6.8c.2.1.4.2.5.3.1.2.1.9-.2 1.4z' fill='white'/%3E%3C/svg%3E">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
         *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
 
@@ -1581,23 +1582,23 @@
                 <div class="nav-group">
                     <div class="nav-group-label">Principal</div>
                     <div class="nav-link active" data-page="dashboard" onclick="navigateTo('dashboard',this)">
-                        <span class="nav-icon">TD</span>
+                        <span class="nav-icon"><i class="fas fa-chart-line"></i></span>
                         <span class="nav-label">Tableau de bord</span>
                     </div>
                     <div class="nav-link" data-page="config" onclick="navigateTo('config',this)">
-                        <span class="nav-icon">CF</span>
+                        <span class="nav-icon"><i class="fas fa-sliders-h"></i></span>
                         <span class="nav-label">Configuration</span>
                     </div>
                     <div class="nav-link" data-page="groups" onclick="navigateTo('groups',this)">
-                        <span class="nav-icon">GR</span>
+                        <span class="nav-icon"><i class="fas fa-users"></i></span>
                         <span class="nav-label">Groupes</span>
                     </div>
                     <div class="nav-link" data-page="users" onclick="navigateTo('users',this)">
-                        <span class="nav-icon">UT</span>
+                        <span class="nav-icon"><i class="fas fa-shield-alt"></i></span>
                         <span class="nav-label">Utilisateurs</span>
                     </div>
                     <div class="nav-link" data-page="menus" onclick="navigateTo('menus',this)">
-                        <span class="nav-icon">ME</span>
+                        <span class="nav-icon"><i class="fas fa-cog"></i></span>
                         <span class="nav-label">Menus</span>
                     </div>
                 </div>
@@ -1605,7 +1606,7 @@
                 <div class="nav-group">
                     <div class="nav-group-label">Surveillance</div>
                     <div class="nav-link" data-page="logs" onclick="navigateTo('logs',this)">
-                        <span class="nav-icon">LG</span>
+                        <span class="nav-icon"><i class="fas fa-clipboard-list"></i></span>
                         <span class="nav-label">Logs</span>
                         <span class="nav-badge" id="logs-count" style="display:none">0</span>
                     </div>
@@ -1615,7 +1616,7 @@
             <div class="sidebar-footer">
                 <div class="theme-toggle-section">
                     <button class="theme-toggle-btn" onclick="toggleTheme()" id="theme-btn">
-                        <span class="theme-icon" id="theme-icon">D</span>
+                        <span class="theme-icon" id="theme-icon"><i class="fas fa-moon"></i></span>
                         <span class="theme-label" id="theme-label">Mode clair</span>
                     </button>
                 </div>
@@ -1654,7 +1655,7 @@
                     <div class="stats-row">
                         <div class="stat-tile green clickable" onclick="showStatModal('groups')">
                             <div class="stat-tile-header">
-                                <div class="stat-tile-icon">GR</div>
+                                <div class="stat-tile-icon"><i class="fas fa-users"></i></div>
                                 <span class="stat-tile-trend trend-up">Actif</span>
                             </div>
                             <div class="stat-tile-value" id="stat-groups">0</div>
@@ -1663,7 +1664,7 @@
                         </div>
                         <div class="stat-tile blue clickable" onclick="showStatModal('deleted')">
                             <div class="stat-tile-header">
-                                <div class="stat-tile-icon">DL</div>
+                                <div class="stat-tile-icon"><i class="fas fa-trash-alt"></i></div>
                                 <span class="stat-tile-trend trend-neutral">Total</span>
                             </div>
                             <div class="stat-tile-value" id="stat-deleted">0</div>
@@ -1672,7 +1673,7 @@
                         </div>
                         <div class="stat-tile orange clickable" onclick="showStatModal('warnings')">
                             <div class="stat-tile-header">
-                                <div class="stat-tile-icon">AV</div>
+                                <div class="stat-tile-icon"><i class="fas fa-exclamation-triangle"></i></div>
                                 <span class="stat-tile-trend trend-neutral">Total</span>
                             </div>
                             <div class="stat-tile-value" id="stat-warnings">0</div>
@@ -1681,7 +1682,7 @@
                         </div>
                         <div class="stat-tile red clickable" onclick="showStatModal('banned')">
                             <div class="stat-tile-header">
-                                <div class="stat-tile-icon">BN</div>
+                                <div class="stat-tile-icon"><i class="fas fa-ban"></i></div>
                                 <span class="stat-tile-trend trend-neutral">Total</span>
                             </div>
                             <div class="stat-tile-value" id="stat-banned">0</div>
@@ -1690,7 +1691,7 @@
                         </div>
                         <div class="stat-tile purple clickable" onclick="showStatModal('calls')">
                             <div class="stat-tile-header">
-                                <div class="stat-tile-icon">AP</div>
+                                <div class="stat-tile-icon"><i class="fas fa-phone-slash"></i></div>
                                 <span class="stat-tile-trend trend-neutral">Total</span>
                             </div>
                             <div class="stat-tile-value" id="stat-calls">0</div>
@@ -1704,35 +1705,35 @@
                         <div class="card">
                             <div class="card-header">
                                 <h3 class="card-title">
-                                    <span class="card-title-icon">AR</span>
+                                    <span class="card-title-icon"><i class="fas fa-bolt"></i></span>
                                     Actions rapides
                                 </h3>
                             </div>
                             <div class="card-body">
                                 <div class="actions-grid">
                                     <div class="action-card" onclick="triggerScan()">
-                                        <div class="action-icon green">SC</div>
+                                        <div class="action-icon green"><i class="fas fa-search"></i></div>
                                         <div class="action-text">
                                             <h4>Scanner les groupes</h4>
                                             <p>Analyser tous les messages</p>
                                         </div>
                                     </div>
                                     <div class="action-card" onclick="clearWarnings()">
-                                        <div class="action-icon red">EA</div>
+                                        <div class="action-icon red"><i class="fas fa-eraser"></i></div>
                                         <div class="action-text">
                                             <h4>Effacer avertissements</h4>
                                             <p>Réinitialiser les compteurs</p>
                                         </div>
                                     </div>
                                     <div class="action-card" onclick="navigateTo('config',document.querySelector('[data-page=config]'))">
-                                        <div class="action-icon blue">CF</div>
+                                        <div class="action-icon blue"><i class="fas fa-sliders-h"></i></div>
                                         <div class="action-text">
                                             <h4>Configuration</h4>
                                             <p>Modifier les paramètres</p>
                                         </div>
                                     </div>
                                     <div class="action-card" onclick="navigateTo('groups',document.querySelector('[data-page=groups]'))">
-                                        <div class="action-icon orange">GR</div>
+                                        <div class="action-icon orange"><i class="fas fa-users-cog"></i></div>
                                         <div class="action-text">
                                             <h4>Gérer les groupes</h4>
                                             <p>Exceptions et exclusions</p>
@@ -1746,7 +1747,7 @@
                         <div class="card">
                             <div class="card-header">
                                 <h3 class="card-title">
-                                    <span class="card-title-icon">AC</span>
+                                    <span class="card-title-icon"><i class="fas fa-chart-bar"></i></span>
                                     Activité récente
                                 </h3>
                                 <span class="badge badge-info"><span class="badge-dot"></span> 7 derniers jours</span>
@@ -1763,7 +1764,7 @@
                     <div class="card">
                         <div class="card-header">
                             <h3 class="card-title">
-                                <span class="card-title-icon">EV</span>
+                                <span class="card-title-icon"><i class="fas fa-history"></i></span>
                                 Derniers événements
                             </h3>
                             <button class="btn btn-ghost btn-sm" onclick="refreshLogs()">
@@ -1773,7 +1774,7 @@
                         <div class="card-body" style="padding:0">
                             <div class="logs-box" id="logs-container" style="max-height:300px">
                                 <div class="log-empty">
-                                    <div class="log-empty-icon">LG</div>
+                                    <div class="log-empty-icon"><i class="fas fa-clipboard-list"></i></div>
                                     <p>Chargement des logs…</p>
                                 </div>
                             </div>
@@ -1835,7 +1836,7 @@
                                     </div>
                                     <div class="setting-row" style="padding-top:4px;border-bottom:none">
                                         <div class="setting-info">
-                                            <div class="setting-icon">SA</div>
+                                            <div class="setting-icon"><i class="fas fa-sync-alt"></i></div>
                                             <div class="setting-text">
                                                 <h4>Scan automatique</h4>
                                                 <p>Scanner les groupes périodiquement</p>
@@ -1854,7 +1855,7 @@
                         <div class="card">
                             <div class="card-header">
                                 <h3 class="card-title">
-                                    <span class="card-title-icon">DL</span>
+                                    <span class="card-title-icon"><i class="fas fa-clock"></i></span>
                                     Délais anti-détection
                                 </h3>
                             </div>
@@ -1877,14 +1878,14 @@
                         <div class="card">
                             <div class="card-header">
                                 <h3 class="card-title">
-                                    <span class="card-title-icon">MB</span>
+                                    <span class="card-title-icon"><i class="fas fa-hand-wave"></i></span>
                                     Message de bienvenue
                                 </h3>
                             </div>
                             <div class="card-body">
                                 <div class="setting-row" style="padding-top:0">
                                     <div class="setting-info">
-                                        <div class="setting-icon">AC</div>
+                                        <div class="setting-icon"><i class="fas fa-power-off"></i></div>
                                         <div class="setting-text">
                                             <h4>Activer le message de bienvenue</h4>
                                             <p>Envoyer un message aux nouveaux membres</p>
@@ -1941,7 +1942,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                     <div class="card">
                         <div class="card-header">
                             <h3 class="card-title">
-                                    <span class="card-title-icon">EX</span>
+                                    <span class="card-title-icon"><i class="fas fa-filter"></i></span>
                                     Exclusions par motif
                                 </h3>
                         </div>
@@ -1961,7 +1962,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                     <div class="card">
                         <div class="card-header">
                             <h3 class="card-title">
-                                <span class="card-title-icon">GA</span>
+                                <span class="card-title-icon"><i class="fas fa-user-shield"></i></span>
                                 Liste des groupes administrés
                             </h3>
                             <button class="btn btn-ghost btn-sm" onclick="loadGroups()">
@@ -1971,7 +1972,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                         <div class="card-body" style="padding:16px">
                             <div class="group-grid" id="groups-list">
                                 <div class="empty-state">
-                                    <div class="empty-state-icon">--</div>
+                                    <div class="empty-state-icon"><i class="fas fa-inbox"></i></div>
                                     <p class="empty-state-text">Chargement des groupes…</p>
                                 </div>
                             </div>
@@ -1984,7 +1985,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                     <div class="card">
                         <div class="card-header">
                             <h3 class="card-title">
-                                <span class="card-title-icon">TG</span>
+                                <span class="card-title-icon"><i class="fas fa-layer-group"></i></span>
                                 Tous les groupes
                             </h3>
                             <button class="btn btn-ghost btn-sm" onclick="loadAllGroups()">
@@ -1995,7 +1996,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                             <p class="form-hint" style="margin-bottom:12px">Liste de tous les groupes où le bot est présent, qu'il soit admin ou non</p>
                             <div class="group-grid" id="all-groups-list">
                                 <div class="empty-state">
-                                    <div class="empty-state-icon">--</div>
+                                    <div class="empty-state-icon"><i class="fas fa-inbox"></i></div>
                                     <p class="empty-state-text">Chargement des groupes…</p>
                                 </div>
                             </div>
@@ -2016,14 +2017,14 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                     <div class="card">
                         <div class="card-header">
                             <h3 class="card-title">
-                                <span class="card-title-icon">PA</span>
+                                <span class="card-title-icon"><i class="fas fa-user-shield"></i></span>
                                 Protection des administrateurs
                             </h3>
                         </div>
                         <div class="card-body">
                             <div class="setting-row" style="padding-top:0;border-bottom:none">
                                 <div class="setting-info">
-                                    <div class="setting-icon">EX</div>
+                                    <div class="setting-icon"><i class="fas fa-shield-alt"></i></div>
                                     <div class="setting-text">
                                         <h4>Exclure les admins automatiquement</h4>
                                         <p>Les administrateurs peuvent partager des liens librement</p>
@@ -2040,7 +2041,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                     <div class="card">
                         <div class="card-header">
                             <h3 class="card-title">
-                                <span class="card-title-icon">LB</span>
+                                <span class="card-title-icon"><i class="fas fa-clipboard-check"></i></span>
                                 Liste blanche
                             </h3>
                         </div>
@@ -2075,13 +2076,13 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                         <div class="card">
                             <div class="card-header">
                                 <h3 class="card-title">
-                                    <span class="card-title-icon">MC</span>
+                                    <span class="card-title-icon"><i class="fas fa-list-alt"></i></span>
                                     Menus configures
                                 </h3>
                             </div>
                             <div class="card-body" id="menus-list">
                                 <div class="empty-state">
-                                    <div class="empty-state-icon">--</div>
+                                    <div class="empty-state-icon"><i class="fas fa-inbox"></i></div>
                                     <p class="empty-state-text">Aucun menu configuré. Créez votre premier menu interactif.</p>
                                 </div>
                             </div>
@@ -2091,7 +2092,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                         <div class="card">
                             <div class="card-header">
                                 <h3 class="card-title">
-                                    <span class="card-title-icon">GU</span>
+                                    <span class="card-title-icon"><i class="fas fa-question-circle"></i></span>
                                     Guide d'utilisation
                                 </h3>
                             </div>
@@ -2135,14 +2136,14 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                     <div class="card">
                         <div class="card-header">
                             <h3 class="card-title">
-                                <span class="card-title-icon">EV</span>
+                                <span class="card-title-icon"><i class="fas fa-history"></i></span>
                                 Tous les evenements
                             </h3>
                         </div>
                         <div class="card-body" style="padding:0">
                             <div class="logs-box" id="logs-page-container" style="max-height:640px">
                                 <div class="log-empty">
-                                    <div class="log-empty-icon">LG</div>
+                                    <div class="log-empty-icon"><i class="fas fa-clipboard-list"></i></div>
                                     <p>Chargement des logs…</p>
                                 </div>
                             </div>
@@ -2186,13 +2187,13 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
        ═══════════════════════════════════════ */
     function showToast(message, type = 'success', title = null) {
         const container = document.getElementById('toast-container');
-        const icons = { success: '[OK]', error: '[X]', warning: '[!]' };
+        const icons = { success: '<i class="fas fa-check-circle"></i>', error: '<i class="fas fa-times-circle"></i>', warning: '<i class="fas fa-exclamation-circle"></i>' };
         const titles = { success: 'Succès', error: 'Erreur', warning: 'Attention' };
 
         const toast = document.createElement('div');
         toast.className = `toast toast-${type}`;
         toast.innerHTML = `
-            <div class="toast-icon">${icons[type] || '[OK]'}</div>
+            <div class="toast-icon">${icons[type] || '<i class="fas fa-info-circle"></i>'}</div>
             <div class="toast-body">
                 <div class="toast-title">${title || titles[type] || 'Info'}</div>
                 <div class="toast-msg">${message}</div>
@@ -2438,7 +2439,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             const c2 = document.getElementById('logs-page-container');
 
             if (!logs.length) {
-                const empty = `<div class="log-empty"><div class="log-empty-icon">LG</div><p>Aucun événement enregistré</p></div>`;
+                const empty = `<div class="log-empty"><div class="log-empty-icon"><i class="fas fa-clipboard-list"></i></div><p>Aucun événement enregistré</p></div>`;
                 c1.innerHTML = empty;
                 c2.innerHTML = empty;
                 return;
@@ -2911,12 +2912,12 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         
         if (html.getAttribute('data-theme') === 'light') {
             html.removeAttribute('data-theme');
-            icon.textContent = 'D';
+            icon.innerHTML = '<i class="fas fa-moon"></i>';
             label.textContent = 'Mode clair';
             localStorage.setItem('theme', 'dark');
         } else {
             html.setAttribute('data-theme', 'light');
-            icon.textContent = 'L';
+            icon.innerHTML = '<i class="fas fa-sun"></i>';
             label.textContent = 'Mode sombre';
             localStorage.setItem('theme', 'light');
         }
@@ -2929,7 +2930,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         
         if (saved === 'light') {
             document.documentElement.setAttribute('data-theme', 'light');
-            icon.textContent = 'L';
+            icon.innerHTML = '<i class="fas fa-sun"></i>';
             label.textContent = 'Mode sombre';
         }
     }
@@ -3036,7 +3037,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             
             if (!menuArray.length) {
                 container.innerHTML = `<div class="empty-state">
-                    <div class="empty-state-icon">--</div>
+                    <div class="empty-state-icon"><i class="fas fa-inbox"></i></div>
                     <p class="empty-state-text">Aucun menu configuré. Créez votre premier menu interactif.</p>
                 </div>`;
                 return;
@@ -3402,11 +3403,11 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                     </div>
                     <div class="session-actions">
                         ${session.status === 'connected' ? 
-                            `<button class="session-action-btn" onclick="event.stopPropagation();showSessionQR('${session.id}')" title="QR Code">QR</button>` : 
+                            `<button class="session-action-btn" onclick="event.stopPropagation();showSessionQR('${session.id}')" title="QR Code"><i class="fas fa-qrcode"></i></button>` : 
                             session.status === 'qr' ?
-                            `<button class="session-action-btn" onclick="event.stopPropagation();showSessionQR('${session.id}')" title="QR Code">QR</button>` : ''
+                            `<button class="session-action-btn" onclick="event.stopPropagation();showSessionQR('${session.id}')" title="QR Code"><i class="fas fa-qrcode"></i></button>` : ''
                         }
-                        <button class="session-action-btn danger" onclick="event.stopPropagation();deleteSession('${session.id}')" title="Supprimer">X</button>
+                        <button class="session-action-btn danger" onclick="event.stopPropagation();deleteSession('${session.id}')" title="Supprimer"><i class="fas fa-trash"></i></button>
                     </div>
                 </div>
             `;
@@ -3415,12 +3416,12 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
     
     function getStatusText(status) {
         const statusMap = {
-            'connected': '[OK] Connecte',
-            'qr': '[...] QR Code',
-            'pending': '[...] En attente',
-            'disconnected': '[X] Deconnecte',
-            'auth_failure': '[X] Echec auth',
-            'stopped': '[_] Arrete'
+            'connected': '<i class="fas fa-check-circle"></i> Connecte',
+            'qr': '<i class="fas fa-qrcode"></i> QR Code',
+            'pending': '<i class="fas fa-clock"></i> En attente',
+            'disconnected': '<i class="fas fa-times-circle"></i> Deconnecte',
+            'auth_failure': '<i class="fas fa-exclamation-circle"></i> Echec auth',
+            'stopped': '<i class="fas fa-stop-circle"></i> Arrete'
         };
         return statusMap[status] || status;
     }
@@ -3560,7 +3561,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                     
                     <div class="setting-row">
                         <div class="setting-info">
-                            <div class="setting-icon">[OK]</div>
+                            <div class="setting-icon"><i class="fas fa-check-circle"></i></div>
                             <div class="setting-text">
                                 <h4>Menu actif</h4>
                                 <p>Le menu répondra aux déclencheurs</p>
