@@ -2214,6 +2214,90 @@ app.get('/api/groups', async (req, res) => {
     } catch (error) { res.status(500).json([]); }
 });
 
+app.get('/api/groups/all', async (req, res) => {
+    try {
+        if (!isConnected) {
+            addLog('⚠️ /api/groups/all: Bot non connecté');
+            return res.json([]);
+        }
+        const chats = await client.getChats();
+        const botId = client.info.wid._serialized;
+        const groups = [];
+        
+        for (const g of chats.filter(c => c.isGroup)) {
+            // Vérifier si le bot est encore dans le groupe
+            const botParticipant = g.participants?.find(p => p.id._serialized === botId);
+            if (!botParticipant) continue; // Bot n'est plus dans ce groupe
+            
+            groups.push({
+                id: g.id._serialized, name: g.name,
+                participants: g.participants?.length || 0,
+                isAdmin: botParticipant.isAdmin || false,
+                isSuperAdmin: botParticipant.isSuperAdmin || false
+            });
+        }
+        
+        addLog(`📋 /api/groups/all: ${groups.length} groupes trouvés`);
+        res.json(groups);
+    } catch (error) {
+        addLog(`❌ Erreur /api/groups/all: ${error.message}`);
+        res.status(500).json([]);
+    }
+});
+
+app.post('/api/groups/leave', async (req, res) => {
+    try {
+        if (!isConnected) return res.status(400).json({ success: false, message: 'Bot non connecté' });
+        const { groupId } = req.body;
+        if (!groupId) return res.status(400).json({ success: false, message: 'groupId requis' });
+
+        const chat = await client.getChatById(groupId);
+        if (!chat || !chat.isGroup) return res.status(404).json({ success: false, message: 'Groupe non trouvé' });
+
+        const groupName = chat.name;
+        await chat.leave();
+        
+        // Supprimer le chat de la liste locale pour forcer le rafraîchissement
+        try {
+            await chat.delete();
+        } catch (e) {
+            // Ignore si non supporté
+        }
+        
+        addLog(`🚪 Bot a quitté le groupe: ${groupName}`);
+        res.json({ success: true, message: 'Groupe quitté' });
+    } catch (error) {
+        addLog(`❌ Erreur quitter groupe: ${error.message}`);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+app.delete('/api/groups/delete', async (req, res) => {
+    try {
+        if (!isConnected) return res.status(400).json({ success: false, message: 'Bot non connecté' });
+        const { groupId } = req.body;
+        if (!groupId) return res.status(400).json({ success: false, message: 'groupId requis' });
+
+        const chat = await client.getChatById(groupId);
+        if (!chat || !chat.isGroup) return res.status(404).json({ success: false, message: 'Groupe non trouvé' });
+
+        const botParticipant = chat.participants?.find(p => p.id._serialized === client.info.wid._serialized);
+        if (!botParticipant?.isAdmin) {
+            return res.status(403).json({ success: false, message: 'Le bot doit être admin pour supprimer ce groupe' });
+        }
+
+        // Pour supprimer un groupe, il faut d'abord retirer tous les membres puis le supprimer
+        // Malheureusement wweb.js ne supporte pas la suppression directe de groupe
+        // On peut seulement le quitter
+        await chat.leave();
+        addLog(`🗑️ Groupe supprimé (bot était admin): ${chat.name}`);
+        res.json({ success: true, message: 'Groupe quitté (suppression complète non supportée par l\'API)' });
+    } catch (error) {
+        addLog(`❌ Erreur suppression groupe: ${error.message}`);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
 app.get('/api/groups/exceptions', (req, res) => res.json(GROUP_EXCEPTIONS));
 app.post('/api/groups/exceptions', (req, res) => {
     try {

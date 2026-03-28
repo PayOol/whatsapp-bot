@@ -951,6 +951,98 @@
         .log-empty-icon{font-size:2rem;margin-bottom:8px;opacity:0.5}
 
         /* ═══════════════════════════════════════
+           QR MODAL
+           ═══════════════════════════════════════ */
+        .qr-modal{
+            position:fixed;inset:0;
+            background:rgba(0,0,0,0.85);
+            backdrop-filter:blur(8px);
+            display:flex;align-items:center;justify-content:center;
+            z-index:10000;
+            animation:qrFadeIn 0.3s ease;
+        }
+        @keyframes qrFadeIn{from{opacity:0}to{opacity:1}}
+        .qr-modal-content{
+            background:var(--bg-card);
+            border:1px solid var(--border);
+            border-radius:var(--radius-xl);
+            padding:32px;
+            max-width:400px;
+            width:90%;
+            text-align:center;
+            box-shadow:var(--shadow-lg);
+        }
+        .qr-modal-header h3{
+            font-size:1.4rem;margin-bottom:8px;
+            color:var(--text-primary);
+        }
+        .qr-modal-header p{
+            color:var(--text-secondary);
+            font-size:0.9rem;
+        }
+        .qr-code-container{
+            background:#fff;
+            padding:20px;
+            border-radius:var(--radius-lg);
+            margin:24px auto;
+            display:inline-block;
+        }
+        .qr-code-container canvas{
+            display:block;
+        }
+        .qr-instructions{
+            text-align:left;
+            background:var(--bg-input);
+            padding:16px 20px;
+            border-radius:var(--radius-md);
+            margin:20px 0;
+        }
+        .qr-instructions p{margin-bottom:8px;color:var(--text-primary)}
+        .qr-instructions ol{
+            margin:0;padding-left:20px;
+            color:var(--text-secondary);
+            font-size:0.85rem;
+            line-height:1.8;
+        }
+        .qr-status{
+            display:flex;align-items:center;justify-content:center;
+            gap:10px;color:var(--primary);
+            font-size:0.9rem;
+        }
+        .qr-pulse{
+            width:12px;height:12px;
+            background:var(--primary);
+            border-radius:50%;
+            animation:pulse 1.5s ease-in-out infinite;
+        }
+        @keyframes pulse{
+            0%,100%{opacity:1;transform:scale(1)}
+            50%{opacity:0.5;transform:scale(1.2)}
+        }
+
+        /* ═══════════════════════════════════════
+           TABS
+           ═══════════════════════════════════════ */
+        .tabs-container{
+            display:flex;gap:8px;margin-bottom:20px;
+            padding:4px;background:var(--bg-input);
+            border-radius:var(--radius-lg);border:1px solid var(--border);
+        }
+        .tab-btn{
+            flex:1;padding:10px 16px;border:none;background:transparent;
+            color:var(--text-secondary);font-size:0.85rem;font-weight:500;
+            border-radius:var(--radius-md);cursor:pointer;
+            transition:all var(--transition-fast);
+        }
+        .tab-btn:hover{background:rgba(var(--primary-rgb),0.08);color:var(--text-primary)}
+        .tab-btn.active{
+            background:var(--primary);color:#fff;
+            box-shadow:0 2px 8px rgba(var(--primary-rgb),0.3);
+        }
+        .groups-tab-content{animation:fadeIn 0.3s ease}
+        @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+        /* ═══════════════════════════════════════
            GROUPS
            ═══════════════════════════════════════ */
         .group-grid{display:flex;flex-direction:column;gap:10px}
@@ -1323,6 +1415,32 @@
 
     <!-- Toast Container -->
     <div class="toast-container" id="toast-container"></div>
+
+    <!-- QR Code Modal -->
+    <div class="qr-modal" id="qr-modal" style="display:none">
+        <div class="qr-modal-content">
+            <div class="qr-modal-header">
+                <h3>📱 Connexion WhatsApp</h3>
+                <p>Scannez ce QR code avec votre téléphone</p>
+            </div>
+            <div class="qr-code-container" id="qr-code-container">
+                <!-- QR code will be rendered here -->
+            </div>
+            <div class="qr-instructions">
+                <p><strong>Comment faire :</strong></p>
+                <ol>
+                    <li>Ouvrez WhatsApp sur votre téléphone</li>
+                    <li>Appuyez sur Menu ⋮ puis Appareils liés</li>
+                    <li>Appuyez sur "Lier un appareil"</li>
+                    <li>Scannez ce QR code</li>
+                </ol>
+            </div>
+            <div class="qr-status">
+                <div class="qr-pulse"></div>
+                <span>En attente du scan...</span>
+            </div>
+        </div>
+    </div>
 
     <!-- Mobile Header -->
     <div class="mobile-header">
@@ -1708,6 +1826,14 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                         </div>
                     </div>
 
+                    <!-- Tabs -->
+                    <div class="tabs-container">
+                        <button class="tab-btn active" onclick="switchGroupTab('admin')" id="tab-admin">👑 Groupes administrés</button>
+                        <button class="tab-btn" onclick="switchGroupTab('all')" id="tab-all">🌐 Total des groupes</button>
+                    </div>
+
+                    <!-- Tab Admin -->
+                    <div id="groups-tab-admin" class="groups-tab-content">
                     <div class="card">
                         <div class="card-header">
                             <h3 class="card-title">
@@ -1732,7 +1858,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                         <div class="card-header">
                             <h3 class="card-title">
                                 <span class="card-title-icon">👥</span>
-                                Liste des groupes
+                                Liste des groupes administrés
                             </h3>
                             <button class="btn btn-ghost btn-sm" onclick="loadGroups()">
                                 🔄 Rafraîchir
@@ -1746,6 +1872,31 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                                 </div>
                             </div>
                         </div>
+                    </div>
+                    </div>
+
+                    <!-- Tab All Groups -->
+                    <div id="groups-tab-all" class="groups-tab-content" style="display:none">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">
+                                <span class="card-title-icon">🌐</span>
+                                Tous les groupes
+                            </h3>
+                            <button class="btn btn-ghost btn-sm" onclick="loadAllGroups()">
+                                🔄 Rafraîchir
+                            </button>
+                        </div>
+                        <div class="card-body" style="padding:16px">
+                            <p class="form-hint" style="margin-bottom:12px">Liste de tous les groupes où le bot est présent, qu'il soit admin ou non</p>
+                            <div class="group-grid" id="all-groups-list">
+                                <div class="empty-state">
+                                    <div class="empty-state-icon">🔌</div>
+                                    <p class="empty-state-text">Chargement des groupes…</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                     </div>
                 </div>
 
@@ -2081,21 +2232,59 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             const dot = document.getElementById('status-dot');
             const text = document.getElementById('status-text');
             const bar = document.getElementById('status-bar');
+            const qrModal = document.getElementById('qr-modal');
 
             if (status.connected) {
                 dot.classList.add('online');
                 text.textContent = 'Connecté';
                 text.className = 'status-label online';
                 bar.classList.add('online');
+                qrModal.style.display = 'none';
             } else {
                 dot.classList.remove('online');
                 text.textContent = 'Déconnecté';
                 text.className = 'status-label offline';
                 bar.classList.remove('online');
+                
+                // Show QR code if available
+                if (status.qr) {
+                    showQRCode(status.qr);
+                }
             }
         } catch (e) {
             console.error('Status check error:', e);
         }
+    }
+
+    function showQRCode(qrString) {
+        const qrModal = document.getElementById('qr-modal');
+        const qrContainer = document.getElementById('qr-code-container');
+        
+        qrModal.style.display = 'flex';
+        
+        // Generate QR code using canvas
+        const size = 200;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        
+        // Use QR code library (qrcode.js inline implementation)
+        renderQRCode(ctx, qrString, size);
+        
+        qrContainer.innerHTML = '';
+        qrContainer.appendChild(canvas);
+    }
+
+    // Simple QR code renderer (uses external library if available, fallback to API)
+    function renderQRCode(ctx, data, size) {
+        // Use QRServer API as fallback for rendering
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = function() {
+            ctx.drawImage(img, 0, 0, size, size);
+        };
+        img.src = 'https://api.qrserver.com/v1/create-qr-code/?size=' + size + 'x' + size + '&data=' + encodeURIComponent(data);
     }
 
     /* ═══════════════════════════════════════
@@ -2228,6 +2417,129 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             });
             loadGroups();
             showToast(exclude ? 'Groupe exclu de la surveillance' : 'Groupe réactivé', 'success');
+        } catch (e) {
+            showToast('Action impossible', 'error');
+        }
+    }
+
+    /* ═══════════════════════════════════════
+       TABS & ALL GROUPS
+       ═══════════════════════════════════════ */
+    function switchGroupTab(tab) {
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+        document.querySelectorAll('.groups-tab-content').forEach(content => content.style.display = 'none');
+        
+        document.getElementById('tab-' + tab).classList.add('active');
+        document.getElementById('groups-tab-' + tab).style.display = 'block';
+        
+        if (tab === 'all') loadAllGroups();
+    }
+
+    async function loadAllGroups() {
+        try {
+            const container = document.getElementById('all-groups-list');
+            container.innerHTML = `<div class="empty-state">
+                <div class="empty-state-icon">⏳</div>
+                <p class="empty-state-text">Chargement des groupes…</p>
+            </div>`;
+            
+            const res = await fetch('/api/groups/all');
+            if (!res.ok) {
+                container.innerHTML = `<div class="empty-state">
+                    <div class="empty-state-icon">❌</div>
+                    <p class="empty-state-text">Erreur serveur (${res.status})</p>
+                </div>`;
+                return;
+            }
+            
+            const groups = await res.json();
+
+            if (!groups.length) {
+                container.innerHTML = `<div class="empty-state">
+                    <div class="empty-state-icon">🔌</div>
+                    <p class="empty-state-text">Bot non connecté ou aucun groupe trouvé</p>
+                </div>`;
+                return;
+            }
+
+            container.innerHTML = groups.map(g => `
+                <div class="group-card">
+                    <div class="group-left">
+                        <div class="group-avatar">👥</div>
+                        <div class="group-details">
+                            <div class="group-name">${escapeHtml(g.name)}</div>
+                            <div class="group-meta">
+                                <span class="group-meta-item">👤 ${g.participants} membres</span>
+                                ${g.isAdmin
+                                    ? '<span class="badge badge-success"><span class="badge-dot"></span> Admin</span>'
+                                    : '<span class="badge badge-danger"><span class="badge-dot"></span> Non admin</span>'
+                                }
+                                ${g.isSuperAdmin ? '<span class="badge badge-warning"><span class="badge-dot"></span> Super Admin</span>' : ''}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="group-actions">
+                        <button class="btn btn-ghost btn-sm" onclick="leaveGroup('${g.id}', '${escapeHtml(g.name)}')">
+                            🚪 Quitter
+                        </button>
+                        ${g.isAdmin ? `
+                            <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="deleteGroup('${g.id}', '${escapeHtml(g.name)}')">
+                                🗑️ Supprimer
+                            </button>
+                        ` : ''}
+                    </div>
+                </div>
+            `).join('');
+        } catch (e) {
+            console.error('All groups error:', e);
+            const container = document.getElementById('all-groups-list');
+            container.innerHTML = `<div class="empty-state">
+                <div class="empty-state-icon">❌</div>
+                <p class="empty-state-text">Erreur: ${e.message}</p>
+            </div>`;
+        }
+    }
+
+    async function leaveGroup(groupId, groupName) {
+        if (!confirm(`Voulez-vous vraiment quitter le groupe « ${groupName} » ?`)) return;
+        
+        try {
+            const res = await fetch('/api/groups/leave', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ groupId })
+            });
+            const result = await res.json();
+            
+            if (result.success) {
+                showToast(`Groupe « ${groupName} » quitté`, 'success');
+                loadAllGroups();
+            } else {
+                showToast(result.message || 'Erreur', 'error');
+            }
+        } catch (e) {
+            showToast('Action impossible', 'error');
+        }
+    }
+
+    async function deleteGroup(groupId, groupName) {
+        if (!confirm(`⚠️ Êtes-vous sûr de vouloir supprimer le groupe « ${groupName} » ?\n\nCette action est irréversible !`)) return;
+        if (!confirm(`⚠️ DERNIÈRE CONFIRMATION\n\nSupprimer définitivement « ${groupName} » ?`)) return;
+        
+        try {
+            const res = await fetch('/api/groups/delete', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ groupId })
+            });
+            const result = await res.json();
+            
+            if (result.success) {
+                showToast(`Groupe « ${groupName} » supprimé`, 'success');
+                loadAllGroups();
+            } else {
+                showToast(result.message || 'Erreur', 'error');
+            }
         } catch (e) {
             showToast('Action impossible', 'error');
         }
