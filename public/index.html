@@ -508,7 +508,6 @@
             gap:16px;
             flex-wrap:wrap;
         }
-        .page-header-text{}
         .page-title{
             font-size:1.85rem;
             font-weight:800;
@@ -1369,6 +1368,10 @@
                         <span class="nav-icon">🛡️</span>
                         <span class="nav-label">Utilisateurs</span>
                     </div>
+                    <div class="nav-link" data-page="menus" onclick="navigateTo('menus',this)">
+                        <span class="nav-icon">📱</span>
+                        <span class="nav-label">Menus</span>
+                    </div>
                 </div>
 
                 <div class="nav-group">
@@ -1800,6 +1803,68 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                     </div>
                 </div>
 
+                <!-- ═══════════ MENUS INTERACTIFS ═══════════ -->
+                <div id="page-menus" class="page">
+                    <div class="page-header">
+                        <div class="page-header-text">
+                            <h2 class="page-title">Menus interactifs</h2>
+                            <p class="page-subtitle">Créez des menus avec boutons et listes pour vos groupes WhatsApp</p>
+                        </div>
+                        <button class="btn btn-primary btn-sm" onclick="showMenuEditor()">
+                            ➕ Nouveau menu
+                        </button>
+                    </div>
+
+                    <div class="cards-grid">
+                        <!-- Liste des menus -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 class="card-title">
+                                    <span class="card-title-icon">📋</span>
+                                    Menus configurés
+                                </h3>
+                            </div>
+                            <div class="card-body" id="menus-list">
+                                <div class="empty-state">
+                                    <div class="empty-state-icon">📱</div>
+                                    <p class="empty-state-text">Aucun menu configuré. Créez votre premier menu interactif.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Aide -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 class="card-title">
+                                    <span class="card-title-icon">💡</span>
+                                    Guide d'utilisation
+                                </h3>
+                            </div>
+                            <div class="card-body">
+                                <div style="font-size:0.85rem;color:var(--text-secondary);line-height:1.8">
+                                    <p><strong>📱 Types de menus :</strong></p>
+                                    <ul style="margin:8px 0 16px 20px">
+                                        <li><strong>Boutons</strong> — Jusqu'à 3 boutons cliquables</li>
+                                        <li><strong>Liste</strong> — Jusqu'à 10 options organisées par sections</li>
+                                    </ul>
+                                    <p><strong>⚡ Déclencheurs :</strong></p>
+                                    <ul style="margin:8px 0 16px 20px">
+                                        <li>Les utilisateurs tapent le mot-clé pour afficher le menu</li>
+                                        <li>Exemple: "menu", "aide", "catalogue"</li>
+                                    </ul>
+                                    <p><strong>🎯 Actions disponibles :</strong></p>
+                                    <ul style="margin:8px 0 0 20px">
+                                        <li>Envoyer un message</li>
+                                        <li>Afficher un sous-menu</li>
+                                        <li>Partager un lien autorisé</li>
+                                        <li>Appeler un webhook externe</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- ═══════════ LOGS ═══════════ -->
                 <div id="page-logs" class="page">
                     <div class="page-header">
@@ -1851,6 +1916,9 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
 
         // Scroll to top
         window.scrollTo({ top: 0, behavior: 'smooth' });
+        
+        // Load page-specific data
+        if (page === 'menus') loadMenusData();
     }
 
     function toggleSidebar() {
@@ -2473,6 +2541,337 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
     document.addEventListener('click', (e) => {
         if (e.target.id === 'stat-modal') closeStatModal();
     });
+    
+    // ============================================================
+    // 📱 MENUS INTERACTIFS
+    // ============================================================
+    
+    let currentEditingMenu = null;
+    let availableGroups = [];
+    
+    async function loadMenus() {
+        try {
+            const res = await fetch('/api/menus');
+            const menus = await res.json();
+            const container = document.getElementById('menus-list');
+            
+            const menuArray = Object.values(menus);
+            
+            if (!menuArray.length) {
+                container.innerHTML = `<div class="empty-state">
+                    <div class="empty-state-icon">📱</div>
+                    <p class="empty-state-text">Aucun menu configuré. Créez votre premier menu interactif.</p>
+                </div>`;
+                return;
+            }
+            
+            container.innerHTML = menuArray.map(menu => `
+                <div class="group-card" style="margin-bottom:12px">
+                    <div class="group-left">
+                        <div class="group-avatar">${menu.type === 'buttons' ? '🔘' : '📋'}</div>
+                        <div class="group-details">
+                            <div class="group-name">${escapeHtml(menu.title)}</div>
+                            <div class="group-meta">
+                                <span class="group-meta-item">${menu.type === 'buttons' ? 'Boutons' : 'Liste'}</span>
+                                ${menu.trigger ? `<span class="badge badge-info">!${escapeHtml(menu.trigger)}</span>` : ''}
+                                ${!menu.enabled ? '<span class="badge badge-warning">Désactivé</span>' : ''}
+                                ${menu.buttons?.length ? `<span class="group-meta-item">${menu.buttons.length} boutons</span>` : ''}
+                                ${menu.listSections?.length ? `<span class="group-meta-item">${menu.listSections.reduce((a,s) => a + s.rows.length, 0)} options</span>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="group-actions">
+                        <button class="btn btn-ghost btn-sm" onclick="testMenu('${menu.id}')">🧪 Tester</button>
+                        <button class="btn btn-ghost btn-sm" onclick="editMenu('${menu.id}')">✏️ Modifier</button>
+                        <button class="btn btn-danger btn-sm" onclick="deleteMenu('${menu.id}')">🗑️</button>
+                    </div>
+                </div>
+            `).join('');
+        } catch (e) {
+            console.error('Erreur chargement menus:', e);
+        }
+    }
+    
+    function showMenuEditor(menuId = null) {
+        currentEditingMenu = menuId;
+        const modal = document.getElementById('menu-editor-modal');
+        const form = document.getElementById('menu-form');
+        
+        if (menuId && interactiveMenus[menuId]) {
+            const menu = interactiveMenus[menuId];
+            document.getElementById('menu-title').value = menu.title || '';
+            document.getElementById('menu-id').value = menu.id;
+            document.getElementById('menu-trigger').value = menu.trigger || '';
+            document.getElementById('menu-type').value = menu.type || 'buttons';
+            document.getElementById('menu-description').value = menu.description || '';
+            document.getElementById('menu-enabled').checked = menu.enabled !== false;
+            
+            renderMenuButtons(menu.buttons || []);
+            renderMenuSections(menu.listSections || []);
+        } else {
+            form.reset();
+            document.getElementById('menu-id').value = 'menu_' + Date.now();
+            document.getElementById('menu-enabled').checked = true;
+            renderMenuButtons([]);
+            renderMenuSections([]);
+        }
+        
+        modal.classList.add('active');
+        updateMenuTypeUI();
+    }
+    
+    function updateMenuTypeUI() {
+        const type = document.getElementById('menu-type').value;
+        document.getElementById('buttons-config').style.display = type === 'buttons' ? 'block' : 'none';
+        document.getElementById('list-config').style.display = type === 'list' ? 'block' : 'none';
+    }
+    
+    function renderMenuButtons(buttons) {
+        const container = document.getElementById('buttons-list');
+        if (!buttons.length) {
+            container.innerHTML = '<p style="color:var(--text-muted);font-size:0.8rem">Aucun bouton configuré</p>';
+            return;
+        }
+        
+        container.innerHTML = buttons.map((btn, i) => `
+            <div class="user-exception-item" style="flex-direction:column;align-items:stretch">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                    <span style="font-weight:600">Bouton ${i + 1}</span>
+                    <button class="tag-remove" onclick="removeButton(${i})">✕</button>
+                </div>
+                <input type="text" class="form-input" style="margin-bottom:8px" placeholder="Texte du bouton" 
+                    value="${escapeHtml(btn.text || '')}" onchange="updateButton(${i}, 'text', this.value)">
+                <input type="text" class="form-input" style="margin-bottom:8px" placeholder="Réponse (message envoyé au clic)" 
+                    value="${escapeHtml(btn.response || '')}" onchange="updateButton(${i}, 'response', this.value)">
+                <input type="text" class="form-input" placeholder="ID du sous-menu (optionnel)" 
+                    value="${escapeHtml(btn.nextMenu || '')}" onchange="updateButton(${i}, 'nextMenu', this.value)">
+            </div>
+        `).join('');
+    }
+    
+    function addButton() {
+        const buttons = getButtonsFromForm();
+        buttons.push({ id: 'btn_' + Date.now(), text: '', response: '' });
+        renderMenuButtons(buttons);
+    }
+    
+    function removeButton(index) {
+        const buttons = getButtonsFromForm();
+        buttons.splice(index, 1);
+        renderMenuButtons(buttons);
+    }
+    
+    function updateButton(index, field, value) {
+        const buttons = getButtonsFromForm();
+        if (buttons[index]) buttons[index][field] = value;
+    }
+    
+    function getButtonsFromForm() {
+        const container = document.getElementById('buttons-list');
+        const items = container.querySelectorAll('.user-exception-item');
+        const buttons = [];
+        
+        items.forEach((item, i) => {
+            const inputs = item.querySelectorAll('input');
+            buttons.push({
+                id: `btn_${i}`,
+                text: inputs[0]?.value || '',
+                response: inputs[1]?.value || '',
+                nextMenu: inputs[2]?.value || null
+            });
+        });
+        
+        return buttons;
+    }
+    
+    function renderMenuSections(sections) {
+        const container = document.getElementById('sections-list');
+        if (!sections.length) {
+            container.innerHTML = '<p style="color:var(--text-muted);font-size:0.8rem">Aucune section configurée</p>';
+            return;
+        }
+        
+        container.innerHTML = sections.map((section, si) => `
+            <div class="user-exception-item" style="flex-direction:column;align-items:stretch;margin-bottom:16px">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                    <span style="font-weight:600">Section: ${escapeHtml(section.title || 'Sans titre')}</span>
+                    <button class="tag-remove" onclick="removeSection(${si})">✕</button>
+                </div>
+                <input type="text" class="form-input" style="margin-bottom:12px" placeholder="Titre de la section" 
+                    value="${escapeHtml(section.title || '')}" onchange="updateSection(${si}, 'title', this.value)">
+                <div style="border-top:1px solid var(--border);padding-top:12px">
+                    ${(section.rows || []).map((row, ri) => `
+                        <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">
+                            <input type="text" class="form-input" style="flex:1" placeholder="Titre" 
+                                value="${escapeHtml(row.title || '')}" onchange="updateRow(${si}, ${ri}, 'title', this.value)">
+                            <input type="text" class="form-input" style="flex:1" placeholder="Réponse" 
+                                value="${escapeHtml(row.response || '')}" onchange="updateRow(${si}, ${ri}, 'response', this.value)">
+                            <button class="tag-remove" onclick="removeRow(${si}, ${ri})">✕</button>
+                        </div>
+                    `).join('')}
+                    <button class="btn btn-ghost btn-xs" onclick="addRow(${si})">+ Ajouter une option</button>
+                </div>
+            </div>
+        `).join('');
+    }
+    
+    function addSection() {
+        const sections = getSectionsFromForm();
+        sections.push({ title: '', rows: [] });
+        renderMenuSections(sections);
+    }
+    
+    function removeSection(index) {
+        const sections = getSectionsFromForm();
+        sections.splice(index, 1);
+        renderMenuSections(sections);
+    }
+    
+    function updateSection(index, field, value) {
+        const sections = getSectionsFromForm();
+        if (sections[index]) sections[index][field] = value;
+    }
+    
+    function addRow(sectionIndex) {
+        const sections = getSectionsFromForm();
+        if (sections[sectionIndex]) {
+            sections[sectionIndex].rows = sections[sectionIndex].rows || [];
+            sections[sectionIndex].rows.push({ id: 'row_' + Date.now(), title: '', response: '' });
+            renderMenuSections(sections);
+        }
+    }
+    
+    function removeRow(sectionIndex, rowIndex) {
+        const sections = getSectionsFromForm();
+        if (sections[sectionIndex]?.rows) {
+            sections[sectionIndex].rows.splice(rowIndex, 1);
+            renderMenuSections(sections);
+        }
+    }
+    
+    function updateRow(si, ri, field, value) {
+        const sections = getSectionsFromForm();
+        if (sections[si]?.rows?.[ri]) sections[si].rows[ri][field] = value;
+    }
+    
+    function getSectionsFromForm() {
+        const container = document.getElementById('sections-list');
+        const sectionDivs = container.querySelectorAll('.user-exception-item');
+        const sections = [];
+        
+        sectionDivs.forEach(div => {
+            const titleInput = div.querySelector('input[placeholder="Titre de la section"]');
+            const rowDivs = div.querySelectorAll('div[style*="gap:8px"]');
+            
+            const rows = [];
+            rowDivs.forEach(rowDiv => {
+                const inputs = rowDiv.querySelectorAll('input');
+                if (inputs[0]?.value || inputs[1]?.value) {
+                    rows.push({
+                        id: 'row_' + rows.length,
+                        title: inputs[0]?.value || '',
+                        response: inputs[1]?.value || ''
+                    });
+                }
+            });
+            
+            sections.push({
+                title: titleInput?.value || '',
+                rows
+            });
+        });
+        
+        return sections;
+    }
+    
+    async function saveMenu() {
+        const menuData = {
+            id: document.getElementById('menu-id').value,
+            title: document.getElementById('menu-title').value,
+            trigger: document.getElementById('menu-trigger').value || null,
+            type: document.getElementById('menu-type').value,
+            description: document.getElementById('menu-description').value,
+            enabled: document.getElementById('menu-enabled').checked,
+            buttons: document.getElementById('menu-type').value === 'buttons' ? getButtonsFromForm() : [],
+            listSections: document.getElementById('menu-type').value === 'list' ? getSectionsFromForm() : []
+        };
+        
+        if (!menuData.title) {
+            showToast('Le titre est requis', 'error');
+            return;
+        }
+        
+        try {
+            const method = currentEditingMenu ? 'PUT' : 'POST';
+            const url = currentEditingMenu ? `/api/menus/${currentEditingMenu}` : '/api/menus';
+            
+            const res = await fetch(url, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(menuData)
+            });
+            
+            const result = await res.json();
+            
+            if (result.success) {
+                showToast(currentEditingMenu ? 'Menu mis à jour' : 'Menu créé', 'success');
+                closeMenuEditor();
+                loadMenus();
+            } else {
+                showToast(result.message || 'Erreur', 'error');
+            }
+        } catch (e) {
+            showToast('Erreur de sauvegarde', 'error');
+        }
+    }
+    
+    async function editMenu(menuId) {
+        showMenuEditor(menuId);
+    }
+    
+    async function deleteMenu(menuId) {
+        if (!confirm('Supprimer ce menu ?')) return;
+        
+        try {
+            await fetch(`/api/menus/${menuId}`, { method: 'DELETE' });
+            showToast('Menu supprimé', 'success');
+            loadMenus();
+        } catch (e) {
+            showToast('Erreur de suppression', 'error');
+        }
+    }
+    
+    async function testMenu(menuId) {
+        try {
+            const res = await fetch(`/api/menus/${menuId}/test`, { method: 'POST' });
+            const result = await res.json();
+            
+            if (result.success) {
+                showToast(`Menu envoyé dans ${result.groupName}`, 'success');
+            } else {
+                showToast(result.message || 'Erreur', 'error');
+            }
+        } catch (e) {
+            showToast('Erreur de test', 'error');
+        }
+    }
+    
+    function closeMenuEditor() {
+        document.getElementById('menu-editor-modal').classList.remove('active');
+        currentEditingMenu = null;
+    }
+    
+    let interactiveMenus = {};
+    
+    async function loadMenusData() {
+        try {
+            const res = await fetch('/api/menus');
+            interactiveMenus = await res.json();
+            loadMenus();
+        } catch (e) {
+            console.error('Erreur chargement menus:', e);
+        }
+    }
     </script>
 
     <!-- Stat Modal -->
@@ -2483,6 +2882,82 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                 <button class="modal-close" onclick="closeStatModal()">×</button>
             </div>
             <div id="stat-modal-content"></div>
+        </div>
+    </div>
+
+    <!-- Menu Editor Modal -->
+    <div id="menu-editor-modal" class="modal-overlay">
+        <div class="modal-content" style="max-width:600px;max-height:90vh;overflow-y:auto">
+            <div class="modal-header">
+                <h3 id="menu-editor-title">📱 Créer un menu</h3>
+                <button class="modal-close" onclick="closeMenuEditor()">×</button>
+            </div>
+            <div style="padding:20px">
+                <form id="menu-form" onsubmit="event.preventDefault();saveMenu()">
+                    <input type="hidden" id="menu-id">
+                    
+                    <div class="form-group">
+                        <label class="form-label">Titre du menu *</label>
+                        <input type="text" class="form-input" id="menu-title" placeholder="Ex: Menu Principal" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Mot-clé déclencheur</label>
+                        <input type="text" class="form-input" id="menu-trigger" placeholder="Ex: menu, aide, catalogue">
+                        <p class="form-hint">Les utilisateurs tapent ce mot pour afficher le menu</p>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Type de menu</label>
+                        <select class="form-input" id="menu-type" onchange="updateMenuTypeUI()">
+                            <option value="buttons">Boutons (max 3)</option>
+                            <option value="list">Liste (max 10 options)</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Description</label>
+                        <textarea class="form-input" id="menu-description" placeholder="Texte affiché avec le menu" rows="3"></textarea>
+                    </div>
+                    
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <div class="setting-icon">✅</div>
+                            <div class="setting-text">
+                                <h4>Menu actif</h4>
+                                <p>Le menu répondra aux déclencheurs</p>
+                            </div>
+                        </div>
+                        <label class="toggle">
+                            <input type="checkbox" id="menu-enabled" checked>
+                            <span class="toggle-track"></span>
+                        </label>
+                    </div>
+                    
+                    <!-- Boutons config -->
+                    <div id="buttons-config" style="margin-top:20px">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                            <label class="form-label" style="margin:0">Boutons</label>
+                            <button type="button" class="btn btn-ghost btn-xs" onclick="addButton()">+ Ajouter</button>
+                        </div>
+                        <div id="buttons-list"></div>
+                    </div>
+                    
+                    <!-- Liste config -->
+                    <div id="list-config" style="margin-top:20px;display:none">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                            <label class="form-label" style="margin:0">Sections</label>
+                            <button type="button" class="btn btn-ghost btn-xs" onclick="addSection()">+ Ajouter une section</button>
+                        </div>
+                        <div id="sections-list"></div>
+                    </div>
+                    
+                    <div class="btn-group" style="margin-top:24px">
+                        <button type="submit" class="btn btn-primary">💾 Enregistrer</button>
+                        <button type="button" class="btn btn-ghost" onclick="closeMenuEditor()">Annuler</button>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
 </body>

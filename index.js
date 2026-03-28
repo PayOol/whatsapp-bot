@@ -1,4 +1,4 @@
-const { Client, LocalAuth } = require('whatsapp-web.js');
+const { Client, LocalAuth, Buttons, List } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const fs = require('fs');
 const path = require('path');
@@ -10,8 +10,6 @@ const express = require('express');
 // ============================================================
 
 const HumanBehavior = {
-    // Distribution gaussienne pour des délais plus naturels
-    // Un humain ne réagit jamais avec des délais uniformes
     gaussianRandom(mean, stddev) {
         let u1 = Math.random();
         let u2 = Math.random();
@@ -19,80 +17,62 @@ const HumanBehavior = {
         return Math.max(0, Math.round(mean + z * stddev));
     },
 
-    // Délai de lecture : temps qu'un humain met à LIRE un message
-    // Basé sur la longueur du message (~200ms par mot + base)
     readingDelay(messageLength) {
         const words = Math.max(1, Math.ceil(messageLength / 5));
-        const baseTime = this.gaussianRandom(300, 100);  // 300ms base
-        const perWord = this.gaussianRandom(80, 30);      // ~80ms/mot
-        return Math.min(baseTime + words * perWord, 3000); // max 3s
+        const baseTime = this.gaussianRandom(300, 100);
+        const perWord = this.gaussianRandom(80, 30);
+        return Math.min(baseTime + words * perWord, 3000);
     },
 
-    // Délai de réflexion : temps entre lecture et début d'action
     thinkingDelay() {
-        return this.gaussianRandom(500, 200); // ~0.5s ± 0.2s
+        return this.gaussianRandom(500, 200);
     },
 
-    // Durée de frappe simulée : basée sur la longueur du message à envoyer
-    // Un humain tape ~40-60 caractères/minute sur téléphone
     typingDuration(messageLength) {
-        const charsPerSecond = this.gaussianRandom(8, 2); // 6-10 chars/s (plus rapide)
+        const charsPerSecond = this.gaussianRandom(8, 2);
         const base = this.gaussianRandom(400, 150);
         const typing = (messageLength / Math.max(1, charsPerSecond)) * 1000;
-        // Plafonnement réduit
         return Math.min(base + typing, 5000);
     },
 
-    // Délai avant de supprimer un message (un admin ne supprime pas
-    // instantanément, il lit d'abord, puis décide)
     deletionDelay() {
-        return this.gaussianRandom(2000, 1000); // ~2s ± 1s
+        return this.gaussianRandom(800, 300);
     },
 
-    // Délai entre deux actions consécutives dans un même groupe
     interActionDelay() {
-        return this.gaussianRandom(1500, 500); // ~1.5s ± 0.5s
+        return this.gaussianRandom(1500, 500);
     },
 
-    // Délai entre le traitement de deux groupes différents
     interGroupDelay() {
-        return this.gaussianRandom(4000, 1500); // ~4s ± 1.5s
+        return this.gaussianRandom(4000, 1500);
     },
 
-    // Délai avant de rejeter un appel (un humain voit la notification,
-    // prend son téléphone, regarde qui appelle, puis rejette)
     callRejectDelay() {
-        return this.gaussianRandom(1500, 500); // ~1.5s ± 0.5s
+        return this.gaussianRandom(1500, 500);
     },
 
-    // Délai après rejet d'appel avant d'envoyer un message
     postCallMessageDelay() {
-        return this.gaussianRandom(2000, 800); // ~2s ± 0.8s
+        return this.gaussianRandom(2000, 800);
     },
 
-    // Délai avant de bloquer quelqu'un (hésitation humaine)
     blockDelay() {
-        return this.gaussianRandom(5000, 2000); // ~5s ± 2s
+        return this.gaussianRandom(5000, 2000);
     },
 
-    // Multiplicateur de nuit (entre 23h et 7h, les humains sont plus lents)
     getNightMultiplier() {
         const hour = new Date().getHours();
-        if (hour >= 23 || hour < 3) return 3.0;   // Très lent la nuit
-        if (hour >= 3 && hour < 7) return 2.5;     // Lent tôt le matin
-        if (hour >= 7 && hour < 9) return 1.3;     // Légèrement lent le matin
-        if (hour >= 12 && hour < 14) return 1.2;   // Pause déjeuner
-        if (hour >= 21 && hour < 23) return 1.5;   // Soirée
-        return 1.0;                                 // Normal
+        if (hour >= 23 || hour < 3) return 3.0;
+        if (hour >= 3 && hour < 7) return 2.5;
+        if (hour >= 7 && hour < 9) return 1.3;
+        if (hour >= 12 && hour < 14) return 1.2;
+        if (hour >= 21 && hour < 23) return 1.5;
+        return 1.0;
     },
 
-    // Appliquer le multiplicateur de nuit à un délai
     applyNightMode(delay) {
         return Math.round(delay * this.getNightMultiplier());
     },
 
-    // Chance de "micro-pause" : parfois un humain est distrait
-    // 10% de chance d'ajouter 5-15s de pause
     maybeAddDistraction(delay) {
         if (Math.random() < 0.10) {
             const distraction = this.gaussianRandom(8000, 4000);
@@ -101,19 +81,17 @@ const HumanBehavior = {
         return delay;
     },
 
-    // Délai complet et réaliste pour une action
     async naturalDelay(baseDelay) {
         let delay = baseDelay;
         delay = this.applyNightMode(delay);
         delay = this.maybeAddDistraction(delay);
-        delay = Math.max(500, delay); // Minimum 500ms
+        delay = Math.max(500, delay);
         await new Promise(resolve => setTimeout(resolve, delay));
     }
 };
 
 // ============================================================
 // 🎭 POOL DE MESSAGES VARIABLES
-// Un humain ne dit jamais exactement la même chose
 // ============================================================
 
 const MessagePool = {
@@ -154,7 +132,6 @@ const MessagePool = {
         `🚫 Trop d'appels. Vous êtes bloqué(e) pour 30 minutes.`,
     ],
 
-    // Choisir un message aléatoire dans un pool
     pick(pool, ...args) {
         const index = Math.floor(Math.random() * pool.length);
         return typeof pool[index] === 'function' ? pool[index](...args) : pool[index];
@@ -163,24 +140,20 @@ const MessagePool = {
 
 // ============================================================
 // ⏱️ RATE LIMITER GLOBAL
-// Empêche le bot de faire trop d'actions trop vite
 // ============================================================
 
 class RateLimiter {
     constructor() {
-        this.actions = [];       // timestamps des actions récentes
-        this.maxPerMinute = 8;   // max 8 actions/minute (humain réaliste)
-        this.maxPerHour = 120;   // max 120 actions/heure
+        this.actions = [];
+        this.maxPerMinute = 8;
+        this.maxPerHour = 120;
     }
 
     canAct() {
         const now = Date.now();
-        // Nettoyer les anciennes actions
         this.actions = this.actions.filter(t => now - t < 3600000);
-
         const lastMinute = this.actions.filter(t => now - t < 60000).length;
         const lastHour = this.actions.length;
-
         return lastMinute < this.maxPerMinute && lastHour < this.maxPerHour;
     }
 
@@ -191,7 +164,7 @@ class RateLimiter {
     async waitUntilAllowed() {
         while (!this.canAct()) {
             const waitTime = HumanBehavior.gaussianRandom(5000, 2000);
-            addLog(`⏳ Rate limiter : pause de ${Math.round(waitTime/1000)}s`);
+            addLog(`⏳ Rate limiter : pause de ${Math.round(waitTime / 1000)}s`);
             await new Promise(resolve => setTimeout(resolve, waitTime));
         }
     }
@@ -201,47 +174,36 @@ const rateLimiter = new RateLimiter();
 
 // ============================================================
 // 📨 ENVOI DE MESSAGE HUMANISÉ
-// Simule lecture → réflexion → frappe → envoi
 // ============================================================
 
 async function sendMessageHumanized(chat, text, options = {}, triggerMessageLength = 0) {
     try {
-        // 1. Rate limiting
         await rateLimiter.waitUntilAllowed();
 
-        // 2. Simuler la lecture du message déclencheur
         if (triggerMessageLength > 0) {
             const readDelay = HumanBehavior.readingDelay(triggerMessageLength);
             await HumanBehavior.naturalDelay(readDelay);
         }
 
-        // 3. Temps de réflexion
         await HumanBehavior.naturalDelay(HumanBehavior.thinkingDelay());
 
-        // 4. Simuler la frappe (typing indicator)
         try {
             await chat.sendStateTyping();
-        } catch (e) {
-            // Pas grave si ça échoue
-        }
+        } catch (e) {}
 
-        // 5. Attendre le temps de frappe réaliste
         const typingTime = HumanBehavior.typingDuration(text.length);
         await HumanBehavior.naturalDelay(typingTime);
 
-        // 6. Arrêter l'indicateur de frappe
         try {
             await chat.clearState();
         } catch (e) {}
 
-        // 7. Micro-pause avant envoi (comme un humain qui relit)
         if (Math.random() < 0.3) {
             await HumanBehavior.naturalDelay(
                 HumanBehavior.gaussianRandom(800, 400)
             );
         }
 
-        // 8. Envoyer le message
         const sent = await chat.sendMessage(text, options);
         rateLimiter.recordAction();
         return sent;
@@ -253,23 +215,358 @@ async function sendMessageHumanized(chat, text, options = {}, triggerMessageLeng
 }
 
 // ============================================================
-// 🗑️ SUPPRESSION HUMANISÉE
-// Un admin lit le message, hésite, puis supprime
+// 🗑️ SUPPRESSION POUR TOUT LE MONDE (V3 — VÉRIFIÉ)
+// Chaque tentative est VÉRIFIÉE avant de déclarer le succès
 // ============================================================
 
 async function deleteMessageHumanized(message) {
     try {
         await rateLimiter.waitUntilAllowed();
+        await HumanBehavior.naturalDelay(HumanBehavior.deletionDelay());
 
-        // Délai de réflexion avant suppression
-        const delay = HumanBehavior.deletionDelay();
-        await HumanBehavior.naturalDelay(delay);
+        const msgId = message.id._serialized;
 
-        await message.delete(true);
-        rateLimiter.recordAction();
-        return true;
+        // ──────────────────────────────────────────────
+        // DIAGNOSTIC (une seule fois au 1er appel)
+        // Trouve les VRAIES méthodes de suppression
+        // ──────────────────────────────────────────────
+        if (!global.__deleteMethodsDiag) {
+            global.__deleteMethodsDiag = true;
+            try {
+                const diag = await client.pupPage.evaluate(() => {
+                    const result = { store: {}, chat: [], msg: [], wwebjs: [] };
+
+                    for (const key of Object.keys(window.Store || {})) {
+                        try {
+                            const mod = window.Store[key];
+                            if (!mod || typeof mod !== 'object') continue;
+                            const fns = [];
+                            for (const p of Object.getOwnPropertyNames(mod)) {
+                                try {
+                                    if (typeof mod[p] === 'function' && /revoke|delete|remove/i.test(p)) {
+                                        fns.push(p);
+                                    }
+                                } catch (e) {}
+                            }
+                            if (fns.length > 0) result.store[key] = fns;
+                        } catch (e) {}
+                    }
+
+                    try {
+                        const c = window.Store.Chat.getModelsArray()[0];
+                        if (c) {
+                            let proto = Object.getPrototypeOf(c);
+                            while (proto && proto !== Object.prototype) {
+                                for (const p of Object.getOwnPropertyNames(proto)) {
+                                    try {
+                                        if (typeof proto[p] === 'function' && /revoke|delete|send/i.test(p)) {
+                                            result.chat.push(p);
+                                        }
+                                    } catch (e) {}
+                                }
+                                proto = Object.getPrototypeOf(proto);
+                            }
+                            result.chat = [...new Set(result.chat)];
+                        }
+                    } catch (e) {}
+
+                    try {
+                        const m = window.Store.Msg.getModelsArray()[0];
+                        if (m) {
+                            let proto = Object.getPrototypeOf(m);
+                            while (proto && proto !== Object.prototype) {
+                                for (const p of Object.getOwnPropertyNames(proto)) {
+                                    try {
+                                        if (typeof proto[p] === 'function' && /revoke|delete|canRevoke|canAdmin/i.test(p)) {
+                                            result.msg.push(p);
+                                        }
+                                    } catch (e) {}
+                                }
+                                proto = Object.getPrototypeOf(proto);
+                            }
+                            result.msg = [...new Set(result.msg)];
+                        }
+                    } catch (e) {}
+
+                    if (window.WWebJS) {
+                        result.wwebjs = Object.keys(window.WWebJS).filter(k => /revoke|delete/i.test(k));
+                    }
+
+                    return result;
+                });
+
+                addLog(`🔬 ══════ DIAGNOSTIC SUPPRESSION ══════`);
+                addLog(`🔬 Store: ${JSON.stringify(diag.store)}`);
+                addLog(`🔬 Chat proto: ${JSON.stringify(diag.chat)}`);
+                addLog(`🔬 Msg proto: ${JSON.stringify(diag.msg)}`);
+                addLog(`🔬 WWebJS: ${JSON.stringify(diag.wwebjs)}`);
+                addLog(`🔬 ═════════════════════════════════════`);
+            } catch (e) {
+                addLog(`⚠️ Diagnostic échoué: ${e.message}`);
+            }
+        }
+
+        // Helper : vérifier si le message est réellement supprimé
+        const isMessageRevoked = async () => {
+            try {
+                const status = await client.pupPage.evaluate((id) => {
+                    const m = window.Store.Msg.get(id);
+                    if (!m) return 'GONE';
+                    if (m.isRevoked) return 'REVOKED';
+                    if (m.type === 'revoked') return 'REVOKED';
+                    if (m.body === '') return 'EMPTY';
+                    return 'EXISTS';
+                }, msgId);
+                return status !== 'EXISTS';
+            } catch (e) {
+                return false;
+            }
+        };
+
+        // ══════════════════════════════════════════════
+        // TENTATIVE 1 : message.delete(true) — API lib
+        // ══════════════════════════════════════════════
+        try {
+            addLog(`🗑️ T1: message.delete(true)...`);
+            await message.delete(true);
+            await new Promise(r => setTimeout(r, 2000));
+
+            if (await isMessageRevoked()) {
+                addLog(`✅ Supprimé pour TOUS via message.delete(true)`);
+                rateLimiter.recordAction();
+                return true;
+            }
+            addLog(`⚠️ T1: message.delete(true) exécuté mais message toujours là`);
+        } catch (e) {
+            addLog(`⚠️ T1 erreur: ${e.message}`);
+        }
+
+        // ══════════════════════════════════════════════
+        // TENTATIVE 2 : Evaluate direct avec TOUTES
+        // les signatures connues + vérification
+        // ══════════════════════════════════════════════
+        try {
+            addLog(`🗑️ T2: evaluate multi-méthodes...`);
+
+            const result = await client.pupPage.evaluate(async (id) => {
+                const msg = window.Store.Msg.get(id);
+                if (!msg) return { status: 'MSG_NOT_FOUND' };
+
+                let chat;
+                try { chat = await window.Store.Chat.find(msg.id.remote); } catch (e) {}
+                if (!chat) try { chat = window.Store.Chat.get(msg.id.remote); } catch (e) {}
+                if (!chat) return { status: 'CHAT_NOT_FOUND' };
+
+                const S = window.Store;
+                const log = [];
+
+                const attempt = async (name, fn) => {
+                    try {
+                        await fn();
+                        await new Promise(r => setTimeout(r, 1500));
+                        const m = S.Msg.get(id);
+                        const revoked = !m || m.isRevoked || m.type === 'revoked';
+                        log.push({ name, ok: true, revoked });
+                        return revoked;
+                    } catch (e) {
+                        log.push({ name, ok: false, err: (e.message || '').substring(0, 50) });
+                        return false;
+                    }
+                };
+
+                // A) Cmd.sendRevokeMsgs(chat, msgs, {type:'admin'})
+                if (S.Cmd?.sendRevokeMsgs) {
+                    if (await attempt('Cmd.sendRevokeMsgs(chat,admin)',
+                        () => S.Cmd.sendRevokeMsgs(chat, [msg], { clearMedia: true, type: 'admin' })
+                    )) return { status: 'OK', method: 'Cmd.sendRevokeMsgs(chat,admin)', log };
+                }
+
+                // B) Cmd.sendRevokeMsgs avec type par défaut
+                if (S.Cmd?.sendRevokeMsgs) {
+                    if (await attempt('Cmd.sendRevokeMsgs(chat,default)',
+                        () => S.Cmd.sendRevokeMsgs(chat, [msg], { clearMedia: true })
+                    )) return { status: 'OK', method: 'Cmd.sendRevokeMsgs(chat,default)', log };
+                }
+
+                // C) Cmd.sendRevokeMsgs avec jid
+                if (S.Cmd?.sendRevokeMsgs) {
+                    if (await attempt('Cmd.sendRevokeMsgs(jid)',
+                        () => S.Cmd.sendRevokeMsgs(msg.id.remote, [msg], { clearMedia: true, type: 'admin' })
+                    )) return { status: 'OK', method: 'Cmd.sendRevokeMsgs(jid)', log };
+                }
+
+                // D) Cmd.revokeMsgs (certaines versions renomment)
+                if (S.Cmd?.revokeMsgs) {
+                    if (await attempt('Cmd.revokeMsgs',
+                        () => S.Cmd.revokeMsgs(chat, [msg], { clearMedia: true, type: 'admin' })
+                    )) return { status: 'OK', method: 'Cmd.revokeMsgs', log };
+                }
+
+                // E) chat.sendRevokeMsgs
+                if (typeof chat.sendRevokeMsgs === 'function') {
+                    for (const args of [
+                        [[msg], { type: 'admin' }],
+                        [[msg], false],
+                        [[msg]]
+                    ]) {
+                        if (await attempt(`chat.sendRevokeMsgs(${JSON.stringify(args[1])})`,
+                            () => chat.sendRevokeMsgs(...args)
+                        )) return { status: 'OK', method: 'chat.sendRevokeMsgs', log };
+                    }
+                }
+
+                // F) chat.revokeMsgs
+                if (typeof chat.revokeMsgs === 'function') {
+                    if (await attempt('chat.revokeMsgs',
+                        () => chat.revokeMsgs([msg])
+                    )) return { status: 'OK', method: 'chat.revokeMsgs', log };
+                }
+
+                // G) MsgAction
+                if (S.MsgAction?.sendRevokeMsgs) {
+                    if (await attempt('MsgAction.sendRevokeMsgs',
+                        () => S.MsgAction.sendRevokeMsgs(chat, [msg], { type: 'admin' })
+                    )) return { status: 'OK', method: 'MsgAction.sendRevokeMsgs', log };
+                }
+
+                // H) SendDelete avec revoke=true
+                if (S.SendDelete?.sendDeleteMsgs) {
+                    if (await attempt('SendDelete.sendDeleteMsgs(revoke)',
+                        () => S.SendDelete.sendDeleteMsgs(msg.id.remote, [msg], true)
+                    )) return { status: 'OK', method: 'SendDelete', log };
+                }
+
+                // I) GroupUtils
+                if (S.GroupUtils?.sendRevokeAdminMsgs) {
+                    if (await attempt('GroupUtils.sendRevokeAdminMsgs',
+                        () => S.GroupUtils.sendRevokeAdminMsgs(chat, [msg])
+                    )) return { status: 'OK', method: 'GroupUtils', log };
+                }
+
+                // J) Scan dynamique
+                for (const key of Object.keys(S)) {
+                    if (['Cmd', 'MsgAction', 'GroupUtils', 'SendDelete'].includes(key)) continue;
+                    try {
+                        const mod = S[key];
+                        if (!mod || typeof mod !== 'object') continue;
+                        for (const prop of Object.getOwnPropertyNames(mod)) {
+                            if (typeof mod[prop] !== 'function') continue;
+                            if (!/revoke/i.test(prop)) continue;
+                            if (await attempt(`${key}.${prop}`,
+                                () => mod[prop](chat, [msg], { clearMedia: true, type: 'admin' })
+                            )) return { status: 'OK', method: `${key}.${prop}`, log };
+                        }
+                    } catch (e) {}
+                }
+
+                return { status: 'FAILED', log };
+            }, msgId);
+
+            addLog(`🔧 T2 résultat: ${JSON.stringify(result)}`);
+
+            if (result.status === 'OK') {
+                addLog(`✅ Supprimé pour TOUS via ${result.method}`);
+                rateLimiter.recordAction();
+                return true;
+            }
+
+            if (result.log) {
+                for (const entry of result.log) {
+                    addLog(`   └─ ${entry.name}: ${entry.ok ? '✓ appelé' : '✗ erreur'} → ${entry.revoked ? 'REVOQUÉ ✅' : entry.err || 'pas revoqué'}`);
+                }
+            }
+        } catch (e) {
+            addLog(`⚠️ T2 erreur: ${e.message}`);
+        }
+
+        // ══════════════════════════════════════════════
+        // TENTATIVE 3 : Re-fetch message + delete
+        // ══════════════════════════════════════════════
+        try {
+            addLog(`🗑️ T3: re-fetch + delete...`);
+            const chat = await message.getChat();
+            const messages = await chat.fetchMessages({ limit: 50 });
+            const target = messages.find(m => m.id._serialized === msgId);
+
+            if (target) {
+                await target.delete(true);
+                await new Promise(r => setTimeout(r, 2000));
+
+                if (await isMessageRevoked()) {
+                    addLog(`✅ Supprimé pour TOUS via re-fetch + delete`);
+                    rateLimiter.recordAction();
+                    return true;
+                }
+                addLog(`⚠️ T3: re-fetch delete exécuté mais message toujours là`);
+            } else {
+                addLog(`⚠️ T3: message non trouvé dans les 50 derniers`);
+            }
+        } catch (e) {
+            addLog(`⚠️ T3 erreur: ${e.message}`);
+        }
+
+        // ══════════════════════════════════════════════
+        // TENTATIVE 4 : Protocole brut via sendRevoke
+        // ══════════════════════════════════════════════
+        try {
+            addLog(`🗑️ T4: protocole brut...`);
+
+            const result4 = await client.pupPage.evaluate(async (id) => {
+                const msg = window.Store.Msg.get(id);
+                if (!msg) return { methods: [], revoked: false, err: 'MSG_NOT_FOUND' };
+
+                const chatJid = msg.id.remote;
+                const methods = [];
+
+                // Via WWebJS.sendRevokeMsgs si disponible
+                if (window.WWebJS?.sendRevokeMsgs) {
+                    try {
+                        await window.WWebJS.sendRevokeMsgs(chatJid, [msg]);
+                        methods.push('WWebJS.sendRevokeMsgs');
+                    } catch (e) { methods.push('WWebJS.ERR:' + (e.message || '').substring(0, 30)); }
+                }
+
+                // Via msg.collection.revoke
+                try {
+                    if (msg.collection?.revokeMsgs) {
+                        await msg.collection.revokeMsgs([msg]);
+                        methods.push('collection.revokeMsgs');
+                    }
+                } catch (e) {}
+
+                // Via Cmd.sendDeleteMsgs avec forEveryone=true
+                try {
+                    const chat = window.Store.Chat.get(chatJid);
+                    if (window.Store.Cmd?.sendDeleteMsgs) {
+                        await window.Store.Cmd.sendDeleteMsgs(chat, [msg], true);
+                        methods.push('Cmd.sendDeleteMsgs(true)');
+                    }
+                } catch (e) {}
+
+                // Vérif
+                await new Promise(r => setTimeout(r, 1500));
+                const check = window.Store.Msg.get(id);
+                const revoked = !check || check.isRevoked || check.type === 'revoked';
+
+                return { methods, revoked };
+            }, msgId);
+
+            addLog(`🔧 T4 résultat: ${JSON.stringify(result4)}`);
+
+            if (result4.revoked) {
+                addLog(`✅ Supprimé pour TOUS via protocole brut`);
+                rateLimiter.recordAction();
+                return true;
+            }
+        } catch (e) {
+            addLog(`⚠️ T4 erreur: ${e.message}`);
+        }
+
+        addLog(`❌ ÉCHEC TOTAL: message ${msgId} NON supprimé pour les autres`);
+        return false;
+
     } catch (error) {
-        addLog(`❌ Erreur suppression humanisée: ${error.message}`);
+        addLog(`❌ Erreur suppression: ${error.message}`);
         return false;
     }
 }
@@ -289,11 +586,10 @@ let CONFIG = {
     DELAY_BETWEEN_GROUPS_MAX: 15000,
     WELCOME_ENABLED: true,
     AUTO_SCAN_ENABLED: true,
-    // ✅ NOUVEAU : Options anti-appels
     CALL_REJECT_ENABLED: true,
-    CALL_SPAM_THRESHOLD: 4,       // Nombre d'appels avant blocage
-    CALL_SPAM_WINDOW_MIN: 10,     // Fenêtre en minutes
-    CALL_BLOCK_DURATION_MIN: 30,  // Durée de blocage en minutes
+    CALL_SPAM_THRESHOLD: 4,
+    CALL_SPAM_WINDOW_MIN: 10,
+    CALL_BLOCK_DURATION_MIN: 30,
     WELCOME_MESSAGE: `👋 Bienvenue {mention} dans *{group}* !
 
 📜 *Règles importantes:*
@@ -317,6 +613,8 @@ const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const PROCESSED_FILE = path.join(DATA_DIR, 'processed.json');
 const CALL_SPAM_FILE = path.join(DATA_DIR, 'call_spam.json');
 const BLOCKED_USERS_FILE = path.join(DATA_DIR, 'blocked_users.json');
+const MENUS_FILE = path.join(DATA_DIR, 'menus.json');
+const MENU_SESSIONS_FILE = path.join(DATA_DIR, 'menu_sessions.json');
 
 // ============================================================
 // ✅ SYSTÈME ANTI-DOUBLON
@@ -360,12 +658,259 @@ function isAlreadyProcessed(messageId) {
 }
 
 // ============================================================
-// ✅ SYSTÈME ANTI-SPAM APPELS (AMÉLIORÉ)
+// ✅ SYSTÈME ANTI-SPAM APPELS
 // ============================================================
 
 let callSpamTracker = {};
 let blockedUsers = {};
-let unblockTimers = {}; // ✅ Suivi des timers de déblocage
+let unblockTimers = {};
+
+// ============================================================
+// 📱 SYSTÈME DE MENUS INTERACTIFS
+// ============================================================
+
+let interactiveMenus = {};
+let menuSessions = {};
+
+function loadMenus() {
+    try {
+        if (fs.existsSync(MENUS_FILE)) {
+            interactiveMenus = JSON.parse(fs.readFileSync(MENUS_FILE, 'utf8'));
+        }
+        if (fs.existsSync(MENU_SESSIONS_FILE)) {
+            menuSessions = JSON.parse(fs.readFileSync(MENU_SESSIONS_FILE, 'utf8'));
+            const now = Date.now();
+            for (const sessionId in menuSessions) {
+                if (now - menuSessions[sessionId].createdAt > 3600000) {
+                    delete menuSessions[sessionId];
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Erreur chargement menus:', error);
+    }
+}
+
+function saveMenus() {
+    try {
+        if (!fs.existsSync(DATA_DIR)) {
+            fs.mkdirSync(DATA_DIR, { recursive: true });
+        }
+        fs.writeFileSync(MENUS_FILE, JSON.stringify(interactiveMenus, null, 2));
+        fs.writeFileSync(MENU_SESSIONS_FILE, JSON.stringify(menuSessions, null, 2));
+    } catch (error) {
+        console.error('Erreur sauvegarde menus:', error);
+    }
+}
+
+function createMenu(config) {
+    const menuId = config.id || `menu_${Date.now()}`;
+    interactiveMenus[menuId] = {
+        id: menuId,
+        title: config.title || 'Menu',
+        description: config.description || '',
+        trigger: config.trigger || null,
+        type: config.type || 'buttons',
+        buttons: config.buttons || [],
+        listSections: config.listSections || [],
+        groupId: config.groupId || null,
+        enabled: config.enabled !== false
+    };
+    saveMenus();
+    return interactiveMenus[menuId];
+}
+
+function generateButtons(buttons) {
+    return buttons.slice(0, 3).map((btn, index) => ({
+        buttonId: btn.id || `btn_${index}`,
+        buttonText: { displayText: btn.text },
+        type: btn.type || 1
+    }));
+}
+
+function generateList(sections) {
+    return {
+        buttonText: 'Choisir une option',
+        sections: sections.map(section => ({
+            title: section.title,
+            rows: section.rows.slice(0, 10).map((row, idx) => ({
+                rowId: row.id || `row_${idx}`,
+                title: row.title,
+                description: row.description || ''
+            }))
+        }))
+    };
+}
+
+async function sendInteractiveMenu(chat, menuId, options = {}) {
+    const menu = interactiveMenus[menuId];
+    if (!menu || !menu.enabled) return null;
+
+    try {
+        await rateLimiter.waitUntilAllowed();
+
+        const title = menu.title;
+        const description = menu.description || '';
+
+        if (menu.type === 'buttons' && menu.buttons.length > 0) {
+            let menuText = `📋 *${title}*\n\n`;
+            if (description) menuText += `${description}\n\n`;
+
+            menu.buttons.slice(0, 10).forEach((btn, i) => {
+                menuText += `${i + 1}️⃣ ${btn.text}\n`;
+            });
+            menuText += `\n_Reply avec le numéro de votre choix_`;
+
+            const sessionId = `${chat.id._serialized}_${Date.now()}`;
+            menuSessions[sessionId] = {
+                menuId,
+                buttons: menu.buttons,
+                createdAt: Date.now(),
+                expiresAt: Date.now() + 3600000
+            };
+            saveMenus();
+
+            const sent = await sendMessageHumanized(chat, menuText, options);
+            return sent;
+        } else if (menu.type === 'list' && menu.listSections.length > 0) {
+            let menuText = `📋 *${title}*\n\n`;
+            if (description) menuText += `${description}\n\n`;
+
+            let optionIndex = 0;
+            const allRows = [];
+            menu.listSections.forEach(section => {
+                menuText += `📁 *${section.title}*\n`;
+                section.rows.forEach(row => {
+                    optionIndex++;
+                    menuText += `  ${optionIndex}️⃣ ${row.title}\n`;
+                    allRows.push(row);
+                });
+            });
+            menuText += `\n_Reply avec le numéro de votre choix_`;
+
+            const sessionId = `${chat.id._serialized}_${Date.now()}`;
+            menuSessions[sessionId] = {
+                menuId,
+                rows: allRows,
+                createdAt: Date.now(),
+                expiresAt: Date.now() + 3600000
+            };
+            saveMenus();
+
+            const sent = await sendMessageHumanized(chat, menuText, options);
+            return sent;
+        } else {
+            const body = description || title;
+            const sent = await sendMessageHumanized(chat, body, options);
+            return sent;
+        }
+    } catch (error) {
+        addLog(`❌ Erreur envoi menu ${menuId}: ${error.message}`);
+        console.error('Erreur menu:', error);
+        return null;
+    }
+}
+
+async function handleMenuResponse(message, responseId) {
+    const chat = await message.getChat();
+    const senderId = message.author || message.from;
+
+    for (const menuId in interactiveMenus) {
+        const menu = interactiveMenus[menuId];
+        if (!menu.enabled) continue;
+
+        if (menu.groupId && chat.id._serialized !== menu.groupId) continue;
+
+        if (menu.type === 'buttons') {
+            const button = menu.buttons.find(b => b.id === responseId);
+            if (button) {
+                if (button.action) {
+                    return await executeMenuAction(chat, senderId, button.action, menu);
+                }
+                if (button.nextMenu) {
+                    return await sendInteractiveMenu(chat, button.nextMenu);
+                }
+                if (button.response) {
+                    return await sendMessageHumanized(chat, button.response, {}, message.body?.length || 0);
+                }
+            }
+        }
+
+        if (menu.type === 'list') {
+            for (const section of menu.listSections) {
+                const row = section.rows.find(r => r.id === responseId);
+                if (row) {
+                    if (row.action) {
+                        return await executeMenuAction(chat, senderId, row.action, menu);
+                    }
+                    if (row.nextMenu) {
+                        return await sendInteractiveMenu(chat, row.nextMenu);
+                    }
+                    if (row.response) {
+                        return await sendMessageHumanized(chat, row.response, {}, message.body?.length || 0);
+                    }
+                }
+            }
+        }
+    }
+
+    return null;
+}
+
+async function executeMenuAction(chat, userId, action, menu) {
+    switch (action.type) {
+        case 'message':
+            return await sendMessageHumanized(chat, action.content, {}, 0);
+
+        case 'link':
+            if (action.whitelist) {
+                addLog(`✅ Lien autorisé via menu: ${action.whitelist}`);
+                return await sendMessageHumanized(chat,
+                    `✅ Voici le lien autorisé: ${action.whitelist}`, {}, 0);
+            }
+            break;
+
+        case 'contact':
+            if (action.contactId) {
+                try {
+                    const contact = await client.getContactById(action.contactId);
+                    return await sendMessageHumanized(chat,
+                        `👤 Contact demandé: @${contact.number}`,
+                        { mentions: [contact.id._serialized] }, 0);
+                } catch (e) {
+                    return await sendMessageHumanized(chat, '❌ Contact non disponible', {}, 0);
+                }
+            }
+            break;
+
+        case 'submenu':
+            if (action.menuId && interactiveMenus[action.menuId]) {
+                return await sendInteractiveMenu(chat, action.menuId);
+            }
+            break;
+        case 'external':
+            if (action.webhook) {
+                try {
+                    const fetch = (await import('node-fetch')).default;
+                    await fetch(action.webhook, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            userId,
+                            chatId: chat.id._serialized,
+                            action: action.name,
+                            timestamp: Date.now()
+                        })
+                    });
+                    addLog(`🔔 Webhook appelé: ${action.webhook}`);
+                } catch (e) {
+                    addLog(`❌ Erreur webhook: ${e.message}`);
+                }
+            }
+            break;
+    }
+    return null;
+}
 
 function loadCallSpamData() {
     try {
@@ -406,19 +951,17 @@ function addCall(userId) {
     return callSpamTracker[userId].length;
 }
 
-// ✅ Restaurer les timers de déblocage au démarrage
 function restoreUnblockTimers() {
     const now = Date.now();
     for (const userId in blockedUsers) {
         const entry = blockedUsers[userId];
         if (!entry.autoUnblock) continue;
-        
+
         const elapsed = now - entry.blockedAt;
         const blockDuration = CONFIG.CALL_BLOCK_DURATION_MIN * 60 * 1000;
         const remaining = blockDuration - elapsed;
-        
+
         if (remaining <= 0) {
-            // Devrait déjà être débloqué
             scheduleUnblock(userId, 5000);
         } else {
             scheduleUnblock(userId, remaining);
@@ -427,19 +970,17 @@ function restoreUnblockTimers() {
 }
 
 function scheduleUnblock(userId, delay) {
-    // Annuler le timer précédent si existant
     if (unblockTimers[userId]) clearTimeout(unblockTimers[userId]);
-    
+
     unblockTimers[userId] = setTimeout(async () => {
         if (blockedUsers[userId] && blockedUsers[userId].autoUnblock) {
             try {
                 const contact = await client.getContactById(userId);
-                
-                // ✅ Délai humain avant déblocage
+
                 await HumanBehavior.naturalDelay(
                     HumanBehavior.gaussianRandom(3000, 1500)
                 );
-                
+
                 await contact.unblock();
                 delete blockedUsers[userId];
                 delete callSpamTracker[userId];
@@ -458,14 +999,12 @@ function scheduleUnblock(userId, delay) {
 // ============================================================
 
 let GROUP_EXCEPTIONS = { excludedGroups: [], excludedPatterns: [], excludedWelcome: [] };
-// Structure: { excludedAdmins: true, excludedUsers: [{ id: 'xxx', linkException: true, callException: false }] }
 let USER_EXCEPTIONS = { excludedUsers: [], excludedAdmins: true };
 
 let STATS = { totalDeleted: 0, totalWarnings: 0, totalBanned: 0, totalCallsRejected: 0, adminGroups: 0 };
 let LOGS = [];
 
-// Configuration de rétention des logs (en jours)
-const LOG_RETENTION_DAYS = 7; // Les logs de plus de 7 jours sont automatiquement supprimés
+const LOG_RETENTION_DAYS = 7;
 
 function addLog(message) {
     const now = new Date();
@@ -475,10 +1014,9 @@ function addLog(message) {
         message: message
     };
     LOGS.push(logEntry);
-    
-    // Nettoyage automatique si dépassement
+
     if (LOGS.length > 500) cleanOldLogs();
-    
+
     try { fs.writeFileSync(LOGS_FILE, JSON.stringify(LOGS, null, 2)); } catch (e) {}
     console.log(message);
 }
@@ -487,7 +1025,6 @@ function cleanOldLogs() {
     const cutoff = Date.now() - (LOG_RETENTION_DAYS * 24 * 60 * 60 * 1000);
     const before = LOGS.length;
     LOGS = LOGS.filter(log => {
-        // Supporter les anciens logs (string) et nouveaux (objet)
         const ts = typeof log === 'object' && log.timestamp ? new Date(log.timestamp).getTime() : Date.now();
         return ts > cutoff;
     });
@@ -496,7 +1033,6 @@ function cleanOldLogs() {
     }
 }
 
-// Nettoyage périodique des logs (toutes les heures)
 setInterval(() => {
     cleanOldLogs();
     try { fs.writeFileSync(LOGS_FILE, JSON.stringify(LOGS, null, 2)); } catch (e) {}
@@ -519,7 +1055,6 @@ function loadLogs() {
     try {
         if (fs.existsSync(LOGS_FILE)) {
             LOGS = JSON.parse(fs.readFileSync(LOGS_FILE, 'utf8'));
-            // Nettoyer les anciens logs au démarrage
             cleanOldLogs();
         }
     } catch (error) {}
@@ -529,8 +1064,8 @@ function loadGroupExceptions() {
     try {
         if (fs.existsSync(GROUPS_FILE)) {
             const loaded = JSON.parse(fs.readFileSync(GROUPS_FILE, 'utf8'));
-            GROUP_EXCEPTIONS = { 
-                excludedGroups: loaded.excludedGroups || [], 
+            GROUP_EXCEPTIONS = {
+                excludedGroups: loaded.excludedGroups || [],
                 excludedPatterns: loaded.excludedPatterns || [],
                 excludedWelcome: loaded.excludedWelcome || []
             };
@@ -560,24 +1095,20 @@ function saveUserExceptions() {
     try { fs.writeFileSync(USERS_FILE, JSON.stringify(USER_EXCEPTIONS, null, 2)); } catch (error) {}
 }
 
-// Vérifier si un utilisateur est exclu de la surveillance des liens
 function isUserExcludedFromLinks(userId, participants = []) {
-    // Extraire le numéro de l'ID WhatsApp
     const userNumber = userId.split('@')[0];
-    
-    // Vérifier les exceptions explicites (par ID complet ou par numéro)
+
     const userException = USER_EXCEPTIONS.excludedUsers.find(u => {
         const exceptionId = typeof u === 'object' ? u.id : u;
         const exceptionNumber = exceptionId.split('@')[0];
         return exceptionId === userId || exceptionNumber === userNumber || exceptionId === userNumber;
     });
-    
+
     if (userException) {
         const hasLinkException = typeof userException === 'object' ? userException.linkException : true;
         if (hasLinkException) return true;
     }
-    
-    // Vérifier si admin et exclusion des admins activée
+
     if (USER_EXCEPTIONS.excludedAdmins) {
         const p = participants.find(p => p.id._serialized === userId);
         if (p && p.isAdmin) return true;
@@ -585,27 +1116,22 @@ function isUserExcludedFromLinks(userId, participants = []) {
     return false;
 }
 
-// Vérifier si un utilisateur est exclu du rejet d'appels
 function isUserExcludedFromCalls(userId, phoneNumber = null) {
-    // Extraire le numéro de l'ID WhatsApp (formats: numero@c.us, numero@lid, numero)
     const callerNumber = userId.split('@')[0];
-    
-    // Vérifier si l'ID complet, le numéro extrait, ou le numéro de téléphone est dans les exceptions
+
     const userException = USER_EXCEPTIONS.excludedUsers.find(u => {
         const exceptionId = typeof u === 'object' ? u.id : u;
         const exceptionNumber = exceptionId.split('@')[0];
-        // Comparer avec l'ID, le numéro extrait, ou le numéro de téléphone réel
-        return exceptionId === userId || 
-               exceptionNumber === callerNumber || 
-               exceptionId === callerNumber ||
-               (phoneNumber && exceptionNumber === phoneNumber) ||
-               (phoneNumber && exceptionId === phoneNumber);
+        return exceptionId === userId ||
+            exceptionNumber === callerNumber ||
+            exceptionId === callerNumber ||
+            (phoneNumber && exceptionNumber === phoneNumber) ||
+            (phoneNumber && exceptionId === phoneNumber);
     });
-    
+
     return userException && (typeof userException === 'object' ? userException.callException : false);
 }
 
-// Ancienne fonction pour compatibilité (liens)
 function isUserExcluded(userId, participants = []) {
     return isUserExcludedFromLinks(userId, participants);
 }
@@ -664,39 +1190,39 @@ function getWarningCount(chatId, userId) {
 }
 
 // ============================================================
-// 🔍 DÉTECTION DE LIENS (inchangée — déjà robuste)
+// 🔍 DÉTECTION DE LIENS
 // ============================================================
 
 const VALID_TLDS = [
-    'com','net','org','fr','io','me','co','dev','info','biz','edu','gov',
-    'xyz','site','online','store','shop','app','tech','club','live','pro',
-    'link','click','top','work','world','news','tv','cc','ly','gl','gg',
-    'am','fm','be','it','de','uk','eu','ru','cn','jp','br','in','au',
-    'ca','es','nl','se','no','fi','dk','at','ch','pt','pl','cz','gr',
-    'ie','za','ng','ke','gh','ci','cm','bf','ml','sn','tg','bj','ne',
-    'gn','mg','cd','cg','ga','td','rw','ug','tz','mz','zw','eg','ma',
-    'dz','tn','sa','ae','qa','kw','pk','af','bd','th','vn','my','sg',
-    'id','ph','kr','hk','tw','nz','mx','ar','cl','pe','ve','do','cu',
-    'pr','ht','cr','pa'
+    'com', 'net', 'org', 'fr', 'io', 'me', 'co', 'dev', 'info', 'biz', 'edu', 'gov',
+    'xyz', 'site', 'online', 'store', 'shop', 'app', 'tech', 'club', 'live', 'pro',
+    'link', 'click', 'top', 'work', 'world', 'news', 'tv', 'cc', 'ly', 'gl', 'gg',
+    'am', 'fm', 'be', 'it', 'de', 'uk', 'eu', 'ru', 'cn', 'jp', 'br', 'in', 'au',
+    'ca', 'es', 'nl', 'se', 'no', 'fi', 'dk', 'at', 'ch', 'pt', 'pl', 'cz', 'gr',
+    'ie', 'za', 'ng', 'ke', 'gh', 'ci', 'cm', 'bf', 'ml', 'sn', 'tg', 'bj', 'ne',
+    'gn', 'mg', 'cd', 'cg', 'ga', 'td', 'rw', 'ug', 'tz', 'mz', 'zw', 'eg', 'ma',
+    'dz', 'tn', 'sa', 'ae', 'qa', 'kw', 'pk', 'af', 'bd', 'th', 'vn', 'my', 'sg',
+    'id', 'ph', 'kr', 'hk', 'tw', 'nz', 'mx', 'ar', 'cl', 'pe', 've', 'do', 'cu',
+    'pr', 'ht', 'cr', 'pa'
 ];
 
 const FALSE_POSITIVE_WORDS = [
-    'ok.merci','ok.ok','non.non','oui.oui','mr.','mme.','dr.',
-    'etc.','ex.','vs.','inc.','ltd.','sr.','jr.','st.'
+    'ok.merci', 'ok.ok', 'non.non', 'oui.oui', 'mr.', 'mme.', 'dr.',
+    'etc.', 'ex.', 'vs.', 'inc.', 'ltd.', 'sr.', 'jr.', 'st.'
 ];
 
 const WHITELISTED_DOMAINS = [
-    'gmail.com','yahoo.com','yahoo.fr','hotmail.com','hotmail.fr',
-    'outlook.com','outlook.fr','live.com','live.fr','icloud.com',
-    'aol.com','protonmail.com','mail.com','whatsapp.com',
-    'facebook.com','instagram.com','twitter.com','youtube.com',
-    'google.com','tiktok.com','orange.fr','free.fr','sfr.fr'
+    'gmail.com', 'yahoo.com', 'yahoo.fr', 'hotmail.com', 'hotmail.fr',
+    'outlook.com', 'outlook.fr', 'live.com', 'live.fr', 'icloud.com',
+    'aol.com', 'protonmail.com', 'mail.com', 'whatsapp.com',
+    'facebook.com', 'instagram.com', 'twitter.com', 'youtube.com',
+    'google.com', 'tiktok.com', 'orange.fr', 'free.fr', 'sfr.fr'
 ];
 
 const EMAIL_CONTEXT_WORDS = [
-    'email','e-mail','mail','adresse','address','contact',
-    'contacter','joindre','écrire','ecrire','envoie','envoi',
-    'envoyé','envoyer','sur','chez','mon','ma','mes','ton','ta'
+    'email', 'e-mail', 'mail', 'adresse', 'address', 'contact',
+    'contacter', 'joindre', 'écrire', 'ecrire', 'envoie', 'envoi',
+    'envoyé', 'envoyer', 'sur', 'chez', 'mon', 'ma', 'mes', 'ton', 'ta'
 ];
 
 function containsLink(message) {
@@ -761,7 +1287,6 @@ function containsLink(message) {
 // 🤖 CLIENT WHATSAPP
 // ============================================================
 
-// Nettoyer les fichiers de verrouillage Chromium AVANT de créer le client
 const authPath = path.join(__dirname, '.wwebjs_auth');
 try {
     const cleanLockFiles = (dir) => {
@@ -783,8 +1308,10 @@ const client = new Client({
     authStrategy: new LocalAuth({ dataPath: path.join(__dirname, '.wwebjs_auth') }),
     puppeteer: {
         headless: true,
+        timeout: 120000,
+        protocolTimeout: 120000,
         args: [
-            '--no-sandbox', 
+            '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
             '--disable-accelerated-2d-canvas',
@@ -827,15 +1354,12 @@ async function scanOldMessages(chat, limit = 100) {
         return { deleted: 0, scanned: 0, warned: 0 };
     }
 
-    // ✅ Simuler l'ouverture du chat (un humain scrolle)
     try { await chat.sendSeen(); } catch (e) {}
     await HumanBehavior.naturalDelay(HumanBehavior.gaussianRandom(2000, 1000));
 
     const messages = await chat.fetchMessages({ limit });
     let deleted = 0, scanned = 0, warned = 0;
 
-    // ✅ Ne pas traiter tous les messages d'un coup
-    // Un humain ne peut pas vérifier 100 messages instantanément
     let actionCount = 0;
 
     for (const message of messages) {
@@ -850,16 +1374,14 @@ async function scanOldMessages(chat, limit = 100) {
         if (authorId.includes('@g.us')) continue;
         if (isUserExcluded(authorId, participants)) continue;
 
-        // ✅ Délai inter-action humanisé avec accélération limitée
         if (actionCount > 0) {
             await HumanBehavior.naturalDelay(HumanBehavior.interActionDelay());
         }
         actionCount++;
 
-        // ✅ Pause plus longue tous les 5 messages (fatigue humaine)
         if (actionCount > 0 && actionCount % 5 === 0) {
             const fatiguePause = HumanBehavior.gaussianRandom(8000, 4000);
-            addLog(`😴 Pause fatigue: ${Math.round(fatiguePause/1000)}s`);
+            addLog(`😴 Pause fatigue: ${Math.round(fatiguePause / 1000)}s`);
             await HumanBehavior.naturalDelay(fatiguePause);
         }
 
@@ -870,15 +1392,22 @@ async function scanOldMessages(chat, limit = 100) {
             const mention = `@${contact.number}`;
             const currentWarnings = getWarningCount(chat.id._serialized, authorId);
 
+            // ══════ ÉTAPE 1 : SUPPRIMER D'ABORD ══════
+            if (await deleteMessageHumanized(message)) {
+                deleted++;
+                STATS.totalDeleted++;
+                addLog(`🗑️ Ancien message supprimé dans ${chat.name}`);
+            }
+
+            // ══════ ÉTAPE 2 : AVERTIR / BANNIR ENSUITE ══════
             if (currentWarnings >= CONFIG.MAX_WARNINGS) {
-                // Déjà au max → bannir
                 try {
                     const banMsg = MessagePool.pick(
                         MessagePool.bans, mention, CONFIG.MAX_WARNINGS
                     );
                     await sendMessageHumanized(chat, banMsg, {
                         mentions: [contact.id._serialized]
-                    }, message.body.length);
+                    }, message.body?.length || 0);
 
                     await HumanBehavior.naturalDelay(
                         HumanBehavior.gaussianRandom(2000, 800)
@@ -904,7 +1433,7 @@ async function scanOldMessages(chat, limit = 100) {
                         );
                         await sendMessageHumanized(chat, banMsg, {
                             mentions: [contact.id._serialized]
-                        }, message.body.length);
+                        }, message.body?.length || 0);
 
                         await HumanBehavior.naturalDelay(
                             HumanBehavior.gaussianRandom(2000, 800)
@@ -927,18 +1456,11 @@ async function scanOldMessages(chat, limit = 100) {
                     try {
                         await sendMessageHumanized(chat, warnMsg, {
                             mentions: [contact.id._serialized]
-                        }, message.body.length);
+                        }, message.body?.length || 0);
                     } catch (warnError) {
                         console.error('Erreur avertissement:', warnError);
                     }
                 }
-            }
-
-            // ✅ Supprimer APRÈS l'avertissement (ordre humain)
-            if (await deleteMessageHumanized(message)) {
-                deleted++;
-                STATS.totalDeleted++;
-                addLog(`🗑️ Ancien message supprimé dans ${chat.name}`);
             }
         } catch (error) {
             addLog(`⚠️ Erreur traitement: ${error.message}`);
@@ -957,8 +1479,6 @@ async function scanAllGroups() {
 
     let totalDeleted = 0, totalScanned = 0, totalWarned = 0;
 
-    // ✅ Mélanger l'ordre des groupes (un humain ne fait pas toujours
-    // la même chose dans le même ordre)
     const shuffled = groups.sort(() => Math.random() - 0.5);
 
     for (const group of shuffled) {
@@ -967,7 +1487,6 @@ async function scanAllGroups() {
         totalScanned += result.scanned;
         totalWarned += result.warned || 0;
 
-        // ✅ Délai inter-groupe humanisé
         await HumanBehavior.naturalDelay(HumanBehavior.interGroupDelay());
     }
 
@@ -985,65 +1504,63 @@ client.on('ready', async () => {
     currentQR = null;
     addLog('✅ Bot connecté et prêt!');
     addLog(`⚙️ Mode humain activé (délais gaussiens, typing, rate limit)`);
+    addLog(`🗑️ Suppression V3 avec vérification post-delete`);
 
-    // ✅ Restaurer les timers de déblocage
     restoreUnblockTimers();
-
-    // ✅ Gérer la présence en ligne de façon naturelle
     startPresenceManager();
 
     if (CONFIG.AUTO_SCAN_ENABLED) {
-        // ✅ Attendre un peu avant le premier scan (comme un humain
-        // qui vient de se connecter et regarde ses messages d'abord)
         const startupDelay = HumanBehavior.gaussianRandom(15000, 8000);
-        addLog(`⏳ Premier scan dans ${Math.round(startupDelay/1000)}s...`);
+        addLog(`⏳ Premier scan dans ${Math.round(startupDelay / 1000)}s...`);
         await new Promise(r => setTimeout(r, startupDelay));
-        await scanAllGroups();
+        try {
+            await scanAllGroups();
+        } catch (scanError) {
+            addLog(`❌ Erreur scan initial: ${scanError.message}`);
+        }
     }
 
-    // ✅ Intervalle de scan avec jitter (pas exactement toutes les Xh)
     scheduleNextScan();
 });
 
 function scheduleNextScan() {
     const baseMs = CONFIG.AUTO_SCAN_INTERVAL_HOURS * 60 * 60 * 1000;
-    // ✅ Ajouter ±20% de jitter pour ne pas être régulier
     const jitter = HumanBehavior.gaussianRandom(0, baseMs * 0.2);
     const nextScanMs = baseMs + jitter;
 
-    addLog(`⏰ Prochain scan dans ${Math.round(nextScanMs/3600000*10)/10}h`);
+    addLog(`⏰ Prochain scan dans ${Math.round(nextScanMs / 3600000 * 10) / 10}h`);
 
     setTimeout(async () => {
         if (CONFIG.AUTO_SCAN_ENABLED && isConnected) {
             addLog(`⏰ Scan automatique programmé...`);
-            await scanAllGroups();
+            try {
+                await scanAllGroups();
+            } catch (scanError) {
+                addLog(`❌ Erreur scan programmé: ${scanError.message}`);
+            }
         }
-        scheduleNextScan(); // Re-programmer avec nouveau jitter
+        scheduleNextScan();
     }, nextScanMs);
 }
 
 // ============================================================
 // 👤 GESTIONNAIRE DE PRÉSENCE
-// Simule les cycles online/offline d'un humain réel
 // ============================================================
 
 function startPresenceManager() {
     async function togglePresence() {
         try {
             const hour = new Date().getHours();
-            // La nuit : rester offline plus longtemps
             if (hour >= 1 && hour < 7) {
                 await client.sendPresenceUnavailable();
-                // Rester offline 30-90 min
                 const offlineTime = HumanBehavior.gaussianRandom(3600000, 1800000);
                 setTimeout(togglePresence, offlineTime);
                 return;
             }
 
-            // Cycle normal : online 5-20 min, offline 2-10 min
             await client.sendPresenceAvailable();
             const onlineTime = HumanBehavior.gaussianRandom(720000, 420000);
-            
+
             setTimeout(async () => {
                 try {
                     await client.sendPresenceUnavailable();
@@ -1058,7 +1575,6 @@ function startPresenceManager() {
         }
     }
 
-    // Premier cycle après un délai aléatoire
     setTimeout(togglePresence, HumanBehavior.gaussianRandom(30000, 15000));
 }
 
@@ -1070,6 +1586,76 @@ client.on('message', async (message) => {
     try {
         if (message.fromMe) return;
         const chat = await message.getChat();
+        const senderId = message.author || message.from;
+
+        // ✅ Réponse à un menu interactif (boutons natifs)
+        if (message.type === 'buttons_response' || message.type === 'list_response') {
+            const responseId = message.selectedButtonId || message.selectedRowId;
+            if (responseId) {
+                addLog(`📱 Réponse menu: ${responseId} de ${senderId}`);
+                await handleMenuResponse(message, responseId);
+                return;
+            }
+        }
+
+        // ✅ Réponse numérotée à un menu textuel
+        const messageText = message.body.trim();
+        const numberMatch = messageText.match(/^(\d+)$/);
+        if (numberMatch) {
+            const selectedNumber = parseInt(numberMatch[1]);
+
+            let latestSession = null;
+            let latestSessionId = null;
+
+            for (const sessionId in menuSessions) {
+                const session = menuSessions[sessionId];
+
+                if (session.expiresAt < Date.now()) {
+                    delete menuSessions[sessionId];
+                    continue;
+                }
+
+                if (sessionId.startsWith(chat.id._serialized)) {
+                    if (!latestSession || session.createdAt > latestSession.createdAt) {
+                        latestSession = session;
+                        latestSessionId = sessionId;
+                    }
+                }
+            }
+
+            if (latestSession) {
+                const items = latestSession.buttons || latestSession.rows || [];
+                if (selectedNumber >= 1 && selectedNumber <= items.length) {
+                    const selectedItem = items[selectedNumber - 1];
+                    addLog(`📱 Réponse menu textuel: ${selectedNumber} (${selectedItem.text || selectedItem.title}) de ${senderId}`);
+
+                    if (selectedItem.response) {
+                        await sendMessageHumanized(chat, selectedItem.response, {}, messageText.length);
+                    } else if (selectedItem.nextMenu) {
+                        await sendInteractiveMenu(chat, selectedItem.nextMenu);
+                    } else {
+                        await sendMessageHumanized(chat, `✅ Vous avez sélectionné: ${selectedItem.text || selectedItem.title}`, {}, messageText.length);
+                    }
+                    return;
+                }
+            }
+        }
+
+        // ✅ Vérifier si le message déclenche un menu
+        const triggerText = message.body.trim().toLowerCase();
+        for (const menuId in interactiveMenus) {
+            const menu = interactiveMenus[menuId];
+            if (!menu.enabled || !menu.trigger) continue;
+            if (menu.groupId && chat.id._serialized !== menu.groupId) continue;
+
+            if (triggerText === menu.trigger.toLowerCase()) {
+                addLog(`📱 Menu déclenché: ${menuId} par ${senderId}`);
+                await sendInteractiveMenu(chat, menuId);
+                return;
+            }
+        }
+
+        // ✅ Seul le traitement des groupes continue
         if (!chat.isGroup) return;
         if (isGroupExcluded(chat)) return;
 
@@ -1078,14 +1664,11 @@ client.on('message', async (message) => {
         const botP = participants.find(p => p.id._serialized === botId);
         if (!botP || !botP.isAdmin) return;
 
-        const messageBody = message.body.trim().toLowerCase();
-        const senderId = message.author || message.from;
         const senderP = participants.find(p => p.id._serialized === senderId);
 
-        // ✅ Commandes admin
-        if (messageBody === '!scan') {
+        // ✅ Commande !scan
+        if (messageText === '!scan') {
             if (senderP?.isAdmin) {
-                // ✅ Simuler lecture + frappe même pour les commandes
                 await sendMessageHumanized(chat, '🔍 Scan en cours...', {}, message.body.length);
                 const result = await scanOldMessages(chat, CONFIG.SCAN_LIMIT);
                 await sendMessageHumanized(
@@ -1097,7 +1680,8 @@ client.on('message', async (message) => {
             return;
         }
 
-        if (messageBody === '!scanall') {
+        // ✅ Commande !scanall
+        if (messageText === '!scanall') {
             if (senderP?.isAdmin) {
                 await sendMessageHumanized(chat, '🔍 Scan global en cours...', {}, message.body.length);
                 const result = await scanAllGroups();
@@ -1106,6 +1690,111 @@ client.on('message', async (message) => {
                     `✅ Scan global terminé: ${result.totalScanned} scannés, ${result.totalDeleted} supprimés.`,
                     {}, 25
                 );
+            }
+            return;
+        }
+
+        // ✅ Commande !diagdelete — diagnostic des méthodes de suppression
+        if (messageText === '!diagdelete') {
+            if (senderP?.isAdmin) {
+                await sendMessageHumanized(chat, '🔬 Diagnostic suppression en cours...', {}, message.body.length);
+                try {
+                    const diag = await client.pupPage.evaluate(() => {
+                        const r = { store: {}, chat: [], msg: [], cmd: [], wwebjs: [] };
+
+                        for (const key of Object.keys(window.Store || {})) {
+                            try {
+                                const mod = window.Store[key];
+                                if (!mod || typeof mod !== 'object') continue;
+                                const fns = [];
+                                for (const p of Object.getOwnPropertyNames(mod)) {
+                                    try {
+                                        if (typeof mod[p] === 'function' && /revoke|delete|remove/i.test(p))
+                                            fns.push(p);
+                                    } catch (e) {}
+                                }
+                                if (fns.length) r.store[key] = fns;
+                            } catch (e) {}
+                        }
+
+                        try {
+                            const c = window.Store.Chat.getModelsArray()[0];
+                            if (c) {
+                                let proto = Object.getPrototypeOf(c);
+                                while (proto && proto !== Object.prototype) {
+                                    for (const p of Object.getOwnPropertyNames(proto)) {
+                                        try {
+                                            if (typeof proto[p] === 'function' && /revoke|delete|send/i.test(p))
+                                                r.chat.push(p);
+                                        } catch (e) {}
+                                    }
+                                    proto = Object.getPrototypeOf(proto);
+                                }
+                                r.chat = [...new Set(r.chat)];
+                            }
+                        } catch (e) {}
+
+                        try {
+                            const m = window.Store.Msg.getModelsArray()[0];
+                            if (m) {
+                                let proto = Object.getPrototypeOf(m);
+                                while (proto && proto !== Object.prototype) {
+                                    for (const p of Object.getOwnPropertyNames(proto)) {
+                                        try {
+                                            if (typeof proto[p] === 'function' && /revoke|delete|canRevoke|canAdmin/i.test(p))
+                                                r.msg.push(p);
+                                        } catch (e) {}
+                                    }
+                                    proto = Object.getPrototypeOf(proto);
+                                }
+                                r.msg = [...new Set(r.msg)];
+                            }
+                        } catch (e) {}
+
+                        if (window.Store.Cmd) {
+                            r.cmd = Object.getOwnPropertyNames(window.Store.Cmd)
+                                .filter(p => { try { return typeof window.Store.Cmd[p] === 'function'; } catch (e) { return false; } })
+                                .slice(0, 40);
+                        }
+
+                        if (window.WWebJS)
+                            r.wwebjs = Object.keys(window.WWebJS);
+
+                        return r;
+                    });
+
+                    let report = `🔬 *DIAGNOSTIC SUPPRESSION*\n\n`;
+                    report += `📦 *Store modules (delete/revoke):*\n`;
+                    for (const [mod, fns] of Object.entries(diag.store || {})) {
+                        report += `• \`${mod}\`: ${fns.join(', ')}\n`;
+                    }
+                    report += `\n💬 *Chat proto:*\n\`${(diag.chat || []).join(', ')}\`\n`;
+                    report += `\n📩 *Msg proto:*\n\`${(diag.msg || []).join(', ')}\`\n`;
+                    report += `\n🔧 *Cmd toutes méthodes:*\n\`${(diag.cmd || []).join(', ')}\`\n`;
+                    report += `\n🌐 *WWebJS:*\n\`${(diag.wwebjs || []).join(', ')}\`\n`;
+
+                    await sendMessageHumanized(chat, report, {}, 10);
+                    addLog(`🔬 Diagnostic envoyé dans ${chat.name}`);
+                } catch (error) {
+                    await sendMessageHumanized(chat, `❌ Erreur: ${error.message}`, {}, 10);
+                }
+            }
+            return;
+        }
+
+        // ✅ Commande !testdelete — envoie un message test puis le supprime
+        if (messageText === '!testdelete') {
+            if (senderP?.isAdmin) {
+                const testMsg = await sendMessageHumanized(chat, '🧪 Message test — sera supprimé dans 3s...', {}, 5);
+                if (testMsg) {
+                    await new Promise(r => setTimeout(r, 3000));
+                    const deleted = await deleteMessageHumanized(testMsg);
+                    if (deleted) {
+                        await sendMessageHumanized(chat, '✅ Suppression réussie !', {}, 5);
+                    } else {
+                        await sendMessageHumanized(chat, '❌ Suppression échouée — voir les logs', {}, 5);
+                    }
+                }
             }
             return;
         }
@@ -1121,7 +1810,7 @@ client.on('message', async (message) => {
         if (authorId.includes('@g.us')) return;
         if (isUserExcluded(authorId, participants)) return;
 
-        // ✅ Marquer le chat comme "lu" (comportement humain)
+        // ✅ Marquer comme lu
         try { await chat.sendSeen(); } catch (e) {}
 
         const contact = await message.getContact();
@@ -1130,17 +1819,28 @@ client.on('message', async (message) => {
         const remaining = CONFIG.MAX_WARNINGS - warningCount;
         STATS.totalWarnings++;
 
+        // ══════════════════════════════════════════════════════
+        // ÉTAPE 1 : SUPPRIMER D'ABORD (contenu nuisible)
+        // ══════════════════════════════════════════════════════
+        const messageBodyLength = message.body?.length || 0;
+        const wasDeleted = await deleteMessageHumanized(message);
+        if (wasDeleted) {
+            STATS.totalDeleted++;
+            addLog(`🗑️ Message supprimé de ${authorId} dans ${chat.name}`);
+        }
+
+        // ══════════════════════════════════════════════════════
+        // ÉTAPE 2 : AVERTIR OU BANNIR ENSUITE
+        // ══════════════════════════════════════════════════════
         if (warningCount >= CONFIG.MAX_WARNINGS) {
             try {
                 const banMsg = MessagePool.pick(
                     MessagePool.bans, mention, CONFIG.MAX_WARNINGS
                 );
                 await sendMessageHumanized(chat, banMsg, {
-                    mentions: [contact.id._serialized],
-                    quotedMessageId: message.id._serialized
-                }, message.body.length);
+                    mentions: [contact.id._serialized]
+                }, messageBodyLength);
 
-                // ✅ Délai humain avant le ban
                 await HumanBehavior.naturalDelay(
                     HumanBehavior.gaussianRandom(2500, 1000)
                 );
@@ -1154,7 +1854,7 @@ client.on('message', async (message) => {
                 addLog(`❌ Erreur ban: ${banError.message}`);
                 await sendMessageHumanized(chat,
                     `⚠️ ${mention} a atteint la limite mais je n'ai pas pu le bannir.`,
-                    { mentions: [contact.id._serialized], quotedMessageId: message.id._serialized },
+                    { mentions: [contact.id._serialized] },
                     10
                 );
             }
@@ -1164,16 +1864,9 @@ client.on('message', async (message) => {
                 CONFIG.MAX_WARNINGS, remaining
             );
             await sendMessageHumanized(chat, warnMsg, {
-                mentions: [contact.id._serialized],
-                quotedMessageId: message.id._serialized
-            }, message.body.length);
-            addLog(`⚠️ Avertissement ${warningCount}/${CONFIG.MAX_WARNINGS} pour ${authorId}`);
-        }
-
-        // ✅ Suppression APRÈS l'avertissement (comme un humain ferait)
-        if (await deleteMessageHumanized(message)) {
-            STATS.totalDeleted++;
-            addLog(`🗑️ Message supprimé de ${authorId}`);
+                mentions: [contact.id._serialized]
+            }, messageBodyLength);
+            addLog(`⚠️ Avertissement ${warningCount}/${CONFIG.MAX_WARNINGS} pour ${authorId} dans ${chat.name}`);
         }
     } catch (error) {
         console.error('Erreur traitement message:', error);
@@ -1184,7 +1877,6 @@ client.on('message', async (message) => {
 // 👋 HANDLER BIENVENUE
 // ============================================================
 
-// Message de bienvenue pour les groupes exclus (pas de surveillance des liens)
 const WELCOME_MESSAGE_EXCLUDED = `👋 Bienvenue {mention} dans *{group}* !
 
 🎉 Content de te voir parmi nous !
@@ -1203,7 +1895,6 @@ client.on('group_join', async (notification) => {
         const botP = participants.find(p => p.id._serialized === botId);
         if (!botP || !botP.isAdmin) return;
 
-        // Vérifier si le bienvenue est désactivé pour ce groupe
         if (GROUP_EXCEPTIONS.excludedWelcome.includes(chat.id._serialized)) {
             addLog(`🔇 Bienvenue désactivé pour ${chat.name}`);
             return;
@@ -1215,17 +1906,14 @@ client.on('group_join', async (notification) => {
         let contact;
         try { contact = await client.getContactById(newMemberId); } catch (e) { return; }
 
-        // ✅ Attendre un moment avant d'envoyer le bienvenue
-        // (un humain ne réagit pas à la milliseconde)
         await HumanBehavior.naturalDelay(
             HumanBehavior.gaussianRandom(5000, 3000)
         );
 
         const mention = `@${contact.number}`;
-        
-        // Vérifier si le groupe est exclu (surveillance liens)
+
         const isExcluded = isGroupExcluded(chat);
-        
+
         const welcomeMessage = (isExcluded ? WELCOME_MESSAGE_EXCLUDED : CONFIG.WELCOME_MESSAGE)
             .replace(/{mention}/g, mention)
             .replace(/{group}/g, chat.name)
@@ -1242,7 +1930,7 @@ client.on('group_join', async (notification) => {
 });
 
 // ============================================================
-// 📞 HANDLER APPELS — ENTIÈREMENT HUMANISÉ
+// 📞 HANDLER APPELS
 // ============================================================
 
 client.on('call', async (call) => {
@@ -1251,8 +1939,7 @@ client.on('call', async (call) => {
 
         const callerId = call.from;
         addLog(`📞 Appel entrant de ${callerId}`);
-        
-        // ✅ Récupérer le contact pour obtenir le numéro de téléphone réel
+
         let callerNumber = callerId.split('@')[0];
         try {
             const contact = await client.getContactById(callerId);
@@ -1261,26 +1948,21 @@ client.on('call', async (call) => {
                 addLog(`📱 Numéro associé: ${callerNumber}`);
             }
         } catch (e) {}
-        
-        // ✅ Vérifier si l'utilisateur est exclu du rejet d'appels (par ID ou numéro)
+
         if (isUserExcludedFromCalls(callerId, callerNumber)) {
             addLog(`✅ ${callerNumber} exempté du rejet d'appels - appel ignoré`);
             return;
         }
 
-        // ✅ Vérifier si déjà bloqué (avec vérification réelle WhatsApp)
         if (blockedUsers[callerId]) {
             try {
                 const contact = await client.getContactById(callerId);
-                // Vérifier si VRAIMENT bloqué dans WhatsApp
                 if (contact.isBlocked) {
                     addLog(`⛔ ${callerId} déjà bloqué`);
-                    // Rejeter quand même après un délai (le téléphone sonne)
                     await HumanBehavior.naturalDelay(HumanBehavior.callRejectDelay());
                     try { await call.reject(); } catch (e) {}
                     return;
                 } else {
-                    // Débloqué manuellement → nettoyer nos données
                     addLog(`🔓 ${callerId} débloqué manuellement, mise à jour`);
                     delete blockedUsers[callerId];
                     delete callSpamTracker[callerId];
@@ -1295,12 +1977,6 @@ client.on('call', async (call) => {
             }
         }
 
-        // ✅ DÉLAI HUMAIN : le téléphone sonne, on le prend, on regarde
-        const rejectDelay = HumanBehavior.callRejectDelay();
-        addLog(`📱 Sonnerie pendant ${Math.round(rejectDelay/1000)}s...`);
-        await HumanBehavior.naturalDelay(rejectDelay);
-
-        // ✅ Rejeter l'appel
         try {
             await call.reject();
             addLog(`🚫 Appel rejeté: ${callerId}`);
@@ -1310,15 +1986,12 @@ client.on('call', async (call) => {
             addLog(`⚠️ Erreur rejet appel: ${rejectError.message}`);
         }
 
-        // ✅ Tracker l'appel
         const callCount = addCall(callerId);
         addLog(`📊 ${callerId}: ${callCount}/${CONFIG.CALL_SPAM_THRESHOLD} appels`);
 
-        // ✅ SPAM DÉTECTÉ → BLOQUER
         if (callCount >= CONFIG.CALL_SPAM_THRESHOLD) {
             addLog(`🚫 SPAM: ${callerId} — ${callCount} appels → BLOCAGE`);
 
-            // ✅ Envoyer un message AVANT de bloquer
             try {
                 const postCallDelay = HumanBehavior.postCallMessageDelay();
                 await HumanBehavior.naturalDelay(postCallDelay);
@@ -1330,7 +2003,6 @@ client.on('call', async (call) => {
                 addLog(`⚠️ Message pré-blocage échoué: ${msgError.message}`);
             }
 
-            // ✅ Délai humain avant de bloquer (hésitation)
             await HumanBehavior.naturalDelay(HumanBehavior.blockDelay());
 
             try {
@@ -1346,7 +2018,6 @@ client.on('call', async (call) => {
                 saveCallSpamData();
                 addLog(`🔒 ${callerId} bloqué pour spam d'appels`);
 
-                // ✅ Programmer le déblocage
                 const blockDuration = CONFIG.CALL_BLOCK_DURATION_MIN * 60 * 1000;
                 scheduleUnblock(callerId, blockDuration);
 
@@ -1356,10 +2027,8 @@ client.on('call', async (call) => {
             return;
         }
 
-        // ✅ PAS ENCORE SPAM → Message d'avertissement
-        // Attendre un délai réaliste (humain qui décide d'écrire un message)
         const msgDelay = HumanBehavior.postCallMessageDelay();
-        addLog(`⏳ Message dans ${Math.round(msgDelay/1000)}s...`);
+        addLog(`⏳ Message dans ${Math.round(msgDelay / 1000)}s...`);
         await HumanBehavior.naturalDelay(msgDelay);
 
         try {
@@ -1454,7 +2123,6 @@ app.get('/api/stats', async (req, res) => {
 });
 
 app.get('/api/logs', (req, res) => {
-    // Convertir les objets logs en format d'affichage pour l'interface
     const formattedLogs = LOGS.map(log => {
         if (typeof log === 'string') return log;
         return `[${log.display}] ${log.message}`;
@@ -1462,7 +2130,6 @@ app.get('/api/logs', (req, res) => {
     res.json(formattedLogs);
 });
 
-// API pour les détails des statistiques
 app.get('/api/stats/groups', async (req, res) => {
     try {
         if (!isConnected) return res.json({ groups: [] });
@@ -1543,7 +2210,7 @@ app.get('/api/groups', async (req, res) => {
                 isAdmin: bp?.isAdmin || false,
                 isExcluded: GROUP_EXCEPTIONS.excludedGroups.includes(g.id._serialized)
             };
-        }).filter(g => g.isAdmin)); // N'afficher que les groupes où le bot est admin
+        }).filter(g => g.isAdmin));
     } catch (error) { res.status(500).json([]); }
 });
 
@@ -1568,22 +2235,19 @@ app.delete('/api/groups/exceptions', (req, res) => {
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
-// Gérer l'option de bienvenue par groupe
 app.post('/api/groups/welcome', (req, res) => {
     try {
         const { groupId, enabled } = req.body;
         if (!groupId) return res.status(400).json({ success: false, message: 'groupId requis' });
-        
+
         if (enabled === false) {
-            // Désactiver le bienvenue pour ce groupe
             if (!GROUP_EXCEPTIONS.excludedWelcome.includes(groupId)) {
                 GROUP_EXCEPTIONS.excludedWelcome.push(groupId);
             }
         } else {
-            // Réactiver le bienvenue
             GROUP_EXCEPTIONS.excludedWelcome = GROUP_EXCEPTIONS.excludedWelcome.filter(id => id !== groupId);
         }
-        
+
         saveGroupExceptions();
         res.json({ success: true, exceptions: GROUP_EXCEPTIONS });
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
@@ -1591,34 +2255,29 @@ app.post('/api/groups/welcome', (req, res) => {
 
 app.get('/api/users/exceptions', (req, res) => res.json(USER_EXCEPTIONS));
 
-// Ajouter ou mettre à jour une exception utilisateur
 app.post('/api/users/exceptions', (req, res) => {
     try {
         const { userId, linkException, callException } = req.body;
         if (!userId) return res.status(400).json({ success: false, message: 'userId requis' });
-        
-        // Chercher si l'utilisateur existe déjà
+
         let userEntry = USER_EXCEPTIONS.excludedUsers.find(u => u.id === userId);
-        
+
         if (userEntry) {
-            // Mettre à jour les options
             if (linkException !== undefined) userEntry.linkException = linkException;
             if (callException !== undefined) userEntry.callException = callException;
         } else {
-            // Créer une nouvelle entrée
             USER_EXCEPTIONS.excludedUsers.push({
                 id: userId,
                 linkException: linkException === true,
                 callException: callException === true
             });
         }
-        
+
         saveUserExceptions();
         res.json({ success: true, exceptions: USER_EXCEPTIONS });
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
-// Supprimer une exception utilisateur
 app.delete('/api/users/exceptions', (req, res) => {
     try {
         const { userId } = req.body;
@@ -1648,7 +2307,6 @@ app.post('/api/blocked/unblock', async (req, res) => {
         const contact = await client.getContactById(userId);
         await contact.unblock();
 
-        // Annuler le timer auto
         if (unblockTimers[userId]) {
             clearTimeout(unblockTimers[userId]);
             delete unblockTimers[userId];
@@ -1663,7 +2321,6 @@ app.post('/api/blocked/unblock', async (req, res) => {
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
-// ✅ API supplémentaire : statut du rate limiter
 app.get('/api/ratelimit', (req, res) => {
     const now = Date.now();
     const lastMinute = rateLimiter.actions.filter(t => now - t < 60000).length;
@@ -1675,6 +2332,102 @@ app.get('/api/ratelimit', (req, res) => {
         maxPerHour: rateLimiter.maxPerHour,
         nightMultiplier: HumanBehavior.getNightMultiplier()
     });
+});
+
+// ============ API MENUS INTERACTIFS ============
+
+app.get('/api/menus', (req, res) => {
+    res.json(interactiveMenus);
+});
+
+app.get('/api/menus/:id', (req, res) => {
+    const menu = interactiveMenus[req.params.id];
+    if (!menu) return res.status(404).json({ success: false, message: 'Menu non trouvé' });
+    res.json(menu);
+});
+
+app.post('/api/menus', (req, res) => {
+    try {
+        const menu = createMenu(req.body);
+        addLog(`📱 Menu créé: ${menu.id}`);
+        res.json({ success: true, menu });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+app.put('/api/menus/:id', (req, res) => {
+    try {
+        const menuId = req.params.id;
+        if (!interactiveMenus[menuId]) {
+            return res.status(404).json({ success: false, message: 'Menu non trouvé' });
+        }
+
+        interactiveMenus[menuId] = {
+            ...interactiveMenus[menuId],
+            ...req.body,
+            id: menuId
+        };
+        saveMenus();
+        addLog(`📝 Menu mis à jour: ${menuId}`);
+        res.json({ success: true, menu: interactiveMenus[menuId] });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+app.delete('/api/menus/:id', (req, res) => {
+    try {
+        const menuId = req.params.id;
+        if (!interactiveMenus[menuId]) {
+            return res.status(404).json({ success: false, message: 'Menu non trouvé' });
+        }
+
+        delete interactiveMenus[menuId];
+        saveMenus();
+        addLog(`🗑️ Menu supprimé: ${menuId}`);
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+app.post('/api/menus/:id/test', async (req, res) => {
+    try {
+        if (!isConnected) {
+            return res.status(400).json({ success: false, message: 'Bot non connecté' });
+        }
+
+        const menuId = req.params.id;
+        const { groupId } = req.body;
+
+        if (!interactiveMenus[menuId]) {
+            return res.status(404).json({ success: false, message: 'Menu non trouvé' });
+        }
+
+        const chats = await client.getChats();
+        let targetChat;
+
+        if (groupId) {
+            targetChat = chats.find(c => c.id._serialized === groupId);
+        } else {
+            targetChat = chats.find(c => {
+                if (!c.isGroup) return false;
+                const bp = c.participants?.find(p => p.id._serialized === client.info.wid._serialized);
+                return bp?.isAdmin;
+            });
+        }
+
+        if (!targetChat) {
+            return res.status(400).json({ success: false, message: 'Aucun groupe disponible' });
+        }
+
+        await sendInteractiveMenu(targetChat, menuId);
+        addLog(`🧪 Menu testé: ${menuId} dans ${targetChat.name}`);
+        res.json({ success: true, groupName: targetChat.name });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
 });
 
 app.listen(PORT, () => console.log(`🌐 Interface web: http://localhost:${PORT}`));
@@ -1689,6 +2442,7 @@ loadGroupExceptions();
 loadUserExceptions();
 loadProcessedMessages();
 loadCallSpamData();
+loadMenus();
 
 console.log('🚀 Démarrage du bot WhatsApp...');
 console.log('🧠 Mode comportement humain activé');
@@ -1699,6 +2453,13 @@ console.log('   ├─ Mode nuit (ralentissement 23h-7h)');
 console.log('   ├─ Gestion de présence (online/offline)');
 console.log('   ├─ Messages variables (pool aléatoire)');
 console.log('   ├─ Micro-pauses aléatoires (10% chance)');
-console.log('   └─ Jitter sur les intervalles de scan\n');
+console.log('   ├─ Jitter sur les intervalles de scan');
+console.log('   └─ 🗑️ Suppression V3 avec VÉRIFICATION post-delete');
+console.log('');
+console.log('📋 Commandes admin dans les groupes:');
+console.log('   ├─ !scan        → Scanner le groupe actuel');
+console.log('   ├─ !scanall     → Scanner tous les groupes');
+console.log('   ├─ !diagdelete  → Diagnostic des méthodes de suppression');
+console.log('   └─ !testdelete  → Tester la suppression sur un message du bot\n');
 
 client.initialize();
