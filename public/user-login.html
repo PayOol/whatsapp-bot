@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    
+    <!-- SEO Meta Tags -->
+    <title>Connexion / Inscription — PayOol™ Bot</title>
+    <meta name="description" content="Connectez-vous ou inscrivez-vous sur PayOol™ Bot pour gérer vos sessions WhatsApp et automatiser la modération de vos groupes.">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="author" content="PayOol">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%2325D366'/%3E%3Cpath d='M16 6c-5.5 0-10 4.5-10 10 0 1.8.5 3.5 1.3 5L6 26l5.2-1.3c1.4.7 3 1.1 4.7 1.1 5.5 0 10-4.5 10-10S21.5 6 16 6zm4.7 13.5c-.3.5-1.1.8-1.8.8-.5 0-1.1-.1-1.9-.5-2.2-1-3.5-3.2-3.6-3.4-.1-.2-.8-1.1-.8-2.1s.5-1.5.7-1.7c.2-.2.4-.3.6-.3h.5c.2 0 .4 0 .5.4.2.5.7 1.7.7 1.8.1.1.1.3 0 .4-.1.2-.1.3-.2.4l-.3.4c-.1.1-.2.3-.1.5.1.2.5.8 1.1 1.4.8.7 1.4 1 1.6 1.1.2.1.4.1.5-.1.1-.2.5-.6.7-.8.2-.2.3-.2.5-.1l1.6.8c.2.1.4.2.5.3.1.2.1.9-.2 1.4z' fill='white'/%3E%3C/svg%3E">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+    
+    <!-- Preconnect for Performance -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+    
+    <!-- Fonts & Styles -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+        
+        :root {
+            --primary: #00D26A;
+            --primary-rgb: 0,210,106;
+            --primary-dark: #00B85C;
+            --accent: #7C3AED;
+            --bg-base: #06080C;
+            --bg-surface: #0D1117;
+            --bg-card: #131A24;
+            --bg-elevated: #1C2536;
+            --bg-input: #151E2B;
+            --text-primary: #F0F4F8;
+            --text-secondary: #8B99AE;
+            --text-muted: #5A6578;
+            --border: rgba(255,255,255,0.08);
+            --border-light: rgba(255,255,255,0.12);
+            --danger: #FF4757;
+            --danger-rgb: 255,71,87;
+            --warning: #FFBE0B;
+            --success: #00D26A;
+            --shadow-sm: 0 2px 8px rgba(0,0,0,0.2);
+            --shadow-md: 0 4px 24px rgba(0,0,0,0.3);
+            --shadow-lg: 0 8px 32px rgba(0,0,0,0.4);
+            --radius-sm: 6px;
+            --radius-md: 10px;
+            --radius-lg: 14px;
+            --radius-xl: 20px;
+            --transition-fast: 0.15s ease;
+        }
+        
+        /* Light Mode */
+        [data-theme="light"] {
+            --bg-base: #F8FAFC;
+            --bg-surface: #FFFFFF;
+            --bg-card: #FFFFFF;
+            --bg-elevated: #F1F5F9;
+            --bg-input: #F1F5F9;
+            --text-primary: #0F172A;
+            --text-secondary: #475569;
+            --text-muted: #94A3B8;
+            --border: rgba(0,0,0,0.08);
+            --border-light: rgba(0,0,0,0.12);
+            --shadow-sm: 0 2px 8px rgba(0,0,0,0.08);
+            --shadow-md: 0 4px 24px rgba(0,0,0,0.1);
+            --shadow-lg: 0 8px 32px rgba(0,0,0,0.12);
+        }
+        
+        body{
+            font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;
+            background:var(--bg-base);
+            color:var(--text-primary);
+            min-height:100vh;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            padding:20px;
+            position:relative;
+            overflow-x:hidden;
+        }
+        
+        /* Background overlay like the modal */
+        body::before{
+            content:'';
+            position:fixed;
+            inset:0;
+            background:rgba(0,0,0,0.95);
+            backdrop-filter:blur(20px);
+            -webkit-backdrop-filter:blur(20px);
+            z-index:0;
+        }
+        [data-theme="light"] body::before{
+            background:rgba(248,250,252,0.95);
+        }
+        
+        .auth-container{
+            position:relative;
+            z-index:1;
+            background:var(--bg-card);
+            border:1px solid var(--border);
+            border-radius:var(--radius-xl);
+            padding:40px;
+            max-width:420px;
+            width:100%;
+            box-shadow:var(--shadow-lg);
+            animation:authFadeIn 0.4s ease;
+        }
+        @keyframes authFadeIn{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+        
+        .auth-header{
+            text-align:center;
+            margin-bottom:32px;
+        }
+        
+        .auth-logo{
+            width:56px;height:56px;
+            border-radius:14px;
+            background:linear-gradient(135deg,var(--primary),var(--accent));
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            font-size:24px;
+            margin:0 auto 16px;
+            color:#000;
+        }
+        
+        .auth-title{
+            font-size:1.4rem;
+            font-weight:700;
+            margin-bottom:8px;
+        }
+        
+        .auth-subtitle{
+            font-size:0.9rem;
+            color:var(--text-secondary);
+        }
+        
+        .auth-tabs{
+            display:flex;
+            background:var(--bg-elevated);
+            border-radius:var(--radius-md);
+            padding:4px;
+            margin-bottom:24px;
+        }
+        
+        .auth-tab{
+            flex:1;
+            padding:10px 16px;
+            border:none;
+            background:transparent;
+            color:var(--text-muted);
+            font-size:0.85rem;
+            font-weight:600;
+            cursor:pointer;
+            border-radius:8px;
+            transition:all var(--transition-fast);
+            font-family:inherit;
+        }
+        
+        .auth-tab.active{
+            background:var(--primary);
+            color:#000;
+        }
+        
+        .auth-tab:hover:not(.active){
+            color:var(--text-primary);
+        }
+        
+        .auth-form{
+            display:none;
+        }
+        
+        .auth-form.active{
+            display:block;
+        }
+        
+        .form-group{
+            margin-bottom:16px;
+        }
+        
+        .form-label{
+            display:block;
+            font-size:0.8rem;
+            font-weight:600;
+            color:var(--text-secondary);
+            margin-bottom:6px;
+        }
+        
+        .form-input{
+            width:100%;
+            padding:12px 14px;
+            background:var(--bg-input);
+            border:1px solid var(--border);
+            border-radius:var(--radius-md);
+            color:var(--text-primary);
+            font-size:0.9rem;
+            font-family:inherit;
+            transition:all var(--transition-fast);
+            outline:none;
+        }
+        
+        .form-input:hover{border-color:var(--border-light)}
+        .form-input:focus{
+            border-color:var(--primary);
+            box-shadow:0 0 0 3px rgba(var(--primary-rgb),0.15);
+        }
+        .form-input::placeholder{color:var(--text-muted)}
+        
+        .form-select{
+            appearance:none;
+            background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%238B99AE' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E");
+            background-repeat:no-repeat;
+            background-position:right 14px center;
+            padding-right:36px;
+        }
+        
+        .btn{
+            width:100%;
+            padding:12px 20px;
+            border-radius:var(--radius-md);
+            font-size:0.9rem;
+            font-weight:600;
+            cursor:pointer;
+            border:none;
+            transition:all var(--transition-fast);
+            font-family:inherit;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            gap:8px;
+        }
+        
+        .btn-primary{
+            background:linear-gradient(135deg,var(--primary),var(--primary-dark));
+            color:#000;
+            box-shadow:0 4px 16px rgba(var(--primary-rgb),0.3);
+        }
+        
+        .btn-primary:hover{
+            transform:translateY(-1px);
+            box-shadow:0 6px 20px rgba(var(--primary-rgb),0.4);
+        }
+        
+        .btn-primary:disabled{
+            opacity:0.6;
+            cursor:not-allowed;
+            transform:none;
+        }
+        
+        .btn-secondary{
+            background:rgba(255,255,255,0.05);
+            color:var(--text-primary);
+            border:1px solid var(--border);
+        }
+        
+        .btn-secondary:hover{
+            background:rgba(255,255,255,0.1);
+        }
+        
+        [data-theme="light"] .btn-secondary{
+            background:rgba(0,0,0,0.04);
+        }
+        [data-theme="light"] .btn-secondary:hover{
+            background:rgba(0,0,0,0.08);
+        }
+        
+        .auth-error{
+            background:rgba(var(--danger-rgb),0.1);
+            border:1px solid rgba(var(--danger-rgb),0.3);
+            border-radius:var(--radius-sm);
+            padding:10px 14px;
+            color:var(--danger);
+            font-size:0.85rem;
+            margin-bottom:16px;
+            display:none;
+        }
+        
+        .auth-error.show{display:block}
+        
+        .auth-success{
+            background:rgba(var(--primary-rgb),0.1);
+            border:1px solid rgba(var(--primary-rgb),0.3);
+            border-radius:var(--radius-sm);
+            padding:10px 14px;
+            color:var(--success);
+            font-size:0.85rem;
+            margin-bottom:16px;
+            display:flex;
+            align-items:center;
+            gap:8px;
+        }
+        
+        .auth-info{
+            background:rgba(99,102,241,0.1);
+            border-radius:var(--radius-sm);
+            padding:12px;
+            margin-bottom:16px;
+            display:flex;
+            align-items:flex-start;
+            gap:10px;
+        }
+        .auth-info i{color:var(--primary);margin-top:2px}
+        .auth-info span{font-size:0.85rem;color:var(--text-secondary)}
+        
+        .recovery-link{
+            display:block;
+            text-align:center;
+            color:var(--primary);
+            text-decoration:none;
+            font-size:0.85rem;
+            margin-top:12px;
+        }
+        
+        .recovery-link:hover{text-decoration:underline}
+        
+        .back-link{
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            gap:8px;
+            margin-top:20px;
+            color:var(--text-muted);
+            text-decoration:none;
+            font-size:0.85rem;
+        }
+        
+        .back-link:hover{color:var(--text-primary)}
+        
+        .theme-toggle{
+            position:fixed;
+            top:20px;
+            right:20px;
+            width:44px;
+            height:44px;
+            border-radius:var(--radius-md);
+            background:var(--bg-elevated);
+            border:1px solid var(--border);
+            cursor:pointer;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            font-size:1.1rem;
+            color:var(--text-secondary);
+            transition:all var(--transition-fast);
+            z-index:10;
+        }
+        .theme-toggle:hover{
+            color:var(--primary);
+            border-color:var(--border-light);
+        }
+        
+        .spinner{
+            width:16px;height:16px;
+            border:2px solid transparent;
+            border-top-color:currentColor;
+            border-radius:50%;
+            animation:spin 0.8s linear infinite;
+        }
+        
+        @keyframes spin{to{transform:rotate(360deg)}}
+        
+        /* Responsive */
+        @media(max-width:768px){
+            .auth-container{padding:32px 24px}
+            .auth-logo{width:48px;height:48px;font-size:20px}
+            .auth-title{font-size:1.25rem}
+        }
+        @media(max-width:480px){
+            body{padding:16px}
+            .auth-container{padding:24px 20px;border-radius:var(--radius-lg)}
+            .auth-logo{width:44px;height:44px;font-size:18px;border-radius:12px}
+            .auth-title{font-size:1.15rem}
+            .auth-subtitle{font-size:0.85rem}
+            .auth-tabs{margin-bottom:20px}
+            .auth-tab{padding:8px 12px;font-size:0.8rem}
+            .form-group{margin-bottom:14px}
+            .form-input{padding:11px 12px;font-size:0.85rem}
+            .btn{padding:11px 18px;font-size:0.85rem}
+            .theme-toggle{top:12px;right:12px;width:40px;height:40px}
+        }
+        @media(max-width:360px){
+            .auth-container{padding:20px 16px}
+            .auth-title{font-size:1.05rem}
+        }
+        
+        /* Beta Badge */
+        .beta-badge{
+            display:none;
+            background:linear-gradient(135deg,#f59e0b,#ef4444);
+            color:white;
+            font-size:0.55rem;
+            font-weight:700;
+            padding:2px 5px;
+            border-radius:3px;
+            text-transform:uppercase;
+            letter-spacing:0.5px;
+            margin-left:6px;
+            vertical-align:middle;
+            animation:pulse-beta 2s infinite;
+        }
+        .beta-badge.show{display:inline}
+        @keyframes pulse-beta{0%,100%{opacity:1}50%{opacity:0.7}}
+        
+        /* Safe area for mobile devices */
+        @supports(padding-bottom:env(safe-area-inset-bottom)){
+            body{padding-bottom:env(safe-area-inset-bottom)}
+        }
+    </style>
+</head>
+<body>
+    <button class="theme-toggle" id="theme-toggle" title="Changer le thème">
+        <i class="fas fa-moon"></i>
+    </button>
+    
+    <div class="auth-container">
+        <div class="auth-header">
+            <div class="auth-logo"><i class="fas fa-shield-alt"></i></div>
+            <h2 class="auth-title" id="auth-title">Connexion<span class="beta-badge" id="beta-badge">Beta</span></h2>
+            <p class="auth-subtitle" id="auth-subtitle">Accédez à votre panneau d'administration</p>
+        </div>
+        
+        <div class="auth-error" id="auth-error"></div>
+        
+        <div class="auth-tabs" id="auth-tabs">
+            <button type="button" class="auth-tab active" onclick="switchAuthTab('login')">Connexion</button>
+            <button type="button" class="auth-tab" onclick="switchAuthTab('register')">Inscription</button>
+        </div>
+        
+        <!-- Login Form -->
+        <form class="auth-form active" id="login-form" onsubmit="event.preventDefault();event.stopPropagation();handleLogin();return false">
+            <div class="form-group">
+                <label class="form-label">Nom d'utilisateur</label>
+                <input type="text" class="form-input" id="login-username" placeholder="@username" required autocomplete="username" value="@" oninput="enforceAtPrefix(this)">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Mot de passe</label>
+                <input type="password" class="form-input" id="login-password" placeholder="Entrez votre mot de passe" required autocomplete="current-password">
+            </div>
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-sign-in-alt"></i> Se connecter
+            </button>
+            <a href="#" class="recovery-link" onclick="event.preventDefault();showRecoveryForm()">Mot de passe oublié ?</a>
+        </form>
+        
+        <!-- Register Form -->
+        <form class="auth-form" id="register-form" onsubmit="event.preventDefault();event.stopPropagation();handleRegister();return false">
+            <!-- Étape 1: Informations de compte -->
+            <div id="register-step1">
+                <div class="auth-success">
+                    <i class="fas fa-info-circle"></i> Créez votre compte pour commencer
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Nom d'utilisateur</label>
+                    <input type="text" class="form-input" id="register-username" placeholder="@username (min. 3 caractères, sans espaces)" required minlength="3" autocomplete="username" value="@" pattern="^[^\s]+$" title="Le nom d'utilisateur ne doit pas contenir d'espaces" oninput="enforceAtPrefix(this)">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Mot de passe</label>
+                    <input type="password" class="form-input" id="register-password" placeholder="Choisissez un mot de passe (min. 6 caractères)" required minlength="6" autocomplete="new-password">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Confirmer le mot de passe</label>
+                    <input type="password" class="form-input" id="register-password-confirm" placeholder="Confirmez votre mot de passe" required autocomplete="new-password">
+                </div>
+                <button type="button" class="btn btn-primary" onclick="goToRegisterStep2()">
+                    <i class="fas fa-arrow-right"></i> Suivant
+                </button>
+            </div>
+            
+            <!-- Étape 2: Sécurité -->
+            <div id="register-step2" style="display:none">
+                <div class="auth-success">
+                    <i class="fas fa-shield-alt"></i> Sécurité de votre compte
+                </div>
+                <div class="auth-info">
+                    <i class="fas fa-info-circle"></i>
+                    <span>Cette question vous permettra de récupérer votre compte en cas d'oubli de mot de passe.</span>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Question de sécurité</label>
+                    <select class="form-input form-select" id="register-security-question" required>
+                        <option value="">-- Sélectionnez une question --</option>
+                        <option value="Quel est le nom de votre premier animal ?">Quel est le nom de votre premier animal ?</option>
+                        <option value="Quelle est votre ville de naissance ?">Quelle est votre ville de naissance ?</option>
+                        <option value="Quel est le nom de jeune fille de votre mère ?">Quel est le nom de jeune fille de votre mère ?</option>
+                        <option value="Quelle est votre couleur préférée ?">Quelle est votre couleur préférée ?</option>
+                        <option value="Quel est le nom de votre meilleur ami d'enfance ?">Quel est le nom de votre meilleur ami d'enfance ?</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Réponse de sécurité</label>
+                    <input type="text" class="form-input" id="register-security-answer" placeholder="Votre réponse (pour récupération de compte)" required>
+                </div>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-user-plus"></i> Créer le compte
+                </button>
+                <button type="button" class="btn btn-secondary" style="margin-top:8px" onclick="goToRegisterStep1()">
+                    <i class="fas fa-arrow-left"></i> Retour
+                </button>
+            </div>
+        </form>
+        
+        <!-- Recovery Form -->
+        <form class="auth-form" id="recovery-form" onsubmit="event.preventDefault();handleRecovery()">
+            <div class="auth-success">
+                <i class="fas fa-key"></i> Récupération de compte
+            </div>
+            <div class="form-group">
+                <label class="form-label">Nom d'utilisateur</label>
+                <input type="text" class="form-input" id="recovery-username" placeholder="Entrez votre nom d'utilisateur" required autocomplete="username">
+            </div>
+            <div id="recovery-question-container" style="display:none">
+                <div class="form-group">
+                    <label class="form-label">Question de sécurité</label>
+                    <input type="text" class="form-input" id="recovery-question" readonly style="background:var(--bg-elevated)">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Réponse</label>
+                    <input type="text" class="form-input" id="recovery-answer" placeholder="Votre réponse" required>
+                </div>
+            </div>
+            <div id="recovery-new-password-container" style="display:none">
+                <div class="form-group">
+                    <label class="form-label">Nouveau mot de passe</label>
+                    <input type="password" class="form-input" id="recovery-new-password" placeholder="Choisissez un nouveau mot de passe (min. 6 caractères)" minlength="6" required>
+                </div>
+            </div>
+            <button type="button" class="btn btn-primary" id="recovery-search-btn" onclick="searchRecoveryUser()">
+                <i class="fas fa-search"></i> Trouver mon compte
+            </button>
+            <button type="submit" class="btn btn-primary" id="recovery-submit-btn" style="display:none;margin-top:8px">
+                <i class="fas fa-check"></i> Vérifier la réponse
+            </button>
+            <button type="button" class="btn btn-secondary" style="margin-top:8px" onclick="showLoginForm()">
+                <i class="fas fa-arrow-left"></i> Retour à la connexion
+            </button>
+        </form>
+        
+        <a href="/" class="back-link">
+            <i class="fas fa-home"></i>
+            Retour à l'accueil
+        </a>
+    </div>
+    
+    <script>
+        // Theme toggle
+        const themeToggle = document.getElementById('theme-toggle');
+        const html = document.documentElement;
+        const savedTheme = localStorage.getItem('theme') || 'light';
+        html.setAttribute('data-theme', savedTheme);
+        updateThemeIcon(savedTheme);
+        
+        themeToggle.addEventListener('click', () => {
+            const current = html.getAttribute('data-theme');
+            const next = current === 'dark' ? 'light' : 'dark';
+            html.setAttribute('data-theme', next);
+            localStorage.setItem('theme', next);
+            updateThemeIcon(next);
+        });
+        
+        function updateThemeIcon(theme) {
+            themeToggle.innerHTML = theme === 'dark' 
+                ? '<i class="fas fa-moon"></i>' 
+                : '<i class="fas fa-sun"></i>';
+        }
+        
+        // Tab switching
+        function switchAuthTab(tab) {
+            document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
+            document.querySelector(`.auth-tab[onclick*="${tab}"]`).classList.add('active');
+            document.querySelectorAll('.auth-form').forEach(f => f.classList.remove('active'));
+            document.getElementById(`${tab}-form`).classList.add('active');
+            hideAuthError();
+        }
+        
+        // Enforce @ prefix for username
+        function enforceAtPrefix(input) {
+            if (!input.value.startsWith('@')) {
+                input.value = '@' + input.value.replace(/^@+/, '');
+            }
+        }
+        
+        // Show/hide forms
+        function showRecoveryForm() {
+            document.querySelectorAll('.auth-form').forEach(f => f.classList.remove('active'));
+            document.getElementById('recovery-form').classList.add('active');
+            document.getElementById('auth-tabs').style.display = 'none';
+            hideAuthError();
+        }
+        
+        function showLoginForm() {
+            document.querySelectorAll('.auth-form').forEach(f => f.classList.remove('active'));
+            document.getElementById('login-form').classList.add('active');
+            document.getElementById('auth-tabs').style.display = 'flex';
+            hideAuthError();
+            // Reset recovery form
+            document.getElementById('recovery-question-container').style.display = 'none';
+            document.getElementById('recovery-new-password-container').style.display = 'none';
+            document.getElementById('recovery-search-btn').style.display = 'block';
+            document.getElementById('recovery-submit-btn').style.display = 'none';
+        }
+        
+        // Register steps
+        function goToRegisterStep2() {
+            const username = document.getElementById('register-username').value;
+            const password = document.getElementById('register-password').value;
+            const confirm = document.getElementById('register-password-confirm').value;
+            
+            if (username.length < 4 || !username.startsWith('@')) {
+                showAuthError('Le nom d\'utilisateur doit commencer par @ et contenir au moins 3 caractères après');
+                return;
+            }
+            if (password.length < 6) {
+                showAuthError('Le mot de passe doit contenir au moins 6 caractères');
+                return;
+            }
+            if (password !== confirm) {
+                showAuthError('Les mots de passe ne correspondent pas');
+                return;
+            }
+            
+            hideAuthError();
+            document.getElementById('register-step1').style.display = 'none';
+            document.getElementById('register-step2').style.display = 'block';
+        }
+        
+        function goToRegisterStep1() {
+            document.getElementById('register-step1').style.display = 'block';
+            document.getElementById('register-step2').style.display = 'none';
+        }
+        
+        // Error handling
+        function showAuthError(message) {
+            const error = document.getElementById('auth-error');
+            error.textContent = message;
+            error.classList.add('show');
+        }
+        
+        function hideAuthError() {
+            document.getElementById('auth-error').classList.remove('show');
+        }
+        
+        // Login
+        async function handleLogin() {
+            const btn = document.querySelector('#login-form .btn-primary');
+            const username = document.getElementById('login-username').value;
+            const password = document.getElementById('login-password').value;
+            
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> Connexion...';
+            hideAuthError();
+            
+            try {
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                
+                const data = await res.json();
+                
+                if (data.success) {
+                    window.location.replace('/dashboard');
+                } else {
+                    showAuthError(data.message || 'Erreur de connexion');
+                }
+            } catch (err) {
+                showAuthError('Erreur réseau. Veuillez réessayer.');
+            }
+            
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Se connecter';
+        }
+        
+        // Register
+        async function handleRegister() {
+            const btn = document.querySelector('#register-form .btn-primary');
+            const username = document.getElementById('register-username').value;
+            const password = document.getElementById('register-password').value;
+            const question = document.getElementById('register-security-question').value;
+            const answer = document.getElementById('register-security-answer').value;
+            
+            if (!question) {
+                showAuthError('Veuillez sélectionner une question de sécurité');
+                return;
+            }
+            if (!answer.trim()) {
+                showAuthError('Veuillez entrer une réponse de sécurité');
+                return;
+            }
+            
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> Création...';
+            hideAuthError();
+            
+            try {
+                const res = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        username,
+                        password,
+                        securityQuestion: question,
+                        securityAnswer: answer
+                    })
+                });
+                
+                const data = await res.json();
+                
+                if (data.success) {
+                    window.location.replace('/dashboard');
+                } else {
+                    showAuthError(data.message || 'Erreur lors de l\'inscription');
+                }
+            } catch (err) {
+                showAuthError('Erreur réseau. Veuillez réessayer.');
+            }
+            
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-user-plus"></i> Créer le compte';
+        }
+        
+        // Recovery
+        async function searchRecoveryUser() {
+            const btn = document.getElementById('recovery-search-btn');
+            const username = document.getElementById('recovery-username').value;
+            
+            if (!username) {
+                showAuthError('Veuillez entrer votre nom d\'utilisateur');
+                return;
+            }
+            
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> Recherche...';
+            hideAuthError();
+            
+            try {
+                const res = await fetch('/api/auth/recovery/question', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username })
+                });
+                
+                const data = await res.json();
+                
+                if (data.success) {
+                    document.getElementById('recovery-question').value = data.question;
+                    document.getElementById('recovery-question-container').style.display = 'block';
+                    document.getElementById('recovery-search-btn').style.display = 'none';
+                    document.getElementById('recovery-submit-btn').style.display = 'block';
+                } else {
+                    showAuthError(data.message || 'Utilisateur non trouvé');
+                }
+            } catch (err) {
+                showAuthError('Erreur réseau');
+            }
+            
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-search"></i> Trouver mon compte';
+        }
+        
+        let recoveryVerified = false;
+        
+        async function handleRecovery() {
+            const btn = document.getElementById('recovery-submit-btn');
+            const username = document.getElementById('recovery-username').value;
+            const answer = document.getElementById('recovery-answer').value;
+            const newPassword = document.getElementById('recovery-new-password')?.value;
+            
+            if (!answer) {
+                showAuthError('Veuillez entrer votre réponse');
+                return;
+            }
+            
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> Vérification...';
+            hideAuthError();
+            
+            try {
+                if (!recoveryVerified) {
+                    // Verify answer
+                    const verifyRes = await fetch('/api/auth/recovery/verify', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username, answer })
+                    });
+                    
+                    const verifyData = await verifyRes.json();
+                    
+                    if (verifyData.success) {
+                        recoveryVerified = true;
+                        document.getElementById('recovery-new-password-container').style.display = 'block';
+                        btn.innerHTML = '<i class="fas fa-key"></i> Réinitialiser le mot de passe';
+                        btn.disabled = false;
+                        return;
+                    } else {
+                        showAuthError(verifyData.message || 'Réponse incorrecte');
+                    }
+                } else {
+                    // Reset password
+                    if (!newPassword || newPassword.length < 6) {
+                        showAuthError('Le mot de passe doit contenir au moins 6 caractères');
+                        btn.disabled = false;
+                        btn.innerHTML = '<i class="fas fa-key"></i> Réinitialiser le mot de passe';
+                        return;
+                    }
+                    
+                    const resetRes = await fetch('/api/auth/recovery/reset', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ newPassword })
+                    });
+                    
+                    const resetData = await resetRes.json();
+                    
+                    if (resetData.success) {
+                        showAuthError('');
+                        alert('Mot de passe réinitialisé avec succès !');
+                        window.location.href = '/auth';
+                        recoveryVerified = false;
+                    } else {
+                        showAuthError(resetData.message || 'Erreur lors de la réinitialisation');
+                    }
+                }
+            } catch (err) {
+                showAuthError('Erreur réseau');
+            }
+            
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-check"></i> Vérifier la réponse';
+        }
+        
+        // Check Beta status
+        fetch('/api/beta-status')
+            .then(r => r.json())
+            .then(data => {
+                if (data.betaMode) {
+                    document.getElementById('beta-badge').classList.add('show');
+                }
+            });
+        
+        // Check if already logged in - redirect to dashboard
+        fetch('/api/auth/verify', { credentials: 'same-origin' })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success && data.user && !data.user.isAdmin) {
+                    window.location.replace('/dashboard');
+                }
+            });
+    </script>
+</body>
+</html>

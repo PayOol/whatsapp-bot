@@ -3,7 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Administration - WhatsApp Bot</title>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    
+    <!-- SEO Meta Tags -->
+    <title>Administration — PayOol™ Bot | Panneau de Contrôle</title>
+    <meta name="description" content="Panneau d'administration PayOol™ Bot - Gestion des utilisateurs, sessions WhatsApp et logs système.">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="author" content="PayOol">
+    
+    <!-- Preconnect -->
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+    
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         :root {
@@ -298,6 +308,46 @@
         .detail-value.success { color: var(--success); }
         .detail-value.warning { color: var(--warning); }
         .detail-value.danger { color: var(--danger); }
+        
+        /* Toggle Switch */
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 26px;
+        }
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .toggle-track {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--border);
+            border-radius: 26px;
+            transition: 0.3s;
+        }
+        .toggle-thumb {
+            position: absolute;
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 3px;
+            background: white;
+            border-radius: 50%;
+            transition: 0.3s;
+        }
+        .toggle-switch input:checked + .toggle-track {
+            background: var(--primary);
+        }
+        .toggle-switch input:checked + .toggle-track + .toggle-thumb {
+            transform: translateX(24px);
+        }
     </style>
 </head>
 <body>
@@ -334,6 +384,24 @@
                         <div class="stat-value" id="stat-admins">1</div>
                         <div class="stat-label">Administrateurs</div>
                     </div>
+                </div>
+                
+                <!-- Beta Mode Toggle -->
+                <div style="margin-top:20px;padding:16px;background:var(--bg-dark);border-radius:12px;display:flex;align-items:center;justify-content:space-between">
+                    <div style="display:flex;align-items:center;gap:12px">
+                        <div style="width:40px;height:40px;background:linear-gradient(135deg,#f59e0b,#ef4444);border-radius:10px;display:flex;align-items:center;justify-content:center">
+                            <i class="fas fa-flask" style="color:white"></i>
+                        </div>
+                        <div>
+                            <div style="font-weight:600">Mode Beta</div>
+                            <div style="font-size:0.8rem;color:var(--text-secondary)">Affiche le badge Beta sur toute la plateforme</div>
+                        </div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="beta-toggle" onchange="toggleBetaMode(this.checked)">
+                        <span class="toggle-track"></span>
+                        <span class="toggle-thumb"></span>
+                    </label>
                 </div>
             </div>
         </div>
@@ -767,7 +835,38 @@
             });
         }
         
+        function loadBetaStatus() {
+            fetch('/api/beta-status', { credentials: 'same-origin' })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                document.getElementById('beta-toggle').checked = data.betaMode;
+            });
+        }
+        
+        function toggleBetaMode(enabled) {
+            fetch('/api/admin/beta-mode', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({ enabled: enabled })
+            })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    showToast(enabled ? 'Mode Beta activé' : 'Mode Beta désactivé', 'success');
+                } else {
+                    showToast(data.message || 'Erreur', 'error');
+                    document.getElementById('beta-toggle').checked = !enabled;
+                }
+            })
+            .catch(function(e) {
+                showToast('Erreur', 'error');
+                document.getElementById('beta-toggle').checked = !enabled;
+            });
+        }
+        
         checkAuth();
+        loadBetaStatus();
     </script>
 </body>
 </html>
