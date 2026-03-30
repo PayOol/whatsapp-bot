@@ -42,8 +42,9 @@
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
     
     <!-- Fonts & Styles -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet"></noscript>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" media="print" onload="this.media='all'">
     
     <!-- JSON-LD Structured Data -->
     <script type="application/ld+json">
@@ -115,8 +116,8 @@
             --bg-card: #131A24;
             --bg-elevated: #1C2536;
             --text-primary: #F0F4F8;
-            --text-secondary: #8B99AE;
-            --text-muted: #5A6578;
+            --text-secondary: #A8B5C7;
+            --text-muted: #7A8699;
             --border: rgba(255,255,255,0.08);
             --border-light: rgba(255,255,255,0.12);
             --danger: #FF4757;
@@ -134,7 +135,7 @@
             --bg-elevated: #F1F5F9;
             --text-primary: #0F172A;
             --text-secondary: #475569;
-            --text-muted: #94A3B8;
+            --text-muted: #64748B;
             --border: rgba(0,0,0,0.08);
             --border-light: rgba(0,0,0,0.12);
             --shadow-sm: 0 2px 8px rgba(0,0,0,0.08);
@@ -969,22 +970,22 @@
                 <ol class="steps" role="list">
                     <li class="step" itemscope itemtype="https://schema.org/HowToStep">
                         <div class="step-number" aria-hidden="true">1</div>
-                        <h4 class="step-title" itemprop="name">Créer un compte</h4>
+                        <h3 class="step-title" itemprop="name">Créer un compte</h3>
                         <p class="step-desc" itemprop="text">Inscription rapide avec question de sécurité pour récupération</p>
                     </li>
                     <li class="step" itemscope itemtype="https://schema.org/HowToStep">
                         <div class="step-number" aria-hidden="true">2</div>
-                        <h4 class="step-title" itemprop="name">Scanner le QR</h4>
+                        <h3 class="step-title" itemprop="name">Scanner le QR</h3>
                         <p class="step-desc" itemprop="text">Connectez votre WhatsApp en scannant le code QR affiché</p>
                     </li>
                     <li class="step" itemscope itemtype="https://schema.org/HowToStep">
                         <div class="step-number" aria-hidden="true">3</div>
-                        <h4 class="step-title" itemprop="name">Configurer</h4>
+                        <h3 class="step-title" itemprop="name">Configurer</h3>
                         <p class="step-desc" itemprop="text">Ajustez les paramètres selon vos besoins via le panel</p>
                     </li>
                     <li class="step" itemscope itemtype="https://schema.org/HowToStep">
                         <div class="step-number" aria-hidden="true">4</div>
-                        <h4 class="step-title" itemprop="name">C'est parti !</h4>
+                        <h3 class="step-title" itemprop="name">C'est parti !</h3>
                         <p class="step-desc" itemprop="text">Le bot fonctionne 24/7 automatiquement</p>
                     </li>
                 </ol>
