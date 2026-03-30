@@ -6,6 +6,9 @@ const express = require('express');
 const cookieParser = require('cookie-parser');
 const crypto = require('crypto');
 
+// Configuration globale pour le mode Beta
+let betaMode = false;
+
 // ============================================================
 // 🧠 SYSTÈME DE COMPORTEMENT HUMAIN
 // Tous les délais, variations et patterns imitent un humain réel
@@ -3343,16 +3346,31 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(cookieParser());
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), { index: false }));
+
+// Route principale - Landing page
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'landing.html'));
+});
+
+// Route pour la page de connexion/inscription utilisateur
+app.get('/auth', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'user-login.html'));
+});
 
 // Route pour la page de login admin
 app.get('/admin/login', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'admin-login.html'));
 });
 
-// Route pour le panneau d'administration
+// Route pour le panneau d'administration (admin uniquement)
 app.get('/admin', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
+// Route pour le dashboard utilisateur (users normaux)
+app.get('/dashboard', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // ============ API AUTHENTICATION ============
@@ -3368,7 +3386,12 @@ app.get('/api/auth/setup-status', (req, res) => {
 
 // Inscription publique - ouverte à tous les utilisateurs
 app.post('/api/auth/register', (req, res) => {
-    const { username, password, securityQuestion, securityAnswer } = req.body;
+    let { username, password, securityQuestion, securityAnswer } = req.body;
+    
+    // Normaliser le username avec @
+    if (username && !username.startsWith('@')) {
+        username = '@' + username;
+    }
     
     if (!username || !password) {
         return res.status(400).json({ 
@@ -3377,10 +3400,10 @@ app.post('/api/auth/register', (req, res) => {
         });
     }
     
-    if (username.length < 3) {
+    if (username.length < 4) {
         return res.status(400).json({ 
             success: false, 
-            message: 'Le nom d\'utilisateur doit contenir au moins 3 caractères' 
+            message: 'Le nom d\'utilisateur doit contenir au moins 3 caractères après @' 
         });
     }
     
@@ -3427,7 +3450,12 @@ app.post('/api/auth/register', (req, res) => {
 
 // Connexion utilisateur
 app.post('/api/auth/login', (req, res) => {
-    const { username, password } = req.body;
+    let { username, password } = req.body;
+    
+    // Normaliser le username avec @
+    if (username && !username.startsWith('@')) {
+        username = '@' + username;
+    }
     
     if (!username || !password) {
         return res.status(400).json({ 
@@ -3543,11 +3571,33 @@ app.get('/api/auth/verify', (req, res) => {
     }
 });
 
+// === MODE BETA ===
+
+// Obtenir le statut du mode Beta (public)
+app.get('/api/beta-status', (req, res) => {
+    res.json({ betaMode: betaMode });
+});
+
+// Modifier le mode Beta (admin uniquement)
+app.post('/api/admin/beta-mode', requireAuth, (req, res) => {
+    if (!req.user.isAdmin) {
+        return res.status(403).json({ success: false, message: 'Accès réservé aux administrateurs' });
+    }
+    const { enabled } = req.body;
+    betaMode = !!enabled;
+    res.json({ success: true, betaMode: betaMode });
+});
+
 // === RÉCUPÉRATION PAR QUESTION DE SÉCURITÉ ===
 
 // Obtenir la question de sécurité d'un utilisateur
 app.post('/api/auth/recovery/question', (req, res) => {
-    const { username } = req.body;
+    let { username } = req.body;
+    
+    // Normaliser le username avec @
+    if (username && !username.startsWith('@')) {
+        username = '@' + username;
+    }
     
     if (!username) {
         return res.status(400).json({ 
@@ -3567,7 +3617,12 @@ app.post('/api/auth/recovery/question', (req, res) => {
 
 // Vérifier la réponse de sécurité
 app.post('/api/auth/recovery/verify', (req, res) => {
-    const { username, answer } = req.body;
+    let { username, answer } = req.body;
+    
+    // Normaliser le username avec @
+    if (username && !username.startsWith('@')) {
+        username = '@' + username;
+    }
     
     if (!username || !answer) {
         return res.status(400).json({ 
