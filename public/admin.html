@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Administration - WhatsApp Bot</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-hover: #4f46e5;
+            --danger: #ef4444;
+            --danger-hover: #dc2626;
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --bg-dark: #0f0f1a;
+            --bg-card: #1a1a2e;
+            --bg-card-hover: #252540;
+            --text-primary: #ffffff;
+            --text-secondary: #a1a1aa;
+            --border: #2e2e4a;
+            --shadow-lg: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-dark);
+            min-height: 100vh;
+            color: var(--text-primary);
+        }
+        
+        .admin-container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        
+        .admin-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 20px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            margin-bottom: 20px;
+        }
+        
+        .admin-header-left { display: flex; align-items: center; gap: 16px; }
+        
+        .admin-logo {
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, var(--primary), #8b5cf6);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+        }
+        
+        .admin-title { font-size: 1.5rem; font-weight: 700; }
+        .admin-subtitle { color: var(--text-secondary); font-size: 0.85rem; }
+        
+        .admin-user { display: flex; align-items: center; gap: 12px; }
+        
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, var(--primary), #8b5cf6);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+        }
+        
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 10px 20px;
+            border-radius: 10px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+            text-decoration: none;
+        }
+        
+        .btn-primary { background: linear-gradient(135deg, var(--primary), #8b5cf6); color: white; }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4); }
+        .btn-danger { background: var(--danger); color: white; }
+        .btn-danger:hover { background: var(--danger-hover); }
+        .btn-secondary { background: var(--bg-card-hover); color: var(--text-primary); border: 1px solid var(--border); }
+        .btn-secondary:hover { background: var(--border); }
+        .btn-sm { padding: 6px 12px; font-size: 0.8rem; }
+        
+        .cards-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 20px; }
+        
+        .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
+        
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .card-title { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+        
+        .card-title-icon {
+            width: 32px;
+            height: 32px;
+            background: rgba(99, 102, 241, 0.2);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--primary);
+        }
+        
+        .card-body { padding: 20px; }
+        
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+        
+        .badge-primary { background: rgba(99, 102, 241, 0.2); color: var(--primary); }
+        .badge-success { background: rgba(34, 197, 94, 0.2); color: var(--success); }
+        .badge-warning { background: rgba(245, 158, 11, 0.2); color: var(--warning); }
+        
+        .user-item {
+            display: flex;
+            align-items: center;
+            padding: 12px;
+            border-bottom: 1px solid var(--border);
+            gap: 12px;
+        }
+        
+        .user-item:last-child { border-bottom: none; }
+        
+        .user-item-avatar {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, var(--primary), #8b5cf6);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+        }
+        
+        .user-item-info { flex: 1; }
+        .user-item-name { font-weight: 500; }
+        .user-item-meta { font-size: 0.75rem; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+        .user-item-actions { display: flex; gap: 8px; }
+        
+        .empty-state { text-align: center; padding: 40px 20px; color: var(--text-secondary); }
+        .empty-state-icon { font-size: 3rem; margin-bottom: 16px; opacity: 0.5; }
+        
+        .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+        
+        .stat-card { background: var(--bg-dark); border-radius: 12px; padding: 16px; text-align: center; }
+        .stat-value { font-size: 2rem; font-weight: 700; color: var(--primary); }
+        .stat-label { font-size: 0.8rem; color: var(--text-secondary); margin-top: 4px; }
+        
+        .toast-container { position: fixed; top: 20px; right: 20px; z-index: 1000; display: flex; flex-direction: column; gap: 10px; }
+        
+        .toast {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            animation: slideIn 0.3s ease;
+            box-shadow: var(--shadow-lg);
+        }
+        
+        .toast.success { border-left: 3px solid var(--success); }
+        .toast.error { border-left: 3px solid var(--danger); }
+        
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        
+        .loading { display: flex; align-items: center; justify-content: center; padding: 40px; }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--border);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        
+        @keyframes spin { to { transform: rotate(360deg); } }
+        
+        .sessions-list { max-height: 400px; overflow-y: auto; }
+        
+        .session-item {
+            display: flex;
+            align-items: center;
+            padding: 12px;
+            border-bottom: 1px solid var(--border);
+            gap: 12px;
+        }
+        
+        .session-item:last-child { border-bottom: none; }
+        
+        .session-status { width: 10px; height: 10px; border-radius: 50%; }
+        .session-status.connected { background: var(--success); }
+        .session-status.disconnected { background: var(--danger); }
+        .session-status.pending { background: var(--warning); }
+        
+        .session-info { flex: 1; }
+        .session-name { font-weight: 500; }
+        .session-owner { font-size: 0.75rem; color: var(--text-secondary); }
+        
+        .user-item { cursor: pointer; }
+        .user-item:hover { background: var(--bg-card-hover); border-radius: 8px; }
+        
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        
+        .modal-overlay.show { display: flex; }
+        
+        .modal {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            width: 90%;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        
+        .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 20px;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .modal-title { font-size: 1.25rem; font-weight: 600; }
+        
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+        
+        .modal-body { padding: 20px; }
+        
+        .detail-section { margin-bottom: 24px; }
+        .detail-section:last-child { margin-bottom: 0; }
+        
+        .detail-title {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .detail-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+        
+        .detail-item {
+            background: var(--bg-dark);
+            border-radius: 8px;
+            padding: 12px;
+        }
+        
+        .detail-label { font-size: 0.75rem; color: var(--text-secondary); }
+        .detail-value { font-size: 1.1rem; font-weight: 600; margin-top: 4px; }
+        .detail-value.primary { color: var(--primary); }
+        .detail-value.success { color: var(--success); }
+        .detail-value.warning { color: var(--warning); }
+        .detail-value.danger { color: var(--danger); }
+    </style>
+</head>
+<body>
+    <div class="admin-container">
+        <div class="admin-header">
+            <div class="admin-header-left">
+                <div class="admin-logo"><i class="fas fa-shield-alt"></i></div>
+                <div>
+                    <h1 class="admin-title">Panneau d'Administration</h1>
+                    <p class="admin-subtitle">Gestion des utilisateurs et des sessions</p>
+                </div>
+            </div>
+            <div class="admin-user">
+                <span id="admin-username">Admin</span>
+                <div class="user-avatar" id="admin-avatar">A</div>
+                <button class="btn btn-secondary btn-sm" onclick="handleLogout()">
+                    <i class="fas fa-sign-out-alt"></i> Déconnexion
+                </button>
+            </div>
+        </div>
+        
+        <div class="card" style="margin-bottom:20px">
+            <div class="card-body">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-users">0</div>
+                        <div class="stat-label">Utilisateurs</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-sessions">0</div>
+                        <div class="stat-label">Sessions WhatsApp</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-admins">1</div>
+                        <div class="stat-label">Administrateurs</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="cards-grid">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">
+                        <span class="card-title-icon"><i class="fas fa-users"></i></span>
+                        Utilisateurs
+                    </div>
+                    <span class="badge badge-primary" id="users-count">0</span>
+                </div>
+                <div class="card-body" id="users-list">
+                    <div class="loading"><div class="spinner"></div></div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">
+                        <span class="card-title-icon"><i class="fas fa-mobile-alt"></i></span>
+                        Sessions WhatsApp
+                    </div>
+                    <span class="badge badge-primary" id="sessions-count">0</span>
+                </div>
+                <div class="card-body" id="sessions-list">
+                    <div class="loading"><div class="spinner"></div></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Logs globaux -->
+        <div class="card" style="margin-top:20px">
+            <div class="card-header">
+                <div class="card-title">
+                    <span class="card-title-icon"><i class="fas fa-terminal"></i></span>
+                    Logs globaux
+                </div>
+                <div style="display:flex;gap:8px">
+                    <button class="btn btn-sm" onclick="loadLogs()"><i class="fas fa-sync"></i></button>
+                    <button class="btn btn-danger btn-sm" onclick="clearLogs()"><i class="fas fa-trash"></i> Vider</button>
+                </div>
+            </div>
+            <div class="card-body" id="logs-container" style="max-height:400px;overflow-y:auto;font-family:monospace;font-size:0.8rem;background:#1a1a2e;padding:10px;border-radius:8px">
+                <div class="loading"><div class="spinner"></div></div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="toast-container" id="toast-container"></div>
+    
+    <!-- Modal détails utilisateur -->
+    <div class="modal-overlay" id="user-modal" onclick="closeUserModal(event)">
+        <div class="modal" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modal-username">Détails utilisateur</h2>
+                <button class="modal-close" onclick="closeUserModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="modal-content">
+                <div class="loading"><div class="spinner"></div></div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        var currentUser = null;
+        
+        function checkAuth() {
+            fetch('/api/auth/verify', { credentials: 'same-origin' })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                if (!data.success || !data.user.isAdmin) {
+                    window.location.href = '/admin/login';
+                    return;
+                }
+                
+                currentUser = data.user;
+                document.getElementById('admin-username').textContent = currentUser.username;
+                document.getElementById('admin-avatar').textContent = currentUser.username.charAt(0).toUpperCase();
+                
+                loadUsers();
+                loadSessions();
+                loadLogs();
+                setInterval(loadLogs, 5000);
+            })
+            .catch(function(e) {
+                window.location.href = '/admin/login';
+            });
+        }
+        
+        function loadUsers() {
+            fetch('/api/auth/users', { credentials: 'same-origin' })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    var users = data.users || [];
+                    document.getElementById('stat-users').textContent = users.length;
+                    document.getElementById('users-count').textContent = users.length;
+                    
+                    var container = document.getElementById('users-list');
+                    
+                    if (users.length === 0) {
+                        container.innerHTML = '<div class="empty-state"><div class="empty-state-icon"><i class="fas fa-users-slash"></i></div><p>Aucun utilisateur</p></div>';
+                        return;
+                    }
+                    
+                    var html = '';
+                    for (var i = 0; i < users.length; i++) {
+                        var user = users[i];
+                        var badges = '';
+                        if (user.isAdmin) badges += '<span class="badge badge-primary">Admin</span> ';
+                        
+                        var deleteBtn = '';
+                        // Ne pas afficher le bouton pour BotAdmin ou soi-même
+                        if (user.username !== 'BotAdmin' && user.username !== currentUser.username) {
+                            deleteBtn = '<button class="btn btn-danger btn-sm" onclick="event.stopPropagation();confirmDeleteUser(\'' + escapeHtml(user.username) + '\')" title="Supprimer"><i class="fas fa-trash"></i></button>';
+                        }
+                        
+                        html += '<div class="user-item" onclick="showUserDetails(\'' + escapeHtml(user.username) + '\')">' +
+                            '<div class="user-item-avatar">' + user.username.charAt(0).toUpperCase() + '</div>' +
+                            '<div class="user-item-info">' +
+                            '<div class="user-item-name">' + escapeHtml(user.username) + '</div>' +
+                            '<div class="user-item-meta">' + badges + '<span>Cree: ' + new Date(user.createdAt).toLocaleDateString() + '</span></div>' +
+                            '</div>' +
+                            '<div class="user-item-actions">' + deleteBtn + '</div>' +
+                            '</div>';
+                    }
+                    container.innerHTML = html;
+                } else {
+                    document.getElementById('users-list').innerHTML = '<div class="empty-state"><p>Erreur chargement</p></div>';
+                }
+            })
+            .catch(function(e) {
+                document.getElementById('users-list').innerHTML = '<div class="empty-state"><p>Erreur chargement utilisateurs</p></div>';
+            });
+        }
+        
+        function loadSessions() {
+            fetch('/api/sessions', { credentials: 'same-origin' })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                var sessions = data.sessions || [];
+                document.getElementById('stat-sessions').textContent = sessions.length;
+                document.getElementById('sessions-count').textContent = sessions.length;
+                
+                var container = document.getElementById('sessions-list');
+                
+                if (sessions.length === 0) {
+                    container.innerHTML = '<div class="empty-state"><div class="empty-state-icon"><i class="fas fa-mobile-alt"></i></div><p>Aucune session WhatsApp active</p></div>';
+                    return;
+                }
+                
+                var html = '<div class="sessions-list">';
+                for (var i = 0; i < sessions.length; i++) {
+                    var session = sessions[i];
+                    var statusClass = session.status === 'connected' ? 'connected' : (session.status === 'qr' ? 'pending' : 'disconnected');
+                    var owner = session.ownerUsername || 'N/A';
+                    var name = session.name || session.id.split('_').pop();
+                    
+                    html += '<div class="session-item">' +
+                        '<div class="session-status ' + statusClass + '"></div>' +
+                        '<div class="session-info">' +
+                        '<div class="session-name">' + escapeHtml(name) + '</div>' +
+                        '<div class="session-owner">Proprietaire: ' + escapeHtml(owner) + ' | ' + (session.phoneNumber || 'N/A') + '</div>' +
+                        '</div>' +
+                        '<div class="user-item-actions">' +
+                        '<button class="btn btn-danger btn-sm" onclick="deleteSession(\'' + session.id + '\')"><i class="fas fa-trash"></i></button>' +
+                        '</div>' +
+                        '</div>';
+                }
+                html += '</div>';
+                container.innerHTML = html;
+            })
+            .catch(function(e) {
+                document.getElementById('sessions-list').innerHTML = '<div class="empty-state"><p>Erreur chargement sessions</p></div>';
+            });
+        }
+        
+        function deleteUser(username) {
+            if (!confirm('Supprimer l\'utilisateur "' + username + '" ?')) return;
+            
+            fetch('/api/auth/users/' + encodeURIComponent(username), {
+                method: 'DELETE',
+                credentials: 'same-origin'
+            })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    showToast('Utilisateur supprime', 'success');
+                    loadUsers();
+                    loadSessions();
+                } else {
+                    showToast(data.message || 'Erreur', 'error');
+                }
+            })
+            .catch(function(e) {
+                showToast('Erreur', 'error');
+            });
+        }
+        
+        function deleteSession(sessionId) {
+            if (!confirm('Supprimer cette session ?')) return;
+            
+            fetch('/api/sessions/' + sessionId, {
+                method: 'DELETE',
+                credentials: 'same-origin'
+            })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    showToast('Session supprimee', 'success');
+                    loadSessions();
+                } else {
+                    showToast(data.message || 'Erreur', 'error');
+                }
+            })
+            .catch(function(e) {
+                showToast('Erreur', 'error');
+            });
+        }
+        
+        function handleLogout() {
+            fetch('/api/auth/logout', {
+                method: 'POST',
+                credentials: 'same-origin'
+            })
+            .finally(function() {
+                window.location.href = '/admin/login';
+            });
+        }
+        
+        function escapeHtml(text) {
+            var div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function showToast(message, type) {
+            type = type || 'success';
+            var container = document.getElementById('toast-container');
+            var toast = document.createElement('div');
+            toast.className = 'toast ' + type;
+            var icon = type === 'success' ? 'check-circle' : 'exclamation-circle';
+            toast.innerHTML = '<i class="fas fa-' + icon + '"></i><span>' + message + '</span>';
+            container.appendChild(toast);
+            
+            setTimeout(function() { toast.remove(); }, 3000);
+        }
+        
+        function showUserDetails(username) {
+            document.getElementById('user-modal').classList.add('show');
+            document.getElementById('modal-username').textContent = '@' + username;
+            document.getElementById('modal-content').innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+            
+            fetch('/api/auth/users/' + encodeURIComponent(username), { credentials: 'same-origin' })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    renderUserDetails(data);
+                } else {
+                    document.getElementById('modal-content').innerHTML = '<div class="empty-state"><p>Erreur chargement</p></div>';
+                }
+            })
+            .catch(function(e) {
+                document.getElementById('modal-content').innerHTML = '<div class="empty-state"><p>Erreur</p></div>';
+            });
+        }
+        
+        function renderUserDetails(data) {
+            var user = data.user;
+            var sessions = data.sessions || [];
+            var stats = data.stats || { totalDeleted: 0, totalWarnings: 0, totalBanned: 0, totalCallsRejected: 0 };
+            
+            var html = '<div class="detail-section">' +
+                '<div class="detail-title">Informations</div>' +
+                '<div class="detail-grid">' +
+                '<div class="detail-item"><div class="detail-label">Statut</div><div class="detail-value">' + (user.isAdmin ? 'Admin' : 'Utilisateur') + '</div></div>' +
+                '<div class="detail-item"><div class="detail-label">Créé le</div><div class="detail-value">' + new Date(user.createdAt).toLocaleDateString() + '</div></div>' +
+                '<div class="detail-item"><div class="detail-label">Dernière connexion</div><div class="detail-value">' + (user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : 'Jamais') + '</div></div>' +
+                '<div class="detail-item"><div class="detail-label">Sécurité</div><div class="detail-value">' + (user.hasSecurityQuestion ? 'Configurée' : 'Non configurée') + '</div></div>' +
+                '</div></div>';
+            
+            html += '<div class="detail-section">' +
+                '<div class="detail-title">Statistiques globales</div>' +
+                '<div class="detail-grid">' +
+                '<div class="detail-item"><div class="detail-label">Messages supprimés</div><div class="detail-value danger">' + stats.totalDeleted + '</div></div>' +
+                '<div class="detail-item"><div class="detail-label">Avertissements</div><div class="detail-value warning">' + stats.totalWarnings + '</div></div>' +
+                '<div class="detail-item"><div class="detail-label">Utilisateurs bannis</div><div class="detail-value danger">' + stats.totalBanned + '</div></div>' +
+                '<div class="detail-item"><div class="detail-label">Appels rejetés</div><div class="detail-value primary">' + stats.totalCallsRejected + '</div></div>' +
+                '</div></div>';
+            
+            if (sessions.length > 0) {
+                html += '<div class="detail-section">' +
+                    '<div class="detail-title">Sessions WhatsApp (' + sessions.length + ')</div>';
+                
+                for (var i = 0; i < sessions.length; i++) {
+                    var session = sessions[i];
+                    var statusClass = session.status === 'connected' ? 'success' : (session.status === 'qr' ? 'warning' : 'danger');
+                    var sessionStats = session.stats || { totalDeleted: 0, totalWarnings: 0, totalBanned: 0, totalCallsRejected: 0 };
+                    
+                    html += '<div class="detail-item" style="margin-bottom:8px">' +
+                        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">' +
+                        '<div class="session-status ' + (session.status === 'connected' ? 'connected' : (session.status === 'qr' ? 'pending' : 'disconnected')) + '"></div>' +
+                        '<strong>' + escapeHtml(session.name || session.id) + '</strong>' +
+                        '<span class="badge badge-' + (session.status === 'connected' ? 'success' : 'warning') + '">' + session.status + '</span>' +
+                        '</div>' +
+                        '<div style="font-size:0.8rem;color:var(--text-secondary)">' +
+                        (session.phoneNumber ? '📱 ' + session.phoneNumber + ' &bull; ' : '') +
+                        '🗑️ ' + sessionStats.totalDeleted + ' &bull; ⚠️ ' + sessionStats.totalWarnings +
+                        '</div></div>';
+                }
+                
+                html += '</div>';
+            } else {
+                html += '<div class="detail-section">' +
+                    '<div class="detail-title">Sessions WhatsApp</div>' +
+                    '<div class="empty-state" style="padding:20px"><p>Aucune session active</p></div>' +
+                    '</div>';
+            }
+            
+            // Boutons d'action (ne pas afficher pour l'admin principal BotAdmin ou soi-même)
+            if (user.username !== 'BotAdmin' && user.username !== currentUser.username) {
+                html += '<div class="detail-section" style="margin-top:20px">' +
+                    '<button class="btn btn-danger" style="width:100%" onclick="confirmDeleteUser(\'' + escapeHtml(user.username) + '\')">' +
+                    '<i class="fas fa-trash"></i> Supprimer cet utilisateur' +
+                    '</button></div>';
+            }
+            
+            document.getElementById('modal-content').innerHTML = html;
+        }
+        
+        function confirmDeleteUser(username) {
+            if (confirm('Supprimer l\'utilisateur "' + username + '" et toutes ses sessions ?')) {
+                deleteUser(username);
+            }
+        }
+        
+        function deleteUser(username) {
+            fetch('/api/auth/users/' + encodeURIComponent(username), {
+                method: 'DELETE',
+                credentials: 'same-origin'
+            })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    showToast('Utilisateur supprimé', 'success');
+                    closeUserModal();
+                    loadUsers();
+                    loadSessions();
+                } else {
+                    showToast(data.message || 'Erreur', 'error');
+                }
+            })
+            .catch(function(e) {
+                showToast('Erreur', 'error');
+            });
+        }
+        
+        function closeUserModal(e) {
+            if (!e || e.target === document.getElementById('user-modal')) {
+                document.getElementById('user-modal').classList.remove('show');
+            }
+        }
+        
+        function loadLogs() {
+            fetch('/api/logs', { credentials: 'same-origin' })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                var container = document.getElementById('logs-container');
+                var logs = data.logs || [];
+                
+                if (logs.length === 0) {
+                    container.innerHTML = '<div style="color:#888;text-align:center">Aucun log</div>';
+                    return;
+                }
+                
+                var html = '';
+                for (var i = 0; i < logs.length; i++) {
+                    var log = logs[i];
+                    var color = '#fff';
+                    var iconClass = '';
+                    
+                    if (log.indexOf('[OK]') !== -1) { color = '#4ade80'; iconClass = 'fa-check-circle'; }
+                    else if (log.indexOf('[X]') !== -1) { color = '#f87171'; iconClass = 'fa-times-circle'; }
+                    else if (log.indexOf('[!]') !== -1) { color = '#f87171'; iconClass = 'fa-exclamation-triangle'; }
+                    else if (log.indexOf('[SCAN]') !== -1) { color = '#60a5fa'; iconClass = 'fa-search'; }
+                    else if (log.indexOf('[AUTH]') !== -1) { color = '#a78bfa'; iconClass = 'fa-key'; }
+                    else if (log.indexOf('[NEW]') !== -1) { color = '#34d399'; iconClass = 'fa-plus-circle'; }
+                    else if (log.indexOf('[STOP]') !== -1) { color = '#fb923c'; iconClass = 'fa-stop-circle'; }
+                    else if (log.indexOf('[SUPPR]') !== -1) { color = '#f472b6'; iconClass = 'fa-trash'; }
+                    else if (log.indexOf('[START]') !== -1) { color = '#34d399'; iconClass = 'fa-play-circle'; }
+                    else if (log.indexOf('[TIMER]') !== -1) { color = '#fbbf24'; iconClass = 'fa-clock'; }
+                    else if (log.indexOf('[TARGET]') !== -1) { color = '#60a5fa'; iconClass = 'fa-bullseye'; }
+                    else if (log.indexOf('[STATS]') !== -1) { color = '#a78bfa'; iconClass = 'fa-chart-bar'; }
+                    else if (log.indexOf('[EXCL]') !== -1) { color = '#fbbf24'; iconClass = 'fa-ban'; }
+                    else if (log.indexOf('[MUTE]') !== -1) { color = '#94a3b8'; iconClass = 'fa-volume-mute'; }
+                    else if (log.indexOf('[GROUPS]') !== -1) { color = '#60a5fa'; iconClass = 'fa-users'; }
+                    
+                    // Remplacer les tags [XXX] par l'icône
+                    var displayLog = escapeHtml(log);
+                    if (iconClass) {
+                        // Trouver et remplacer le premier tag [XXX]
+                        displayLog = displayLog.replace(/\[[A-Z]+\]/, '<i class="fas ' + iconClass + '"></i>');
+                    }
+                    
+                    html += '<div style="color:' + color + ';margin:2px 0;word-break:break-all">' + displayLog + '</div>';
+                }
+                container.innerHTML = html;
+                container.scrollTop = 0;
+            })
+            .catch(function(e) {
+                document.getElementById('logs-container').innerHTML = '<div style="color:#f87171">Erreur chargement logs</div>';
+            });
+        }
+        
+        function clearLogs() {
+            if (!confirm('Vider tous les logs globaux ?')) return;
+            fetch('/api/logs/clear', { method: 'POST', credentials: 'same-origin' })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    showToast('Logs vidés', 'success');
+                    loadLogs();
+                } else {
+                    showToast(data.message || 'Erreur', 'error');
+                }
+            })
+            .catch(function(e) {
+                showToast('Erreur', 'error');
+            });
+        }
+        
+        checkAuth();
+    </script>
+</body>
+</html>

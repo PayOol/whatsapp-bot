@@ -3,6 +3,7 @@ const qrcode = require('qrcode-terminal');
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
+const cookieParser = require('cookie-parser');
 const crypto = require('crypto');
 
 // ============================================================
@@ -612,6 +613,462 @@ Merci de respecter ces règles. Bonne discussion ! 🎉`
 const DATA_DIR = path.join(__dirname, 'data');
 
 // ============================================================
+// 🔐 SYSTÈME D'AUTHENTIFICATION
+// ============================================================
+
+const AUTH_USERS_FILE = path.join(DATA_DIR, 'users_auth.json');
+const AUTH_ADMIN_FILE = path.join(DATA_DIR, 'admin_auth.json');
+const AUTH_SESSIONS_FILE = path.join(DATA_DIR, 'user_sessions.json');
+const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+const TOKEN_EXPIRY_HOURS = 24;
+
+class AuthManager {
+    constructor() {
+        this.users = {};
+        this.admin = null; // Admin séparé
+        this.sessions = {};
+        this.loadAdmin();
+        this.loadUsers();
+        this.loadSessions();
+        this.cleanExpiredSessions();
+        this.createDefaultAdmin();
+    }
+    
+    // === ADMIN ===
+    loadAdmin() {
+        try {
+            if (fs.existsSync(AUTH_ADMIN_FILE)) {
+                const data = JSON.parse(fs.readFileSync(AUTH_ADMIN_FILE, 'utf8'));
+                this.admin = data;
+            }
+        } catch (e) {
+            console.error('Erreur chargement admin:', e);
+            this.admin = null;
+        }
+    }
+    
+    saveAdmin() {
+        try {
+            fs.writeFileSync(AUTH_ADMIN_FILE, JSON.stringify(this.admin, null, 2));
+        } catch (e) {
+            console.error('Erreur sauvegarde admin:', e);
+        }
+    }
+    
+    // === DEFAULT ADMIN ===
+    createDefaultAdmin() {
+        if (!this.admin) {
+            const hashedPassword = this.hashPassword('123');
+            this.admin = {
+                username: 'BotAdmin',
+                password: hashedPassword,
+                createdAt: Date.now(),
+                lastLogin: null,
+                mustChangePassword: true
+            };
+            this.saveAdmin();
+            console.log('[AUTH] Admin par défaut créé: BotAdmin (mot de passe: 123)');
+        }
+    }
+    
+    authenticateAdmin(username, password) {
+        if (!this.admin || this.admin.username !== username) {
+            return { success: false, message: 'Identifiants admin incorrects' };
+        }
+        
+        if (!this.verifyPassword(password, this.admin.password)) {
+            return { success: false, message: 'Identifiants admin incorrects' };
+        }
+        
+        const token = this.generateToken();
+        const expiresAt = Date.now() + (TOKEN_EXPIRY_HOURS * 60 * 60 * 1000);
+        this.sessions[token] = { username, isAdmin: true, createdAt: Date.now(), expiresAt };
+        this.admin.lastLogin = Date.now();
+        this.saveAdmin();
+        this.saveSessions();
+        
+        return { 
+            success: true, 
+            token, 
+            expiresAt, 
+            username, 
+            isAdmin: true, 
+            mustChangePassword: this.admin.mustChangePassword || false 
+        };
+    }
+    
+    changeAdminPassword(newPassword) {
+        if (!this.admin) return { success: false, message: 'Admin non trouvé' };
+        this.admin.password = this.hashPassword(newPassword);
+        this.admin.mustChangePassword = false;
+        this.saveAdmin();
+        return { success: true, message: 'Mot de passe admin modifié' };
+    }
+    
+    // === USERS ===
+    loadUsers() {
+        try {
+            if (fs.existsSync(AUTH_USERS_FILE)) {
+                this.users = JSON.parse(fs.readFileSync(AUTH_USERS_FILE, 'utf8'));
+            }
+        } catch (e) {
+            console.error('Erreur chargement utilisateurs:', e);
+            this.users = {};
+        }
+    }
+    
+    saveUsers() {
+        try {
+            if (!fs.existsSync(DATA_DIR)) {
+                fs.mkdirSync(DATA_DIR, { recursive: true });
+            }
+            fs.writeFileSync(AUTH_USERS_FILE, JSON.stringify(this.users, null, 2));
+        } catch (e) {
+            console.error('Erreur sauvegarde utilisateurs:', e);
+        }
+    }
+    
+    hashPassword(password) {
+        const salt = crypto.randomBytes(16).toString('hex');
+        const hash = crypto.pbkdf2Sync(password, salt, 10000, 64, 'sha512').toString('hex');
+        return `${salt}:${hash}`;
+    }
+    
+    verifyPassword(password, storedHash) {
+        const [salt, hash] = storedHash.split(':');
+        const verifyHash = crypto.pbkdf2Sync(password, salt, 10000, 64, 'sha512').toString('hex');
+        return hash === verifyHash;
+    }
+    
+    generateToken() {
+        return crypto.randomBytes(32).toString('hex');
+    }
+    
+    // === USER MANAGEMENT ===
+    createUser(username, password, isAdmin = false, securityQuestion = null, securityAnswer = null) {
+        if (this.users[username]) {
+            return { success: false, message: 'Cet utilisateur existe déjà' };
+        }
+        
+        if (!username || username.length < 3) {
+            return { success: false, message: 'Le nom d\'utilisateur doit contenir au moins 3 caractères' };
+        }
+        
+        if (!password || password.length < 6) {
+            return { success: false, message: 'Le mot de passe doit contenir au moins 6 caractères' };
+        }
+        
+        const hashedPassword = this.hashPassword(password);
+        this.users[username] = {
+            username,
+            password: hashedPassword,
+            isAdmin,
+            createdAt: Date.now(),
+            lastLogin: null,
+            securityQuestion: securityQuestion || null,
+            securityAnswer: securityAnswer ? this.hashPassword(securityAnswer.toLowerCase()) : null
+        };
+        this.saveUsers();
+        
+        addLog(`[AUTH] Nouvel utilisateur créé: ${username}`);
+        return { success: true, message: 'Compte créé avec succès' };
+    }
+    
+    authenticateUser(username, password) {
+        const user = this.users[username];
+        if (!user) {
+            return { success: false, message: 'Nom d\'utilisateur ou mot de passe incorrect' };
+        }
+        
+        if (!this.verifyPassword(password, user.password)) {
+            return { success: false, message: 'Nom d\'utilisateur ou mot de passe incorrect' };
+        }
+        
+        // Create session
+        const token = this.generateToken();
+        const expiresAt = Date.now() + (TOKEN_EXPIRY_HOURS * 60 * 60 * 1000);
+        
+        this.sessions[token] = {
+            username,
+            createdAt: Date.now(),
+            expiresAt
+        };
+        
+        user.lastLogin = Date.now();
+        this.saveUsers();
+        this.saveSessions();
+        
+        addLog(`[AUTH] Connexion réussie: ${username}`);
+        return { 
+            success: true, 
+            token, 
+            expiresAt, 
+            username, 
+            isAdmin: user.isAdmin,
+            mustChangePassword: user.mustChangePassword || false
+        };
+    }
+    
+    logoutUser(token) {
+        if (this.sessions[token]) {
+            const username = this.sessions[token].username;
+            delete this.sessions[token];
+            this.saveSessions();
+            addLog(`[AUTH] Déconnexion: ${username}`);
+            return { success: true };
+        }
+        return { success: false, message: 'Session non trouvée' };
+    }
+    
+    validateToken(token) {
+        const session = this.sessions[token];
+        if (!session) {
+            return { valid: false, message: 'Token invalide' };
+        }
+        
+        if (Date.now() > session.expiresAt) {
+            delete this.sessions[token];
+            this.saveSessions();
+            return { valid: false, message: 'Session expirée' };
+        }
+        
+        // Vérifier si c'est l'admin
+        if (session.isAdmin && this.admin && session.username === this.admin.username) {
+            return { 
+                valid: true, 
+                username: session.username, 
+                isAdmin: true 
+            };
+        }
+        
+        // Vérifier si c'est un utilisateur normal
+        const user = this.users[session.username];
+        if (!user) {
+            return { valid: false, message: 'Utilisateur non trouvé' };
+        }
+        
+        return { 
+            valid: true, 
+            username: session.username, 
+            isAdmin: user.isAdmin || false 
+        };
+    }
+    
+    // === SESSIONS ===
+    loadSessions() {
+        try {
+            if (fs.existsSync(AUTH_SESSIONS_FILE)) {
+                this.sessions = JSON.parse(fs.readFileSync(AUTH_SESSIONS_FILE, 'utf8'));
+            }
+        } catch (e) {
+            console.error('Erreur chargement sessions:', e);
+            this.sessions = {};
+        }
+    }
+    
+    saveSessions() {
+        try {
+            if (!fs.existsSync(DATA_DIR)) {
+                fs.mkdirSync(DATA_DIR, { recursive: true });
+            }
+            fs.writeFileSync(AUTH_SESSIONS_FILE, JSON.stringify(this.sessions, null, 2));
+        } catch (e) {
+            console.error('Erreur sauvegarde sessions:', e);
+        }
+    }
+    
+    cleanExpiredSessions() {
+        const now = Date.now();
+        let cleaned = 0;
+        for (const token in this.sessions) {
+            if (this.sessions[token].expiresAt < now) {
+                delete this.sessions[token];
+                cleaned++;
+            }
+        }
+        if (cleaned > 0) {
+            this.saveSessions();
+            console.log(`${cleaned} sessions expirées nettoyées`);
+        }
+    }
+    
+    // === ADMIN ===
+    getAllUsers() {
+        return Object.values(this.users).map(u => ({
+            username: u.username,
+            isAdmin: u.isAdmin,
+            createdAt: u.createdAt,
+            lastLogin: u.lastLogin
+        }));
+    }
+    
+    deleteUser(username) {
+        if (!this.users[username]) {
+            return { success: false, message: 'Utilisateur non trouvé' };
+        }
+        
+        // Supprimer toutes les sessions d'authentification de cet utilisateur
+        for (const token in this.sessions) {
+            if (this.sessions[token].username === username) {
+                delete this.sessions[token];
+            }
+        }
+        
+        // Supprimer les sessions WhatsApp de l'utilisateur
+        if (typeof sessionManager !== 'undefined') {
+            sessionManager.cleanupUserSessions(username);
+        }
+        
+        delete this.users[username];
+        this.saveUsers();
+        this.saveSessions();
+        
+        addLog(`[AUTH] Utilisateur supprimé: ${username}`);
+        return { success: true, message: 'Utilisateur supprimé' };
+    }
+    
+    changePassword(username, newPassword) {
+        if (!this.users[username]) {
+            return { success: false, message: 'Utilisateur non trouvé' };
+        }
+        
+        if (!newPassword || newPassword.length < 6) {
+            return { success: false, message: 'Le mot de passe doit contenir au moins 6 caractères' };
+        }
+        
+        this.users[username].password = this.hashPassword(newPassword);
+        this.users[username].mustChangePassword = false; // Enlever le flag
+        this.saveUsers();
+        
+        addLog(`[AUTH] Mot de passe changé: ${username}`);
+        return { success: true, message: 'Mot de passe modifié' };
+    }
+    
+    // === SECURITY QUESTION RECOVERY ===
+    getSecurityQuestion(username) {
+        const user = this.users[username];
+        if (!user) {
+            return { success: false, message: 'Utilisateur non trouvé' };
+        }
+        
+        if (!user.securityQuestion) {
+            return { success: false, message: 'Aucune question de sécurité configurée pour ce compte' };
+        }
+        
+        return { success: true, question: user.securityQuestion };
+    }
+    
+    verifySecurityAnswer(username, answer) {
+        const user = this.users[username];
+        if (!user) {
+            return { success: false, message: 'Utilisateur non trouvé' };
+        }
+        
+        if (!user.securityAnswer) {
+            return { success: false, message: 'Aucune question de sécurité configurée pour ce compte' };
+        }
+        
+        if (!this.verifyPassword(answer.toLowerCase(), user.securityAnswer)) {
+            return { success: false, message: 'Réponse incorrecte' };
+        }
+        
+        // Générer un token de récupération temporaire
+        const recoveryToken = this.generateToken();
+        this.sessions[recoveryToken] = {
+            username,
+            createdAt: Date.now(),
+            expiresAt: Date.now() + (15 * 60 * 1000), // 15 minutes
+            isRecovery: true
+        };
+        this.saveSessions();
+        
+        return { success: true, recoveryToken };
+    }
+    
+    resetPasswordWithToken(recoveryToken, newPassword) {
+        const session = this.sessions[recoveryToken];
+        if (!session || !session.isRecovery) {
+            return { success: false, message: 'Token de récupération invalide' };
+        }
+        
+        if (Date.now() > session.expiresAt) {
+            delete this.sessions[recoveryToken];
+            this.saveSessions();
+            return { success: false, message: 'Token de récupération expiré' };
+        }
+        
+        if (!newPassword || newPassword.length < 6) {
+            return { success: false, message: 'Le mot de passe doit contenir au moins 6 caractères' };
+        }
+        
+        const username = session.username;
+        this.users[username].password = this.hashPassword(newPassword);
+        
+        // Supprimer le token de récupération et toutes les autres sessions de cet utilisateur
+        delete this.sessions[recoveryToken];
+        for (const token in this.sessions) {
+            if (this.sessions[token].username === username) {
+                delete this.sessions[token];
+            }
+        }
+        
+        this.saveUsers();
+        this.saveSessions();
+        
+        addLog(`[AUTH] Mot de passe réinitialisé via question de sécurité: ${username}`);
+        return { success: true, message: 'Mot de passe réinitialisé avec succès' };
+    }
+    
+    setAdmin(username, isAdmin) {
+        if (!this.users[username]) {
+            return { success: false, message: 'Utilisateur non trouvé' };
+        }
+        
+        this.users[username].isAdmin = isAdmin;
+        this.saveUsers();
+        
+        addLog(`[AUTH] Admin status changé pour ${username}: ${isAdmin}`);
+        return { success: true, message: `Droits admin ${isAdmin ? 'accordés' : 'retirés'}` };
+    }
+    
+    userCount() {
+        return Object.keys(this.users).length;
+    }
+}
+
+const authManager = new AuthManager();
+
+// Middleware d'authentification
+function requireAuth(req, res, next) {
+    const token = req.cookies.authToken;
+    
+    if (!token) {
+        return res.status(401).json({ success: false, message: 'Authentification requise', requireAuth: true });
+    }
+    
+    const validation = authManager.validateToken(token);
+    if (!validation.valid) {
+        return res.status(401).json({ success: false, message: validation.message, requireAuth: true });
+    }
+    
+    req.user = { username: validation.username, isAdmin: validation.isAdmin };
+    next();
+}
+
+// Middleware optionnel - ajoute user si connecté mais ne bloque pas
+function optionalAuth(req, res, next) {
+    const token = req.cookies.authToken;
+    
+    if (token) {
+        const validation = authManager.validateToken(token);
+        if (validation.valid) {
+            req.user = { username: validation.username, isAdmin: validation.isAdmin };
+        }
+    }
+    next();
+}
+
+// ============================================================
 // 🗂️ SESSION DATA MANAGER - Données isolées par session
 // ============================================================
 
@@ -808,7 +1265,7 @@ class SessionDataManager {
     }
     
     cleanOldLogs() {
-        const cutoff = Date.now() - (7 * 24 * 60 * 60 * 1000);
+        const cutoff = Date.now() - (24 * 60 * 60 * 1000); // 24h
         this.logs = this.logs.filter(log => {
             const ts = typeof log === 'object' && log.timestamp ? new Date(log.timestamp).getTime() : Date.now();
             return ts > cutoff;
@@ -1316,7 +1773,7 @@ let USER_EXCEPTIONS = { excludedUsers: [], excludedAdmins: true };
 let STATS = { totalDeleted: 0, totalWarnings: 0, totalBanned: 0, totalCallsRejected: 0, adminGroups: 0 };
 let LOGS = [];
 
-const LOG_RETENTION_DAYS = 7;
+const LOG_RETENTION_HOURS = 24;
 
 function addLog(message) {
     const now = new Date();
@@ -1334,14 +1791,24 @@ function addLog(message) {
 }
 
 function cleanOldLogs() {
-    const cutoff = Date.now() - (LOG_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+    const cutoff = Date.now() - (LOG_RETENTION_HOURS * 60 * 60 * 1000);
     const before = LOGS.length;
     LOGS = LOGS.filter(log => {
         const ts = typeof log === 'object' && log.timestamp ? new Date(log.timestamp).getTime() : Date.now();
         return ts > cutoff;
     });
     if (LOGS.length < before) {
-        console.log(`Nettoyage logs: ${before - LOGS.length} entrees supprimees (>${LOG_RETENTION_DAYS} jours)`);
+        console.log(`Nettoyage logs: ${before - LOGS.length} entrees supprimees (>${LOG_RETENTION_HOURS}h)`);
+    }
+}
+
+function clearAllLogs() {
+    LOGS = [];
+    try { fs.writeFileSync(LOGS_FILE, JSON.stringify(LOGS, null, 2)); } catch (e) {}
+    // Vider aussi les logs des sessions
+    for (const [sessionId, sessionData] of sessionDataManagers) {
+        sessionData.logs = [];
+        sessionData.saveLogs();
     }
 }
 
@@ -1644,6 +2111,29 @@ class SessionManager {
             this.activeSessionId = null;
         }
     }
+    
+    // Nettoyer les sessions orphelines (sans propriétaire existant)
+    cleanupOrphanSessions() {
+        const orphanSessions = [];
+        
+        for (const [sessionId, session] of Object.entries(this.sessionsList)) {
+            const owner = session.ownerUsername;
+            // Si la session a un propriétaire mais qu'il n'existe plus
+            if (owner && !authManager.users[owner]) {
+                orphanSessions.push(sessionId);
+            }
+        }
+        
+        if (orphanSessions.length > 0) {
+            console.log(`[CLEANUP] ${orphanSessions.length} session(s) orpheline(s) trouvée(s)`);
+            for (const sessionId of orphanSessions) {
+                this.deleteSession(sessionId);
+                console.log(`[CLEANUP] Session orpheline supprimée: ${sessionId}`);
+            }
+        }
+        
+        return orphanSessions.length;
+    }
 
     saveSessionsList() {
         try {
@@ -1660,7 +2150,7 @@ class SessionManager {
         return 'session_' + Date.now() + '_' + crypto.randomBytes(4).toString('hex');
     }
 
-    createSession(sessionId = null, name = 'Default') {
+    createSession(sessionId = null, name = 'Default', ownerUsername = null) {
         const id = sessionId || this.generateSessionId();
         const authPath = path.join(__dirname, '.wwebjs_auth', id);
         
@@ -1675,7 +2165,8 @@ class SessionManager {
             createdAt: Date.now(),
             status: 'pending',
             phoneNumber: null,
-            pushName: null
+            pushName: null,
+            ownerUsername: ownerUsername // Associer à un utilisateur
         };
 
         this.sessionsList[id] = sessionData;
@@ -1685,6 +2176,35 @@ class SessionManager {
         this.sessions.set(id, { client, data: sessionData });
 
         return sessionData;
+    }
+
+    // Vérifier si l'utilisateur peut démarrer une session
+    canUserStartSession(username) {
+        const user = authManager.users[username];
+        if (!user) return { allowed: false, reason: 'Utilisateur non trouvé' };
+        return { allowed: true, user };
+    }
+
+    // Obtenir les sessions d'un utilisateur
+    getUserSessions(username) {
+        return Object.values(this.sessionsList).filter(s => s.ownerUsername === username);
+    }
+
+    // Vérifier et nettoyer les sessions d'un utilisateur supprimé
+    cleanupUserSessions(username) {
+        const sessionsToRemove = [];
+        for (const [id, session] of Object.entries(this.sessionsList)) {
+            if (session.ownerUsername === username) {
+                sessionsToRemove.push(id);
+            }
+        }
+        
+        for (const id of sessionsToRemove) {
+            this.deleteSession(id);
+            addLog(`[SESSION] Session ${id} supprimée (utilisateur ${username} supprimé)`);
+        }
+        
+        return sessionsToRemove.length;
     }
 
     initClient(sessionId) {
@@ -1756,6 +2276,13 @@ class SessionManager {
                 this.sessionsList[sessionId].status = 'connected';
                 this.sessionsList[sessionId].phoneNumber = session.data.phoneNumber;
                 this.sessionsList[sessionId].pushName = session.data.pushName;
+                
+                // Activer automatiquement cette session si aucune n'est active
+                if (!this.activeSessionId) {
+                    this.activeSessionId = sessionId;
+                    addLog(`[TARGET] Session active: ${sessionId}`);
+                }
+                
                 this.saveSessionsList();
             }
             addLog(`[OK] [${sessionId}] Bot connecte et pret!`);
@@ -1815,6 +2342,15 @@ class SessionManager {
     startSession(sessionId) {
         const session = this.sessions.get(sessionId);
         if (session && session.client) {
+            // Vérifier si le propriétaire existe toujours
+            const ownerUsername = session.data.ownerUsername;
+            if (ownerUsername) {
+                const check = this.canUserStartSession(ownerUsername);
+                if (!check.allowed) {
+                    addLog(`[BLOCK] [${sessionId}] Session bloquée: ${check.reason}`);
+                    return false;
+                }
+            }
             session.client.initialize();
             addLog(`[START] [${sessionId}] Session demarree`);
             return true;
@@ -1852,6 +2388,19 @@ class SessionManager {
         } catch (e) {
             addLog(`[!] [${sessionId}] Erreur suppression dossier auth: ${e.message}`);
         }
+        
+        // Delete session data folder
+        const sessionDataPath = path.join(DATA_DIR, 'sessions', sessionId);
+        try {
+            if (fs.existsSync(sessionDataPath)) {
+                fs.rmSync(sessionDataPath, { recursive: true, force: true });
+            }
+        } catch (e) {
+            addLog(`[!] [${sessionId}] Erreur suppression dossier data: ${e.message}`);
+        }
+        
+        // Remove from sessionDataManagers map
+        sessionDataManagers.delete(sessionId);
 
         this.sessions.delete(sessionId);
         delete this.sessionsList[sessionId];
@@ -1910,16 +2459,49 @@ class SessionManager {
 
     initializeAllSessions() {
         // Initialize all saved sessions
+        const orphanSessions = [];
         for (const sessionId in this.sessionsList) {
+            const sessionData = this.sessionsList[sessionId];
+            
+            // Supprimer les sessions sans propriétaire valide
+            if (!sessionData.ownerUsername) {
+                orphanSessions.push(sessionId);
+                continue;
+            }
+            
+            // Vérifier que le propriétaire existe
+            if (!authManager.users[sessionData.ownerUsername]) {
+                orphanSessions.push(sessionId);
+                continue;
+            }
+            
             if (!this.sessions.has(sessionId)) {
                 const client = this.initClient(sessionId);
                 if (client) {
                     this.sessions.set(sessionId, { 
                         client, 
-                        data: { ...this.sessionsList[sessionId] }
+                        data: { ...sessionData }
                     });
                 }
             }
+        }
+        
+        // Supprimer les sessions orphelines
+        for (const sessionId of orphanSessions) {
+            addLog(`[CLEANUP] Session orpheline supprimée: ${sessionId}`);
+            delete this.sessionsList[sessionId];
+            // Supprimer le dossier d'authentification
+            try {
+                const authPath = path.join(__dirname, '.wwebjs_auth', sessionId);
+                if (fs.existsSync(authPath)) {
+                    fs.rmSync(authPath, { recursive: true, force: true });
+                }
+            } catch (e) {}
+        }
+        
+        if (orphanSessions.length > 0) {
+            this.saveSessionsList();
+            console.log(`${orphanSessions.length} session(s) orpheline(s) supprimée(s)`);
         }
 
         // Set active session or first one
@@ -1928,7 +2510,7 @@ class SessionManager {
             this.saveSessionsList();
         }
 
-        // Start all sessions
+        // Start all valid sessions
         for (const [sessionId, session] of this.sessions) {
             this.startSession(sessionId);
         }
@@ -2162,11 +2744,9 @@ async function scanAllGroups(sessionId = null) {
 const scanTimers = new Map();
 
 function scheduleNextScan(sessionId) {
-    const baseMs = CONFIG.AUTO_SCAN_INTERVAL_HOURS * 60 * 60 * 1000;
-    const jitter = HumanBehavior.gaussianRandom(0, baseMs * 0.2);
-    const nextScanMs = baseMs + jitter;
+    const nextScanMs = CONFIG.AUTO_SCAN_INTERVAL_HOURS * 60 * 60 * 1000;
 
-    addLog(`[TIMER] [${sessionId}] Prochain scan dans ${Math.round(nextScanMs / 3600000 * 10) / 10}h`);
+    addLog(`[TIMER] [${sessionId}] Prochain scan dans ${CONFIG.AUTO_SCAN_INTERVAL_HOURS}h`);
 
     // Clear existing timer for this session
     if (scanTimers.has(sessionId)) {
@@ -2762,11 +3342,468 @@ async function handleCall(client, call, sessionId) {
 const app = express();
 const PORT = process.env.PORT || 3000;
 app.use(express.json());
+app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ============ API SESSIONS ============
+// Route pour la page de login admin
+app.get('/admin/login', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'admin-login.html'));
+});
 
-app.get('/api/sessions', (req, res) => {
+// Route pour le panneau d'administration
+app.get('/admin', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
+// ============ API AUTHENTICATION ============
+
+// Vérifier si c'est le premier lancement (pas d'utilisateurs)
+app.get('/api/auth/setup-status', (req, res) => {
+    const userCount = authManager.userCount();
+    res.json({
+        needsSetup: userCount === 0,
+        userCount
+    });
+});
+
+// Inscription publique - ouverte à tous les utilisateurs
+app.post('/api/auth/register', (req, res) => {
+    const { username, password, securityQuestion, securityAnswer } = req.body;
+    
+    if (!username || !password) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Nom d\'utilisateur et mot de passe requis' 
+        });
+    }
+    
+    if (username.length < 3) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Le nom d\'utilisateur doit contenir au moins 3 caractères' 
+        });
+    }
+    
+    if (password.length < 6) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Le mot de passe doit contenir au moins 6 caractères' 
+        });
+    }
+    
+    if (!securityQuestion || !securityAnswer) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Question et réponse de sécurité requises' 
+        });
+    }
+    
+    // Les utilisateurs créés via /api/auth/register sont des utilisateurs normaux (pas admin)
+    const result = authManager.createUser(username, password, false, securityQuestion, securityAnswer);
+    
+    if (result.success) {
+        // Auto-login après inscription
+        const loginResult = authManager.authenticateUser(username, password);
+        if (loginResult.success) {
+            // Définir le cookie HTTP-only
+            res.cookie('authToken', loginResult.token, {
+                httpOnly: true,
+                secure: false, // false pour développement local (HTTP)
+                sameSite: 'lax', // plus permissif pour développement
+                maxAge: 24 * 60 * 60 * 1000 // 24 heures
+            });
+            res.json({ 
+                success: true, 
+                username: loginResult.username, 
+                isAdmin: loginResult.isAdmin 
+            });
+        } else {
+            res.status(400).json(loginResult);
+        }
+    } else {
+        res.status(400).json(result);
+    }
+});
+
+// Connexion utilisateur
+app.post('/api/auth/login', (req, res) => {
+    const { username, password } = req.body;
+    
+    if (!username || !password) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Nom d\'utilisateur et mot de passe requis' 
+        });
+    }
+    
+    // Vérifier si c'est l'admin (non autorisé via cette route)
+    if (authManager.admin && username === authManager.admin.username) {
+        return res.status(403).json({ 
+            success: false, 
+            message: 'Les administrateurs doivent utiliser /admin/login' 
+        });
+    }
+    
+    const result = authManager.authenticateUser(username, password);
+    
+    if (result.success) {
+        res.cookie('authToken', result.token, {
+            httpOnly: true,
+            secure: false,
+            sameSite: 'lax',
+            maxAge: 24 * 60 * 60 * 1000
+        });
+        res.json({ 
+            success: true, 
+            username: result.username, 
+            isAdmin: false,
+            mustChangePassword: result.mustChangePassword || false
+        });
+    } else {
+        res.status(401).json(result);
+    }
+});
+
+// Connexion admin (route dédiée)
+app.post('/api/auth/admin/login', (req, res) => {
+    const { username, password } = req.body;
+    
+    if (!username || !password) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Nom d\'utilisateur et mot de passe requis' 
+        });
+    }
+    
+    const result = authManager.authenticateAdmin(username, password);
+    
+    if (result.success) {
+        res.cookie('authToken', result.token, {
+            httpOnly: true,
+            secure: false,
+            sameSite: 'lax',
+            maxAge: 24 * 60 * 60 * 1000
+        });
+        res.json({ 
+            success: true, 
+            username: result.username, 
+            isAdmin: true,
+            mustChangePassword: result.mustChangePassword
+        });
+    } else {
+        res.status(401).json(result);
+    }
+});
+
+// Déconnexion
+app.post('/api/auth/logout', (req, res) => {
+    const token = req.cookies.authToken;
+    
+    if (token) {
+        authManager.logoutUser(token);
+    }
+    
+    // Effacer le cookie
+    res.clearCookie('authToken', {
+        httpOnly: true,
+        sameSite: 'lax'
+    });
+    
+    res.json({ success: true, message: 'Déconnecté' });
+});
+
+// Vérifier le token actuel
+app.get('/api/auth/verify', (req, res) => {
+    const token = req.cookies.authToken;
+    
+    if (!token) {
+        return res.status(401).json({ 
+            valid: false, 
+            message: 'Aucun token fourni',
+            requireAuth: true 
+        });
+    }
+    
+    const validation = authManager.validateToken(token);
+    
+    if (validation.valid) {
+        res.json({ 
+            success: true, 
+            user: {
+                username: validation.username,
+                isAdmin: validation.isAdmin 
+            }
+        });
+    } else {
+        res.status(401).json({ 
+            valid: false, 
+            message: validation.message,
+            requireAuth: true 
+        });
+    }
+});
+
+// === RÉCUPÉRATION PAR QUESTION DE SÉCURITÉ ===
+
+// Obtenir la question de sécurité d'un utilisateur
+app.post('/api/auth/recovery/question', (req, res) => {
+    const { username } = req.body;
+    
+    if (!username) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Nom d\'utilisateur requis' 
+        });
+    }
+    
+    const result = authManager.getSecurityQuestion(username);
+    
+    if (result.success) {
+        res.json({ success: true, question: result.question });
+    } else {
+        res.status(400).json(result);
+    }
+});
+
+// Vérifier la réponse de sécurité
+app.post('/api/auth/recovery/verify', (req, res) => {
+    const { username, answer } = req.body;
+    
+    if (!username || !answer) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Nom d\'utilisateur et réponse requis' 
+        });
+    }
+    
+    const result = authManager.verifySecurityAnswer(username, answer);
+    
+    if (result.success) {
+        // Définir un cookie de récupération temporaire
+        res.cookie('recoveryToken', result.recoveryToken, {
+            httpOnly: true,
+            secure: false,
+            sameSite: 'lax',
+            maxAge: 15 * 60 * 1000 // 15 minutes
+        });
+        res.json({ success: true, message: 'Réponse correcte' });
+    } else {
+        res.status(400).json(result);
+    }
+});
+
+// Réinitialiser le mot de passe avec le token de récupération
+app.post('/api/auth/recovery/reset', (req, res) => {
+    const { newPassword } = req.body;
+    const recoveryToken = req.cookies.recoveryToken;
+    
+    if (!recoveryToken) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Session de récupération invalide' 
+        });
+    }
+    
+    if (!newPassword || newPassword.length < 6) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Le mot de passe doit contenir au moins 6 caractères' 
+        });
+    }
+    
+    const result = authManager.resetPasswordWithToken(recoveryToken, newPassword);
+    
+    if (result.success) {
+        // Effacer le cookie de récupération
+        res.clearCookie('recoveryToken', {
+            httpOnly: true,
+            sameSite: 'lax'
+        });
+        res.json({ success: true, message: result.message });
+    } else {
+        res.status(400).json(result);
+    }
+});
+
+// === GESTION DES UTILISATEURS (Admin uniquement) ===
+
+// Lister les utilisateurs
+app.get('/api/auth/users', requireAuth, (req, res) => {
+    if (!req.user.isAdmin) {
+        return res.status(403).json({ 
+            success: false, 
+            message: 'Accès réservé aux administrateurs' 
+        });
+    }
+    
+    res.json({ success: true, users: authManager.getAllUsers() });
+});
+
+// Détails d'un utilisateur spécifique
+app.get('/api/auth/users/:username', requireAuth, (req, res) => {
+    if (!req.user.isAdmin) {
+        return res.status(403).json({ 
+            success: false, 
+            message: 'Accès réservé aux administrateurs' 
+        });
+    }
+    
+    const username = req.params.username;
+    const user = authManager.users[username];
+    
+    if (!user) {
+        return res.status(404).json({ success: false, message: 'Utilisateur non trouvé' });
+    }
+    
+    // Récupérer les sessions de l'utilisateur
+    const userSessions = sessionManager.getUserSessions(username);
+    
+    // Récupérer les statistiques de chaque session
+    const sessionsWithStats = userSessions.map(function(session) {
+        const sessionData = sessionDataManagers.get(session.id);
+        return Object.assign({}, session, {
+            stats: sessionData ? sessionData.stats : { totalDeleted: 0, totalWarnings: 0, totalBanned: 0, totalCallsRejected: 0 }
+        });
+    });
+    
+    // Calculer les totaux
+    const totalStats = sessionsWithStats.reduce(function(acc, s) {
+        return {
+            totalDeleted: acc.totalDeleted + (s.stats && s.stats.totalDeleted || 0),
+            totalWarnings: acc.totalWarnings + (s.stats && s.stats.totalWarnings || 0),
+            totalBanned: acc.totalBanned + (s.stats && s.stats.totalBanned || 0),
+            totalCallsRejected: acc.totalCallsRejected + (s.stats && s.stats.totalCallsRejected || 0)
+        };
+    }, { totalDeleted: 0, totalWarnings: 0, totalBanned: 0, totalCallsRejected: 0 });
+    
+    res.json({
+        success: true,
+        user: {
+            username: user.username,
+            isAdmin: user.isAdmin,
+            createdAt: user.createdAt,
+            lastLogin: user.lastLogin,
+            mustChangePassword: user.mustChangePassword || false,
+            hasSecurityQuestion: !!user.securityQuestion
+        },
+        sessions: sessionsWithStats,
+        stats: totalStats
+    });
+});
+
+// Créer un utilisateur (admin uniquement)
+app.post('/api/auth/users', requireAuth, (req, res) => {
+    if (!req.user.isAdmin) {
+        return res.status(403).json({ 
+            success: false, 
+            message: 'Accès réservé aux administrateurs' 
+        });
+    }
+    
+    const { username, password, isAdmin } = req.body;
+    const result = authManager.createUser(username, password, isAdmin || false);
+    
+    if (result.success) {
+        res.json(result);
+    } else {
+        res.status(400).json(result);
+    }
+});
+
+// Supprimer un utilisateur (admin uniquement)
+app.delete('/api/auth/users/:username', requireAuth, (req, res) => {
+    if (!req.user.isAdmin) {
+        return res.status(403).json({ 
+            success: false, 
+            message: 'Accès réservé aux administrateurs' 
+        });
+    }
+    
+    // Empêcher de se supprimer soi-même
+    if (req.params.username === req.user.username) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Vous ne pouvez pas supprimer votre propre compte' 
+        });
+    }
+    
+    const result = authManager.deleteUser(req.params.username);
+    
+    if (result.success) {
+        res.json(result);
+    } else {
+        res.status(404).json(result);
+    }
+});
+
+// Changer le mot de passe admin
+app.put('/api/auth/admin/password', requireAuth, (req, res) => {
+    if (!req.user.isAdmin) {
+        return res.status(403).json({ 
+            success: false, 
+            message: 'Accès réservé aux administrateurs' 
+        });
+    }
+    
+    const result = authManager.changeAdminPassword(req.body.password);
+    
+    if (result.success) {
+        res.json(result);
+    } else {
+        res.status(400).json(result);
+    }
+});
+
+// Changer le mot de passe d'un utilisateur (utilisateur uniquement)
+app.put('/api/auth/users/:username/password', requireAuth, (req, res) => {
+    const targetUsername = req.params.username;
+    
+    // L'admin ne peut pas utiliser cette route
+    if (req.user.isAdmin) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'L\'admin doit utiliser /api/auth/admin/password' 
+        });
+    }
+    
+    // L'utilisateur ne peut changer que son propre mot de passe
+    if (targetUsername !== req.user.username) {
+        return res.status(403).json({ 
+            success: false, 
+            message: 'Accès non autorisé' 
+        });
+    }
+    
+    const result = authManager.changePassword(targetUsername, req.body.password);
+    
+    if (result.success) {
+        res.json(result);
+    } else {
+        res.status(400).json(result);
+    }
+});
+
+// Modifier les droits admin (admin uniquement)
+app.put('/api/auth/users/:username/admin', requireAuth, (req, res) => {
+    if (!req.user.isAdmin) {
+        return res.status(403).json({ 
+            success: false, 
+            message: 'Accès réservé aux administrateurs' 
+        });
+    }
+    
+    const result = authManager.setAdmin(req.params.username, req.body.isAdmin);
+    
+    if (result.success) {
+        res.json(result);
+    } else {
+        res.status(404).json(result);
+    }
+});
+
+// ============ API SESSIONS (protégées) ============
+
+app.get('/api/sessions', requireAuth, (req, res) => {
     const sessions = sessionManager.getAllSessionsStatus();
     res.json({
         sessions,
@@ -2774,25 +3811,33 @@ app.get('/api/sessions', (req, res) => {
     });
 });
 
-app.post('/api/sessions', (req, res) => {
+app.post('/api/sessions', requireAuth, (req, res) => {
     try {
         const { name } = req.body;
-        const sessionData = sessionManager.createSession(null, name || 'New Session');
+        const username = req.user.username;
+        
+        // Vérifier que l'utilisateur existe toujours
+        const check = sessionManager.canUserStartSession(username);
+        if (!check.allowed) {
+            return res.status(403).json({ success: false, message: check.reason });
+        }
+        
+        const sessionData = sessionManager.createSession(null, name || 'New Session', username);
         sessionManager.startSession(sessionData.id);
-        addLog(`[NEW] Nouvelle session creee: ${sessionData.id}`);
+        addLog(`[NEW] Nouvelle session créée: ${sessionData.id} par ${username}`);
         res.json({ success: true, session: sessionData });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
 });
 
-app.get('/api/sessions/:id', (req, res) => {
+app.get('/api/sessions/:id', requireAuth, (req, res) => {
     const status = sessionManager.getSessionStatus(req.params.id);
     if (!status) return res.status(404).json({ success: false, message: 'Session non trouvée' });
     res.json(status);
 });
 
-app.post('/api/sessions/:id/activate', (req, res) => {
+app.post('/api/sessions/:id/activate', requireAuth, (req, res) => {
     const success = sessionManager.setActiveSession(req.params.id);
     if (success) {
         res.json({ success: true, message: 'Session activée' });
@@ -2801,7 +3846,32 @@ app.post('/api/sessions/:id/activate', (req, res) => {
     }
 });
 
-app.post('/api/sessions/:id/stop', async (req, res) => {
+// Démarrer manuellement une session
+app.post('/api/sessions/:id/start', requireAuth, (req, res) => {
+    const sessionId = req.params.id;
+    const session = sessionManager.sessionsList[sessionId];
+    
+    if (!session) {
+        return res.status(404).json({ success: false, message: 'Session non trouvée' });
+    }
+    
+    // Vérifier les droits: admin ou propriétaire
+    const isOwner = session.ownerUsername === req.user.username;
+    const isAdmin = req.user.isAdmin;
+    
+    if (!isOwner && !isAdmin) {
+        return res.status(403).json({ success: false, message: 'Vous n\'êtes pas autorisé à démarrer cette session' });
+    }
+    
+    const success = sessionManager.startSession(sessionId);
+    if (success) {
+        res.json({ success: true, message: 'Session démarrée' });
+    } else {
+        res.status(500).json({ success: false, message: 'Erreur lors du démarrage' });
+    }
+});
+
+app.post('/api/sessions/:id/stop', requireAuth, async (req, res) => {
     const success = await sessionManager.stopSession(req.params.id);
     if (success) {
         res.json({ success: true, message: 'Session arrêtée' });
@@ -2810,7 +3880,7 @@ app.post('/api/sessions/:id/stop', async (req, res) => {
     }
 });
 
-app.delete('/api/sessions/:id', async (req, res) => {
+app.delete('/api/sessions/:id', requireAuth, async (req, res) => {
     const success = await sessionManager.deleteSession(req.params.id);
     if (success) {
         res.json({ success: true, message: 'Session supprimée' });
@@ -2819,7 +3889,7 @@ app.delete('/api/sessions/:id', async (req, res) => {
     }
 });
 
-app.get('/api/status', (req, res) => {
+app.get('/api/status', requireAuth, (req, res) => {
     const activeClient = sessionManager.getActiveClient();
     const activeSession = sessionManager.activeSessionId ? sessionManager.getSessionStatus(sessionManager.activeSessionId) : null;
     
@@ -2836,7 +3906,7 @@ app.get('/api/status', (req, res) => {
     });
 });
 
-app.get('/api/config', (req, res) => {
+app.get('/api/config', requireAuth, (req, res) => {
     // Utiliser la config de la session active ou la config globale
     const sessionId = req.query.sessionId || sessionManager.activeSessionId;
     const sessionData = sessionId ? getSessionData(sessionId) : null;
@@ -2860,7 +3930,7 @@ app.get('/api/config', (req, res) => {
     });
 });
 
-app.post('/api/config', (req, res) => {
+app.post('/api/config', requireAuth, (req, res) => {
     try {
         // Utiliser la config de la session active ou la config globale
         const sessionId = req.body.sessionId || sessionManager.activeSessionId;
@@ -2893,7 +3963,7 @@ app.post('/api/config', (req, res) => {
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
-app.get('/api/stats', async (req, res) => {
+app.get('/api/stats', requireAuth, async (req, res) => {
     try {
         const sessionId = req.query.sessionId || sessionManager.activeSessionId;
         const sessionData = sessionId ? getSessionData(sessionId) : null;
@@ -2917,19 +3987,64 @@ app.get('/api/stats', async (req, res) => {
     }
 });
 
-app.get('/api/logs', (req, res) => {
-    const sessionId = req.query.sessionId || sessionManager.activeSessionId;
-    const sessionData = sessionId ? getSessionData(sessionId) : null;
-    const logs = sessionData ? sessionData.logs : LOGS;
+app.get('/api/logs', requireAuth, (req, res) => {
+    const username = req.user.username;
+    const isAdmin = req.user.isAdmin;
     
-    const formattedLogs = logs.map(log => {
-        if (typeof log === 'string') return log;
-        return `[${log.display}] ${log.message}`;
-    });
-    res.json({ sessionId: sessionId || 'global', logs: formattedLogs });
+    // Les admins voient les logs globaux (du plus récent au plus ancien) avec le propriétaire
+    if (isAdmin) {
+        const formattedLogs = LOGS.map(log => {
+            let logStr = typeof log === 'string' ? log : `[${log.display}] ${log.message}`;
+            
+            // Extraire l'ID de session du log et ajouter le propriétaire
+            const sessionMatch = logStr.match(/\[([a-z0-9_]+)\]/);
+            if (sessionMatch) {
+                const sessionId = sessionMatch[1];
+                const sessionInfo = sessionManager.sessionsList[sessionId];
+                if (sessionInfo && sessionInfo.ownerUsername) {
+                    // Remplacer l'ID de session par le nom du propriétaire
+                    logStr = logStr.replace(`[${sessionId}]`, `[${sessionInfo.ownerUsername}]`);
+                }
+            }
+            return logStr;
+        }).reverse();
+        return res.json({ sessionId: 'global', logs: formattedLogs });
+    }
+    
+    // Les utilisateurs normaux voient seulement les logs de leurs sessions
+    const userSessions = sessionManager.getUserSessions(username);
+    const allLogs = [];
+    
+    for (const session of userSessions) {
+        const sessionData = sessionDataManagers.get(session.id);
+        if (sessionData && sessionData.logs) {
+            for (const log of sessionData.logs) {
+                if (typeof log === 'string') {
+                    allLogs.push(`[${session.id}] ${log}`);
+                } else {
+                    allLogs.push(`[${log.display}] [${session.id}] ${log.message}`);
+                }
+            }
+        }
+    }
+    
+    // Trier par timestamp (plus récent en premier)
+    allLogs.reverse();
+    
+    res.json({ sessionId: 'user', logs: allLogs.slice(0, 200) });
 });
 
-app.get('/api/stats/groups', async (req, res) => {
+// Vider les logs (admin uniquement)
+app.post('/api/logs/clear', requireAuth, (req, res) => {
+    if (!req.user.isAdmin) {
+        return res.status(403).json({ success: false, message: 'Accès réservé aux administrateurs' });
+    }
+    
+    clearAllLogs();
+    res.json({ success: true, message: 'Logs vidés' });
+});
+
+app.get('/api/stats/groups', requireAuth, async (req, res) => {
     try {
         const sessionId = req.query.sessionId || sessionManager.activeSessionId;
         const activeClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
@@ -2951,7 +4066,7 @@ app.get('/api/stats/groups', async (req, res) => {
     } catch (error) { res.json({ groups: [], total: 0 }); }
 });
 
-app.get('/api/stats/deleted', (req, res) => {
+app.get('/api/stats/deleted', requireAuth, (req, res) => {
     const sessionId = req.query.sessionId || sessionManager.activeSessionId;
     const sessionData = sessionId ? getSessionData(sessionId) : null;
     const logs = sessionData ? sessionData.logs : LOGS;
@@ -2964,7 +4079,7 @@ app.get('/api/stats/deleted', (req, res) => {
     res.json({ sessionId: sessionId || 'global', total: stats.totalDeleted, recent: deletedLogs.slice(-20).reverse() });
 });
 
-app.get('/api/stats/warnings', (req, res) => {
+app.get('/api/stats/warnings', requireAuth, (req, res) => {
     const sessionId = req.query.sessionId || sessionManager.activeSessionId;
     const sessionData = sessionId ? getSessionData(sessionId) : null;
     const logs = sessionData ? sessionData.logs : LOGS;
@@ -2977,7 +4092,7 @@ app.get('/api/stats/warnings', (req, res) => {
     res.json({ sessionId: sessionId || 'global', total: stats.totalWarnings, recent: warningLogs.slice(-20).reverse() });
 });
 
-app.get('/api/stats/banned', (req, res) => {
+app.get('/api/stats/banned', requireAuth, (req, res) => {
     const sessionId = req.query.sessionId || sessionManager.activeSessionId;
     const sessionData = sessionId ? getSessionData(sessionId) : null;
     const logs = sessionData ? sessionData.logs : LOGS;
@@ -2990,7 +4105,7 @@ app.get('/api/stats/banned', (req, res) => {
     res.json({ sessionId: sessionId || 'global', total: stats.totalBanned, recent: bannedLogs.slice(-20).reverse() });
 });
 
-app.get('/api/stats/calls', (req, res) => {
+app.get('/api/stats/calls', requireAuth, (req, res) => {
     const sessionId = req.query.sessionId || sessionManager.activeSessionId;
     const sessionData = sessionId ? getSessionData(sessionId) : null;
     const logs = sessionData ? sessionData.logs : LOGS;
@@ -3005,7 +4120,7 @@ app.get('/api/stats/calls', (req, res) => {
 
 // ============ API ACTIVITY CHART ============
 
-app.get('/api/stats/activity', (req, res) => {
+app.get('/api/stats/activity', requireAuth, (req, res) => {
     const sessionId = req.query.sessionId || sessionManager.activeSessionId;
     const sessionData = sessionId ? getSessionData(sessionId) : null;
     const logs = sessionData ? sessionData.logs : LOGS;
@@ -3051,7 +4166,7 @@ app.get('/api/stats/activity', (req, res) => {
     });
 });
 
-app.post('/api/scan', async (req, res) => {
+app.post('/api/scan', requireAuth, async (req, res) => {
     try {
         const sessionId = req.body.sessionId || sessionManager.activeSessionId;
         const activeClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
@@ -3066,7 +4181,7 @@ app.post('/api/scan', async (req, res) => {
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
-app.delete('/api/warnings', (req, res) => {
+app.delete('/api/warnings', requireAuth, (req, res) => {
     try {
         const sessionId = req.body.sessionId || sessionManager.activeSessionId;
         const sessionData = sessionId ? getSessionData(sessionId) : null;
@@ -3083,7 +4198,7 @@ app.delete('/api/warnings', (req, res) => {
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
-app.get('/api/groups', async (req, res) => {
+app.get('/api/groups', requireAuth, async (req, res) => {
     try {
         const sessionId = req.query.sessionId || sessionManager.activeSessionId;
         const activeClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
@@ -3105,7 +4220,7 @@ app.get('/api/groups', async (req, res) => {
     } catch (error) { res.status(500).json([]); }
 });
 
-app.get('/api/groups/all', async (req, res) => {
+app.get('/api/groups/all', requireAuth, async (req, res) => {
     try {
         const sessionId = req.query.sessionId || sessionManager.activeSessionId;
         const activeClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
@@ -3145,7 +4260,7 @@ app.get('/api/groups/all', async (req, res) => {
     }
 });
 
-app.post('/api/groups/leave', async (req, res) => {
+app.post('/api/groups/leave', requireAuth, async (req, res) => {
     try {
         const sessionId = req.body.sessionId || sessionManager.activeSessionId;
         const activeClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
@@ -3180,7 +4295,7 @@ app.post('/api/groups/leave', async (req, res) => {
     }
 });
 
-app.delete('/api/groups/delete', async (req, res) => {
+app.delete('/api/groups/delete', requireAuth, async (req, res) => {
     try {
         const sessionId = req.body.sessionId || sessionManager.activeSessionId;
         const activeClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
@@ -3211,13 +4326,13 @@ app.delete('/api/groups/delete', async (req, res) => {
     }
 });
 
-app.get('/api/groups/exceptions', (req, res) => {
+app.get('/api/groups/exceptions', requireAuth, (req, res) => {
     const sessionId = req.query.sessionId || sessionManager.activeSessionId;
     const sessionData = sessionId ? getSessionData(sessionId) : null;
     res.json({ sessionId: sessionId || 'global', ...(sessionData ? sessionData.groupExceptions : GROUP_EXCEPTIONS) });
 });
 
-app.post('/api/groups/exceptions', (req, res) => {
+app.post('/api/groups/exceptions', requireAuth, (req, res) => {
     try {
         const sessionId = req.body.sessionId || sessionManager.activeSessionId;
         const sessionData = sessionId ? getSessionData(sessionId) : null;
@@ -3233,7 +4348,7 @@ app.post('/api/groups/exceptions', (req, res) => {
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
-app.delete('/api/groups/exceptions', (req, res) => {
+app.delete('/api/groups/exceptions', requireAuth, (req, res) => {
     try {
         const sessionId = req.body.sessionId || sessionManager.activeSessionId;
         const sessionData = sessionId ? getSessionData(sessionId) : null;
@@ -3249,7 +4364,7 @@ app.delete('/api/groups/exceptions', (req, res) => {
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
-app.post('/api/groups/welcome', (req, res) => {
+app.post('/api/groups/welcome', requireAuth, (req, res) => {
     try {
         const sessionId = req.body.sessionId || sessionManager.activeSessionId;
         const sessionData = sessionId ? getSessionData(sessionId) : null;
@@ -3272,13 +4387,13 @@ app.post('/api/groups/welcome', (req, res) => {
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
-app.get('/api/users/exceptions', (req, res) => {
+app.get('/api/users/exceptions', requireAuth, (req, res) => {
     const sessionId = req.query.sessionId || sessionManager.activeSessionId;
     const sessionData = sessionId ? getSessionData(sessionId) : null;
     res.json({ sessionId: sessionId || 'global', ...(sessionData ? sessionData.userExceptions : USER_EXCEPTIONS) });
 });
 
-app.post('/api/users/exceptions', (req, res) => {
+app.post('/api/users/exceptions', requireAuth, (req, res) => {
     try {
         const sessionId = req.body.sessionId || sessionManager.activeSessionId;
         const sessionData = sessionId ? getSessionData(sessionId) : null;
@@ -3306,7 +4421,7 @@ app.post('/api/users/exceptions', (req, res) => {
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
-app.delete('/api/users/exceptions', (req, res) => {
+app.delete('/api/users/exceptions', requireAuth, (req, res) => {
     try {
         const sessionId = req.body.sessionId || sessionManager.activeSessionId;
         const sessionData = sessionId ? getSessionData(sessionId) : null;
@@ -3321,7 +4436,7 @@ app.delete('/api/users/exceptions', (req, res) => {
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
-app.post('/api/users/exceptions/admins', (req, res) => {
+app.post('/api/users/exceptions/admins', requireAuth, (req, res) => {
     try {
         const sessionId = req.body.sessionId || sessionManager.activeSessionId;
         const sessionData = sessionId ? getSessionData(sessionId) : null;
@@ -3337,13 +4452,13 @@ app.post('/api/users/exceptions/admins', (req, res) => {
 
 // ============ API BLOCAGE APPELS ============
 
-app.get('/api/blocked', (req, res) => {
+app.get('/api/blocked', requireAuth, (req, res) => {
     const sessionId = req.query.sessionId || sessionManager.activeSessionId;
     const sessionData = sessionId ? getSessionData(sessionId) : null;
     res.json({ sessionId: sessionId || 'global', blockedUsers: sessionData ? sessionData.blockedUsers : blockedUsers });
 });
 
-app.post('/api/blocked/unblock', async (req, res) => {
+app.post('/api/blocked/unblock', requireAuth, async (req, res) => {
     try {
         const sessionId = req.body.sessionId || sessionManager.activeSessionId;
         const activeClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
@@ -3378,7 +4493,7 @@ app.post('/api/blocked/unblock', async (req, res) => {
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
-app.get('/api/ratelimit', (req, res) => {
+app.get('/api/ratelimit', requireAuth, (req, res) => {
     const now = Date.now();
     const lastMinute = rateLimiter.actions.filter(t => now - t < 60000).length;
     const lastHour = rateLimiter.actions.filter(t => now - t < 3600000).length;
@@ -3393,13 +4508,13 @@ app.get('/api/ratelimit', (req, res) => {
 
 // ============ API MENUS INTERACTIFS ============
 
-app.get('/api/menus', (req, res) => {
+app.get('/api/menus', requireAuth, (req, res) => {
     const sessionId = req.query.sessionId || sessionManager.activeSessionId;
     const sessionData = sessionId ? getSessionData(sessionId) : null;
     res.json({ sessionId: sessionId || 'global', menus: sessionData ? sessionData.interactiveMenus : interactiveMenus });
 });
 
-app.get('/api/menus/:id', (req, res) => {
+app.get('/api/menus/:id', requireAuth, (req, res) => {
     const sessionId = req.query.sessionId || sessionManager.activeSessionId;
     const sessionData = sessionId ? getSessionData(sessionId) : null;
     const menus = sessionData ? sessionData.interactiveMenus : interactiveMenus;
@@ -3409,7 +4524,7 @@ app.get('/api/menus/:id', (req, res) => {
     res.json({ sessionId: sessionId || 'global', menu });
 });
 
-app.post('/api/menus', (req, res) => {
+app.post('/api/menus', requireAuth, (req, res) => {
     try {
         const sessionId = req.body.sessionId || sessionManager.activeSessionId;
         const sessionData = sessionId ? getSessionData(sessionId) : null;
@@ -3423,7 +4538,7 @@ app.post('/api/menus', (req, res) => {
     }
 });
 
-app.put('/api/menus/:id', (req, res) => {
+app.put('/api/menus/:id', requireAuth, (req, res) => {
     try {
         const sessionId = req.body.sessionId || sessionManager.activeSessionId;
         const sessionData = sessionId ? getSessionData(sessionId) : null;
@@ -3453,7 +4568,7 @@ app.put('/api/menus/:id', (req, res) => {
     }
 });
 
-app.delete('/api/menus/:id', (req, res) => {
+app.delete('/api/menus/:id', requireAuth, (req, res) => {
     try {
         const sessionId = req.body.sessionId || sessionManager.activeSessionId;
         const sessionData = sessionId ? getSessionData(sessionId) : null;
@@ -3479,7 +4594,7 @@ app.delete('/api/menus/:id', (req, res) => {
     }
 });
 
-app.post('/api/menus/:id/test', async (req, res) => {
+app.post('/api/menus/:id/test', requireAuth, async (req, res) => {
     try {
         const sessionId = req.body.sessionId || sessionManager.activeSessionId;
         const activeClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
@@ -3548,14 +4663,12 @@ console.log('   ├─ Messages variables (pool aléatoire)');
 console.log('   ├─ Micro-pauses aléatoires (10% chance)');
 console.log('   └─ Multi-sessions activé');
 
-// Créer une session par défaut si aucune n'existe
-if (Object.keys(sessionManager.sessionsList).length === 0) {
-    console.log('Creation de la session initiale...');
-    const defaultSession = sessionManager.createSession('session_default', 'Session principale');
-    sessionManager.setActiveSession('session_default');
-}
+// Ne pas créer de session par défaut - les sessions doivent être créées par des utilisateurs authentifiés
 
-// Initialiser toutes les sessions
+// Nettoyer les sessions orphelines (dont le propriétaire n'existe plus)
+sessionManager.cleanupOrphanSessions();
+
+// Initialiser toutes les sessions existantes
 sessionManager.initializeAllSessions();
 
 // Mettre à jour la variable client pour la compatibilité

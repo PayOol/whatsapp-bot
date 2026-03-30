@@ -967,12 +967,25 @@
             background:var(--bg-card);
             border:1px solid var(--border);
             border-radius:var(--radius-xl);
-            padding:32px;
+            position:relative;
             max-width:400px;
             width:90%;
+            padding:32px;
             text-align:center;
             box-shadow:var(--shadow-lg);
         }
+        .qr-close-btn{
+            position:absolute;
+            top:12px;
+            right:16px;
+            background:none;
+            border:none;
+            color:var(--text-secondary);
+            font-size:1.5rem;
+            cursor:pointer;
+            line-height:1;
+        }
+        .qr-close-btn:hover{color:var(--text-primary);}
         .qr-modal-header h3{
             font-size:1.4rem;margin-bottom:8px;
             color:var(--text-primary);
@@ -1504,9 +1517,334 @@
         @media(max-width:480px){
             .stats-row{grid-template-columns:1fr}
         }
+
+        /* ═══════════════════════════════════════
+           AUTH OVERLAY
+           ═══════════════════════════════════════ */
+        .auth-overlay{
+            position:fixed;
+            inset:0;
+            background:rgba(0,0,0,0.95);
+            backdrop-filter:blur(20px);
+            -webkit-backdrop-filter:blur(20px);
+            z-index:100000;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            animation:authFadeIn 0.4s ease;
+        }
+        @keyframes authFadeIn{from{opacity:0}to{opacity:1}}
+        .auth-container{
+            background:var(--bg-card);
+            border:1px solid var(--border);
+            border-radius:var(--radius-xl);
+            padding:40px;
+            max-width:420px;
+            width:90%;
+            box-shadow:var(--shadow-lg);
+        }
+        .auth-header{
+            text-align:center;
+            margin-bottom:32px;
+        }
+        .auth-logo{
+            width:64px;
+            height:64px;
+            margin:0 auto 16px;
+            border-radius:16px;
+            background:linear-gradient(135deg,var(--primary),var(--primary-dark));
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            font-size:28px;
+        }
+        .auth-title{
+            font-size:1.5rem;
+            font-weight:700;
+            margin-bottom:8px;
+        }
+        .auth-subtitle{
+            color:var(--text-muted);
+            font-size:0.9rem;
+        }
+        .auth-tabs{
+            display:flex;
+            gap:8px;
+            margin-bottom:24px;
+            background:var(--bg-input);
+            padding:4px;
+            border-radius:var(--radius-lg);
+        }
+        .auth-tab{
+            flex:1;
+            padding:10px 16px;
+            border:none;
+            background:transparent;
+            color:var(--text-secondary);
+            font-size:0.85rem;
+            font-weight:500;
+            border-radius:var(--radius-md);
+            cursor:pointer;
+            transition:all var(--transition-fast);
+        }
+        .auth-tab:hover{color:var(--text-primary)}
+        .auth-tab.active{
+            background:var(--primary);
+            color:#000;
+        }
+        .auth-form{display:none}
+        .auth-form.active{display:block}
+        .auth-error{
+            background:rgba(var(--danger-rgb),0.1);
+            border:1px solid rgba(var(--danger-rgb),0.3);
+            color:var(--danger);
+            padding:12px 16px;
+            border-radius:var(--radius-md);
+            margin-bottom:20px;
+            font-size:0.85rem;
+            display:none;
+        }
+        .auth-error.show{display:block}
+        .auth-success{
+            background:rgba(var(--primary-rgb),0.1);
+            border:1px solid rgba(var(--primary-rgb),0.3);
+            color:var(--success);
+            padding:12px 16px;
+            border-radius:var(--radius-md);
+            margin-bottom:20px;
+            font-size:0.85rem;
+        }
+        .auth-footer{
+            text-align:center;
+            margin-top:24px;
+            color:var(--text-muted);
+            font-size:0.8rem;
+        }
+        .auth-footer a{
+            color:var(--primary);
+            text-decoration:none;
+        }
+        .auth-footer a:hover{text-decoration:underline}
+        .user-menu{
+            position:relative;
+        }
+        .user-menu-btn{
+            display:flex;
+            align-items:center;
+            gap:8px;
+            padding:8px 12px;
+            background:var(--bg-elevated);
+            border:1px solid var(--border);
+            border-radius:var(--radius-md);
+            color:var(--text-primary);
+            cursor:pointer;
+            transition:all var(--transition-fast);
+        }
+        .user-menu-btn:hover{
+            background:var(--bg-card-hover);
+        }
+        .user-avatar{
+            width:28px;
+            height:28px;
+            border-radius:50%;
+            background:linear-gradient(135deg,var(--primary),var(--accent));
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            font-size:0.75rem;
+            font-weight:700;
+            color:#000;
+        }
+        .user-dropdown{
+            position:absolute;
+            bottom:100%;
+            right:0;
+            margin-bottom:8px;
+            background:var(--bg-card);
+            border:1px solid var(--border);
+            border-radius:var(--radius-md);
+            min-width:180px;
+            box-shadow:var(--shadow-lg);
+            display:none;
+            z-index:100;
+        }
+        .user-dropdown.show{display:block}
+        .user-dropdown-item{
+            display:flex;
+            align-items:center;
+            gap:10px;
+            padding:12px 16px;
+            color:var(--text-primary);
+            cursor:pointer;
+            transition:background var(--transition-fast);
+        }
+        .user-dropdown-item:hover{
+            background:var(--bg-card-hover);
+        }
+        .user-dropdown-item.danger{
+            color:var(--danger);
+        }
+        .user-dropdown-divider{
+            height:1px;
+            background:var(--border);
+            margin:4px 0;
+        }
     </style>
 </head>
 <body>
+    <!-- Auth Overlay -->
+    <div class="auth-overlay" id="auth-overlay" style="display:none">
+        <div class="auth-container">
+            <div class="auth-header">
+                <div class="auth-logo">
+                    <i class="fas fa-shield-alt"></i>
+                </div>
+                <h2 class="auth-title" id="auth-title">Connexion</h2>
+                <p class="auth-subtitle" id="auth-subtitle">Accédez à votre panneau d'administration</p>
+            </div>
+            
+            <div class="auth-error" id="auth-error"></div>
+            
+            <div class="auth-tabs" id="auth-tabs" style="display:none">
+                <button type="button" class="auth-tab active" onclick="switchAuthTab('login')">Connexion</button>
+                <button type="button" class="auth-tab" onclick="switchAuthTab('register')">Inscription</button>
+            </div>
+            
+            <!-- Login Form -->
+            <form class="auth-form active" id="login-form" onsubmit="event.preventDefault();handleLogin()">
+                <div class="form-group">
+                    <label class="form-label">Nom d'utilisateur</label>
+                    <input type="text" class="form-input" id="login-username" placeholder="@username" required autocomplete="username" value="@" oninput="enforceAtPrefix(this)">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Mot de passe</label>
+                    <input type="password" class="form-input" id="login-password" placeholder="Entrez votre mot de passe" required autocomplete="current-password">
+                </div>
+                <button type="submit" class="btn btn-primary" style="width:100%;margin-top:8px">
+                    <i class="fas fa-sign-in-alt"></i> Se connecter
+                </button>
+                <div style="text-align:center;margin-top:12px">
+                    <a href="#" onclick="event.preventDefault();showRecoveryForm()" style="color:var(--primary);font-size:0.85rem;text-decoration:none">Mot de passe oublié ?</a>
+                </div>
+            </form>
+            
+            <!-- Register Form -->
+            <form class="auth-form" id="register-form" onsubmit="event.preventDefault();handleRegister()">
+                <!-- Étape 1: Informations de compte -->
+                <div id="register-step1">
+                    <div class="auth-success" id="register-info">
+                        <i class="fas fa-info-circle"></i> Créez votre compte pour commencer
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Nom d'utilisateur</label>
+                        <input type="text" class="form-input" id="register-username" placeholder="@username (min. 3 caractères, sans espaces)" required minlength="3" autocomplete="username" value="@" pattern="^[^\s]+$" title="Le nom d'utilisateur ne doit pas contenir d'espaces" oninput="enforceAtPrefix(this)">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Mot de passe</label>
+                        <input type="password" class="form-input" id="register-password" placeholder="Choisissez un mot de passe (min. 6 caractères)" required minlength="6" autocomplete="new-password">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Confirmer le mot de passe</label>
+                        <input type="password" class="form-input" id="register-password-confirm" placeholder="Confirmez votre mot de passe" required autocomplete="new-password">
+                    </div>
+                    <button type="button" class="btn btn-primary" style="width:100%;margin-top:8px" onclick="goToRegisterStep2()">
+                        <i class="fas fa-arrow-right"></i> Suivant
+                    </button>
+                </div>
+                
+                <!-- Étape 2: Sécurité -->
+                <div id="register-step2" style="display:none">
+                    <div class="auth-success">
+                        <i class="fas fa-shield-alt"></i> Sécurité de votre compte
+                    </div>
+                    <div class="auth-info" style="background:rgba(99,102,241,0.1);border-radius:8px;padding:12px;margin-bottom:16px">
+                        <i class="fas fa-info-circle" style="color:var(--primary)"></i>
+                        <span style="font-size:0.85rem">Cette question vous permettra de récupérer votre compte en cas d'oubli de mot de passe.</span>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Question de sécurité</label>
+                        <select class="form-input" id="register-security-question" required>
+                            <option value="">-- Sélectionnez une question --</option>
+                            <option value="Quel est le nom de votre premier animal ?">Quel est le nom de votre premier animal ?</option>
+                            <option value="Quelle est votre ville de naissance ?">Quelle est votre ville de naissance ?</option>
+                            <option value="Quel est le nom de jeune fille de votre mère ?">Quel est le nom de jeune fille de votre mère ?</option>
+                            <option value="Quelle est votre couleur préférée ?">Quelle est votre couleur préférée ?</option>
+                            <option value="Quel est le nom de votre meilleur ami d'enfance ?">Quel est le nom de votre meilleur ami d'enfance ?</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Réponse de sécurité</label>
+                        <input type="text" class="form-input" id="register-security-answer" placeholder="Votre réponse (pour récupération de compte)" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary" style="width:100%;margin-top:8px">
+                        <i class="fas fa-user-plus"></i> Créer le compte
+                    </button>
+                    <button type="button" class="btn btn-secondary" style="width:100%;margin-top:8px" onclick="goToRegisterStep1()">
+                        <i class="fas fa-arrow-left"></i> Retour
+                    </button>
+                </div>
+            </form>
+            
+            <!-- Recovery Form -->
+            <form class="auth-form" id="recovery-form" onsubmit="event.preventDefault();handleRecovery()">
+                <div class="auth-success">
+                    <i class="fas fa-key"></i> Récupération de compte
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Nom d'utilisateur</label>
+                    <input type="text" class="form-input" id="recovery-username" placeholder="Entrez votre nom d'utilisateur" required autocomplete="username">
+                </div>
+                <div id="recovery-question-container" style="display:none">
+                    <div class="form-group">
+                        <label class="form-label">Question de sécurité</label>
+                        <input type="text" class="form-input" id="recovery-question" readonly style="background:var(--bg-card-hover)">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Réponse</label>
+                        <input type="text" class="form-input" id="recovery-answer" placeholder="Entrez votre réponse" required>
+                    </div>
+                </div>
+                <div id="recovery-reset-container" style="display:none">
+                    <div class="form-group">
+                        <label class="form-label">Nouveau mot de passe</label>
+                        <input type="password" class="form-input" id="recovery-new-password" placeholder="Choisissez un nouveau mot de passe (min. 6 caractères)" required minlength="6" autocomplete="new-password">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Confirmer le mot de passe</label>
+                        <input type="password" class="form-input" id="recovery-new-password-confirm" placeholder="Confirmez le nouveau mot de passe" required autocomplete="new-password">
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary" style="width:100%;margin-top:8px" id="recovery-submit-btn">
+                    <i class="fas fa-search"></i> Trouver mon compte
+                </button>
+                <button type="button" class="btn btn-secondary" style="width:100%;margin-top:8px" onclick="showAuthOverlay(false)">
+                    <i class="fas fa-arrow-left"></i> Retour à la connexion
+                </button>
+            </form>
+            
+            <!-- Must Change Password Form -->
+            <form class="auth-form" id="must-change-password-form" onsubmit="event.preventDefault();handleMustChangePassword()">
+                <div class="auth-success">
+                    <i class="fas fa-exclamation-triangle"></i> Sécurité de votre compte
+                </div>
+                <p style="text-align:center;color:var(--text-secondary);margin-bottom:16px">
+                    Pour votre première connexion, vous devez définir un nouveau mot de passe.
+                </p>
+                <div class="form-group">
+                    <label class="form-label">Nouveau mot de passe</label>
+                    <input type="password" class="form-input" id="must-change-new-password" placeholder="Choisissez un nouveau mot de passe (min. 6 caractères)" required minlength="6" autocomplete="new-password">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Confirmer le mot de passe</label>
+                    <input type="password" class="form-input" id="must-change-new-password-confirm" placeholder="Confirmez le nouveau mot de passe" required autocomplete="new-password">
+                </div>
+                <button type="submit" class="btn btn-primary" style="width:100%;margin-top:8px">
+                    <i class="fas fa-key"></i> Définir le mot de passe
+                </button>
+            </form>
+        </div>
+    </div>
+
     <!-- Ambient Background -->
     <div class="ambient-bg">
         <div class="orb orb-1"></div>
@@ -1518,8 +1856,9 @@
     <div class="toast-container" id="toast-container"></div>
 
     <!-- QR Code Modal -->
-    <div class="qr-modal" id="qr-modal" style="display:none">
-        <div class="qr-modal-content">
+    <div class="qr-modal" id="qr-modal" style="display:none" onclick="closeQRModal()">
+        <div class="qr-modal-content" onclick="event.stopPropagation()">
+            <button class="qr-close-btn" onclick="closeQRModal()">×</button>
             <div class="qr-modal-header">
                 <h3>Connexion WhatsApp</h3>
                 <p>Scannez ce QR code avec votre téléphone</p>
@@ -1609,6 +1948,14 @@
                         <span class="nav-icon"><i class="fas fa-clipboard-list"></i></span>
                         <span class="nav-label">Logs</span>
                         <span class="nav-badge" id="logs-count" style="display:none">0</span>
+                    </div>
+                </div>
+
+                <div class="nav-group" id="admin-nav-group" style="display:none">
+                    <div class="nav-group-label">Administration</div>
+                    <div class="nav-link" data-page="admin" onclick="navigateTo('admin',this)">
+                        <span class="nav-icon"><i class="fas fa-user-shield"></i></span>
+                        <span class="nav-label">Admin</span>
                     </div>
                 </div>
             </nav>
@@ -2059,6 +2406,55 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                     </div>
                 </div>
 
+                <!-- ═══════════ ADMINISTRATION ═══════════ -->
+                <div id="page-admin" class="page">
+                    <div class="page-header">
+                        <div class="page-header-text">
+                            <h2 class="page-title">Administration</h2>
+                            <p class="page-subtitle">Gérez les utilisateurs et les paramètres du bot</p>
+                        </div>
+                    </div>
+
+                    <div class="cards-grid">
+                        <!-- Liste des utilisateurs -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 class="card-title">
+                                    <span class="card-title-icon"><i class="fas fa-users"></i></span>
+                                    Utilisateurs
+                                </h3>
+                                <span class="badge badge-primary" id="users-count">0</span>
+                            </div>
+                            <div class="card-body" id="users-list">
+                                <div class="empty-state">
+                                    <div class="empty-state-icon"><i class="fas fa-users-slash"></i></div>
+                                    <p class="empty-state-text">Chargement...</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Actions rapides -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 class="card-title">
+                                    <span class="card-title-icon"><i class="fas fa-cog"></i></span>
+                                    Actions rapides
+                                </h3>
+                            </div>
+                            <div class="card-body">
+                                <div style="display:flex;flex-direction:column;gap:8px">
+                                    <button class="btn btn-secondary" onclick="loadUsersList()">
+                                        <i class="fas fa-sync"></i> Actualiser la liste
+                                    </button>
+                                    <button class="btn btn-danger" onclick="confirmDeleteAllUsers()" id="btn-delete-all-users" style="display:none">
+                                        <i class="fas fa-trash"></i> Supprimer tous les utilisateurs
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- ═══════════ MENUS INTERACTIFS ═══════════ -->
                 <div id="page-menus" class="page">
                     <div class="page-header">
@@ -2157,6 +2553,692 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
 
     <script>
     /* ═══════════════════════════════════════
+       AUTHENTICATION
+       ═══════════════════════════════════════ */
+    
+    // Token géré via cookies HTTP-only (sécurisé)
+    let currentUser = null;
+    
+    async function checkAuthStatus() {
+        try {
+            const res = await fetch('/api/auth/setup-status');
+            const setupStatus = await res.json();
+            
+            if (setupStatus.needsSetup) {
+                // Premier lancement - afficher le formulaire d'inscription
+                showAuthOverlay(true);
+                return false;
+            }
+            
+            // Vérifier le token via cookie (envoyé automatiquement par le navigateur)
+            const verifyRes = await fetch('/api/auth/verify', { credentials: 'same-origin' });
+            
+            if (verifyRes.ok) {
+                const data = await verifyRes.json();
+                // L'API retourne { success: true, user: { username, isAdmin } }
+                if (data.success && data.user) {
+                    currentUser = { username: data.user.username, isAdmin: data.user.isAdmin };
+                    hideAuthOverlay();
+                    updateUserMenu();
+                    return true;
+                }
+            }
+            
+            // Token invalide ou absent
+            currentUser = null;
+            showAuthOverlay(false);
+            return false;
+        } catch (e) {
+            console.error('Erreur vérification auth:', e);
+            showAuthOverlay(false);
+            return false;
+        }
+    }
+    
+    // Fonction pour garder le @ insupprimable
+    function enforceAtPrefix(input) {
+        if (!input.value.startsWith('@')) {
+            input.value = '@' + input.value.replace(/^@+/, '');
+        }
+    }
+    
+    function showAuthOverlay(isSetup = false) {
+        const overlay = document.getElementById('auth-overlay');
+        const tabs = document.getElementById('auth-tabs');
+        const loginForm = document.getElementById('login-form');
+        const registerForm = document.getElementById('register-form');
+        const title = document.getElementById('auth-title');
+        const subtitle = document.getElementById('auth-subtitle');
+        
+        overlay.style.display = 'flex';
+        hideAuthError();
+        
+        // Toujours afficher les tabs login/register
+        tabs.style.display = 'flex';
+        
+        // Tab par défaut: Connexion
+        loginForm.classList.add('active');
+        registerForm.classList.remove('active');
+        title.textContent = 'Connexion';
+        subtitle.textContent = 'Accédez à votre panneau d\'administration';
+        
+        // Sélectionner le tab login
+        document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.auth-tab')[0].classList.add('active');
+    }
+    
+    function hideAuthOverlay() {
+        document.getElementById('auth-overlay').style.display = 'none';
+    }
+    
+    function showAuthError(message) {
+        const errorEl = document.getElementById('auth-error');
+        errorEl.textContent = message;
+        errorEl.classList.add('show');
+    }
+    
+    function hideAuthError() {
+        document.getElementById('auth-error').classList.remove('show');
+    }
+    
+    function switchAuthTab(tab) {
+        const tabs = document.querySelectorAll('.auth-tab');
+        const forms = document.querySelectorAll('.auth-form');
+        
+        tabs.forEach(t => t.classList.remove('active'));
+        forms.forEach(f => f.classList.remove('active'));
+        
+        if (tab === 'login') {
+            tabs[0].classList.add('active');
+            document.getElementById('login-form').classList.add('active');
+        } else {
+            tabs[1].classList.add('active');
+            document.getElementById('register-form').classList.add('active');
+        }
+        hideAuthError();
+    }
+    
+    async function handleLogin() {
+        let username = document.getElementById('login-username').value.trim();
+        const password = document.getElementById('login-password').value;
+        
+        // Retirer le @ si présent
+        if (username.startsWith('@')) {
+            username = username.substring(1);
+        }
+        
+        if (!username || !password) {
+            showAuthError('Veuillez remplir tous les champs');
+            return;
+        }
+        
+        try {
+            const res = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({ username, password })
+            });
+            
+            const data = await res.json();
+            
+            if (data.success) {
+                currentUser = { username: data.username, isAdmin: data.isAdmin };
+                
+                if (data.mustChangePassword) {
+                    // Afficher le formulaire de changement de mot de passe obligatoire
+                    showMustChangePasswordForm(username);
+                } else {
+                    hideAuthOverlay();
+                    updateUserMenu();
+                    showToast(`Bienvenue, ${username}!`, 'success');
+                    initApp();
+                }
+            } else {
+                showAuthError(data.message || 'Erreur de connexion');
+            }
+        } catch (e) {
+            showAuthError('Erreur de connexion au serveur');
+        }
+    }
+    
+    // === CHANGEMENT DE MOT DE PASSE OBLIGATOIRE ===
+    function showMustChangePasswordForm(username) {
+        const overlay = document.getElementById('auth-overlay');
+        const tabs = document.getElementById('auth-tabs');
+        const loginForm = document.getElementById('login-form');
+        const registerForm = document.getElementById('register-form');
+        const recoveryForm = document.getElementById('recovery-form');
+        const mustChangeForm = document.getElementById('must-change-password-form');
+        const title = document.getElementById('auth-title');
+        const subtitle = document.getElementById('auth-subtitle');
+        
+        overlay.style.display = 'flex';
+        tabs.style.display = 'none';
+        loginForm.classList.remove('active');
+        registerForm.classList.remove('active');
+        recoveryForm.classList.remove('active');
+        mustChangeForm.classList.add('active');
+        title.textContent = 'Changement requis';
+        subtitle.textContent = `Bienvenue ${username}! Veuillez définir un nouveau mot de passe`;
+        hideAuthError();
+    }
+    
+    async function handleMustChangePassword() {
+        const newPassword = document.getElementById('must-change-new-password').value;
+        const newPasswordConfirm = document.getElementById('must-change-new-password-confirm').value;
+        
+        if (!newPassword || !newPasswordConfirm) {
+            showAuthError('Veuillez remplir tous les champs');
+            return;
+        }
+        
+        if (newPassword.length < 6) {
+            showAuthError('Le mot de passe doit contenir au moins 6 caractères');
+            return;
+        }
+        
+        if (newPassword !== newPasswordConfirm) {
+            showAuthError('Les mots de passe ne correspondent pas');
+            return;
+        }
+        
+        try {
+            const res = await fetch(`/api/auth/users/${currentUser.username}/password`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({ newPassword })
+            });
+            
+            const data = await res.json();
+            
+            if (data.success) {
+                showToast('Mot de passe modifié avec succès!', 'success');
+                document.getElementById('must-change-password-form').classList.remove('active');
+                hideAuthOverlay();
+                updateUserMenu();
+                initApp();
+            } else {
+                showAuthError(data.message || 'Erreur lors du changement');
+            }
+        } catch (e) {
+            showAuthError('Erreur de connexion au serveur');
+        }
+    }
+    
+    async function handleRegister() {
+        let username = document.getElementById('register-username').value.trim();
+        const password = document.getElementById('register-password').value;
+        const passwordConfirm = document.getElementById('register-password-confirm').value;
+        const securityQuestion = document.getElementById('register-security-question').value;
+        const securityAnswer = document.getElementById('register-security-answer').value.trim();
+        
+        // Retirer le @ si présent
+        if (username.startsWith('@')) {
+            username = username.substring(1);
+        }
+        
+        if (!username || !password || !passwordConfirm) {
+            showAuthError('Veuillez remplir tous les champs');
+            return;
+        }
+        
+        if (username.length < 3) {
+            showAuthError('Le nom d\'utilisateur doit contenir au moins 3 caractères');
+            return;
+        }
+        
+        if (username.includes(' ')) {
+            showAuthError('Le nom d\'utilisateur ne doit pas contenir d\'espaces');
+            return;
+        }
+        
+        if (password.length < 6) {
+            showAuthError('Le mot de passe doit contenir au moins 6 caractères');
+            return;
+        }
+        
+        if (password !== passwordConfirm) {
+            showAuthError('Les mots de passe ne correspondent pas');
+            return;
+        }
+        
+        if (!securityQuestion || !securityAnswer) {
+            showAuthError('Veuillez sélectionner une question et fournir une réponse');
+            return;
+        }
+        
+        try {
+            const res = await fetch('/api/auth/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({ username, password, securityQuestion, securityAnswer })
+            });
+            
+            const data = await res.json();
+            
+            if (data.success) {
+                currentUser = { username: data.username, isAdmin: data.isAdmin };
+                hideAuthOverlay();
+                updateUserMenu();
+                showToast('Compte créé avec succès!', 'success');
+                initApp();
+            } else {
+                showAuthError(data.message || 'Erreur lors de la création');
+            }
+        } catch (e) {
+            showAuthError('Erreur de connexion au serveur');
+        }
+    }
+    
+    async function handleLogout() {
+        try {
+            await fetch('/api/auth/logout', {
+                method: 'POST',
+                credentials: 'same-origin'
+            });
+        } catch (e) {}
+        
+        currentUser = null;
+        showAuthOverlay(false);
+        showToast('Déconnecté', 'success');
+    }
+    
+    // === INSCRIPTION EN 2 ÉTAPES ===
+    function goToRegisterStep2() {
+        let username = document.getElementById('register-username').value.trim();
+        const password = document.getElementById('register-password').value;
+        const passwordConfirm = document.getElementById('register-password-confirm').value;
+        
+        // Retirer le @ si présent pour la validation
+        if (username.startsWith('@')) {
+            username = username.substring(1);
+        }
+        
+        if (!username || !password || !passwordConfirm) {
+            showAuthError('Veuillez remplir tous les champs');
+            return;
+        }
+        
+        if (username.length < 3) {
+            showAuthError('Le nom d\'utilisateur doit contenir au moins 3 caractères');
+            return;
+        }
+        
+        if (username.includes(' ')) {
+            showAuthError('Le nom d\'utilisateur ne doit pas contenir d\'espaces');
+            return;
+        }
+        
+        if (password.length < 6) {
+            showAuthError('Le mot de passe doit contenir au moins 6 caractères');
+            return;
+        }
+        
+        if (password !== passwordConfirm) {
+            showAuthError('Les mots de passe ne correspondent pas');
+            return;
+        }
+        
+        document.getElementById('register-step1').style.display = 'none';
+        document.getElementById('register-step2').style.display = 'block';
+        hideAuthError();
+    }
+    
+    function goToRegisterStep1() {
+        document.getElementById('register-step1').style.display = 'block';
+        document.getElementById('register-step2').style.display = 'none';
+        hideAuthError();
+    }
+    
+    // === RÉCUPÉRATION PAR QUESTION DE SÉCURITÉ ===
+    let recoveryStep = 1;
+    let recoveryUsername = null;
+    
+    function showRecoveryForm() {
+        const overlay = document.getElementById('auth-overlay');
+        const tabs = document.getElementById('auth-tabs');
+        const loginForm = document.getElementById('login-form');
+        const registerForm = document.getElementById('register-form');
+        const recoveryForm = document.getElementById('recovery-form');
+        const title = document.getElementById('auth-title');
+        const subtitle = document.getElementById('auth-subtitle');
+        
+        // Reset recovery form
+        recoveryStep = 1;
+        recoveryUsername = null;
+        document.getElementById('recovery-username').value = '';
+        document.getElementById('recovery-question-container').style.display = 'none';
+        document.getElementById('recovery-reset-container').style.display = 'none';
+        document.getElementById('recovery-submit-btn').innerHTML = '<i class="fas fa-search"></i> Trouver mon compte';
+        document.getElementById('recovery-answer').value = '';
+        document.getElementById('recovery-new-password').value = '';
+        document.getElementById('recovery-new-password-confirm').value = '';
+        
+        overlay.style.display = 'flex';
+        tabs.style.display = 'none';
+        loginForm.classList.remove('active');
+        registerForm.classList.remove('active');
+        recoveryForm.classList.add('active');
+        title.textContent = 'Récupération de compte';
+        subtitle.textContent = 'Retrouvez l\'accès à votre compte';
+        hideAuthError();
+    }
+    
+    async function handleRecovery() {
+        if (recoveryStep === 1) {
+            // Étape 1: Trouver l'utilisateur
+            const username = document.getElementById('recovery-username').value.trim();
+            if (!username) {
+                showAuthError('Veuillez entrer votre nom d\'utilisateur');
+                return;
+            }
+            
+            try {
+                const res = await fetch('/api/auth/recovery/question', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ username })
+                });
+                
+                const data = await res.json();
+                
+                if (data.success) {
+                    recoveryUsername = username;
+                    recoveryStep = 2;
+                    document.getElementById('recovery-question').value = data.question;
+                    document.getElementById('recovery-question-container').style.display = 'block';
+                    document.getElementById('recovery-submit-btn').innerHTML = '<i class="fas fa-check"></i> Vérifier la réponse';
+                    document.getElementById('recovery-username').disabled = true;
+                    hideAuthError();
+                } else {
+                    showAuthError(data.message || 'Utilisateur non trouvé');
+                }
+            } catch (e) {
+                showAuthError('Erreur de connexion au serveur');
+            }
+        } else if (recoveryStep === 2) {
+            // Étape 2: Vérifier la réponse
+            const answer = document.getElementById('recovery-answer').value.trim();
+            if (!answer) {
+                showAuthError('Veuillez entrer votre réponse');
+                return;
+            }
+            
+            try {
+                const res = await fetch('/api/auth/recovery/verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ username: recoveryUsername, answer })
+                });
+                
+                const data = await res.json();
+                
+                if (data.success) {
+                    recoveryStep = 3;
+                    document.getElementById('recovery-reset-container').style.display = 'block';
+                    document.getElementById('recovery-question-container').style.display = 'none';
+                    document.getElementById('recovery-submit-btn').innerHTML = '<i class="fas fa-key"></i> Réinitialiser le mot de passe';
+                    hideAuthError();
+                } else {
+                    showAuthError(data.message || 'Réponse incorrecte');
+                }
+            } catch (e) {
+                showAuthError('Erreur de connexion au serveur');
+            }
+        } else if (recoveryStep === 3) {
+            // Étape 3: Réinitialiser le mot de passe
+            const newPassword = document.getElementById('recovery-new-password').value;
+            const newPasswordConfirm = document.getElementById('recovery-new-password-confirm').value;
+            
+            if (!newPassword || !newPasswordConfirm) {
+                showAuthError('Veuillez remplir tous les champs');
+                return;
+            }
+            
+            if (newPassword.length < 6) {
+                showAuthError('Le mot de passe doit contenir au moins 6 caractères');
+                return;
+            }
+            
+            if (newPassword !== newPasswordConfirm) {
+                showAuthError('Les mots de passe ne correspondent pas');
+                return;
+            }
+            
+            try {
+                const res = await fetch('/api/auth/recovery/reset', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ newPassword })
+                });
+                
+                const data = await res.json();
+                
+                if (data.success) {
+                    showToast('Mot de passe réinitialisé avec succès!', 'success');
+                    showAuthOverlay(false);
+                    // Réactiver le champ username pour une prochaine utilisation
+                    document.getElementById('recovery-username').disabled = false;
+                } else {
+                    showAuthError(data.message || 'Erreur lors de la réinitialisation');
+                }
+            } catch (e) {
+                showAuthError('Erreur de connexion au serveur');
+            }
+        }
+    }
+    
+    function updateUserMenu() {
+        // Afficher le lien Admin si l'utilisateur est admin
+        const adminNavGroup = document.getElementById('admin-nav-group');
+        if (adminNavGroup) {
+            adminNavGroup.style.display = currentUser && currentUser.isAdmin ? 'block' : 'none';
+        }
+        
+        // Ajouter le menu utilisateur dans le header mobile
+        const mobileHeader = document.querySelector('.mobile-header');
+        if (mobileHeader && currentUser) {
+            let userMenu = mobileHeader.querySelector('.user-menu');
+            if (!userMenu) {
+                userMenu = document.createElement('div');
+                userMenu.className = 'user-menu';
+                userMenu.style.marginLeft = 'auto';
+                userMenu.style.marginRight = '12px';
+                mobileHeader.insertBefore(userMenu, mobileHeader.querySelector('.hamburger'));
+            }
+            userMenu.innerHTML = `
+                <button class="user-menu-btn" onclick="toggleUserDropdown()">
+                    <div class="user-avatar">${currentUser.username.charAt(0).toUpperCase()}</div>
+                    <span style="font-size:0.85rem">${escapeHtml(currentUser.username)}</span>
+                </button>
+                <div class="user-dropdown" id="user-dropdown">
+                    <div class="user-dropdown-item" style="pointer-events:none;opacity:0.7">
+                        <i class="fas fa-user"></i>
+                        <span>${escapeHtml(currentUser.username)}</span>
+                        ${currentUser.isAdmin ? '<span class="badge badge-primary" style="margin-left:auto">Admin</span>' : ''}
+                    </div>
+                    <div class="user-dropdown-divider"></div>
+                    <div class="user-dropdown-item danger" onclick="handleLogout()">
+                        <i class="fas fa-sign-out-alt"></i>
+                        <span>Déconnexion</span>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Ajouter le menu utilisateur dans la sidebar
+        const sidebarFooter = document.querySelector('.sidebar-footer');
+        if (sidebarFooter && currentUser) {
+            let userMenu = sidebarFooter.querySelector('.user-menu');
+            if (!userMenu) {
+                userMenu = document.createElement('div');
+                userMenu.className = 'user-menu';
+                userMenu.style.marginTop = '12px';
+                sidebarFooter.appendChild(userMenu);
+            }
+            userMenu.innerHTML = `
+                <button class="user-menu-btn" onclick="toggleUserDropdown()" style="width:100%">
+                    <div class="user-avatar">${currentUser.username.charAt(0).toUpperCase()}</div>
+                    <span style="font-size:0.85rem;flex:1;text-align:left">${escapeHtml(currentUser.username)}</span>
+                    <i class="fas fa-chevron-down" style="font-size:0.7rem;opacity:0.5"></i>
+                </button>
+                <div class="user-dropdown" id="user-dropdown-sidebar">
+                    <div class="user-dropdown-item" style="pointer-events:none;opacity:0.7">
+                        <i class="fas fa-user"></i>
+                        <span>${escapeHtml(currentUser.username)}</span>
+                        ${currentUser.isAdmin ? '<span class="badge badge-primary" style="margin-left:auto">Admin</span>' : ''}
+                    </div>
+                    <div class="user-dropdown-divider"></div>
+                    <div class="user-dropdown-item danger" onclick="handleLogout()">
+                        <i class="fas fa-sign-out-alt"></i>
+                        <span>Déconnexion</span>
+                    </div>
+                </div>
+            `;
+        }
+    }
+    
+    function toggleUserDropdown() {
+        const dropdowns = document.querySelectorAll('.user-dropdown');
+        dropdowns.forEach(d => d.classList.toggle('show'));
+        
+        // Fermer au clic extérieur
+        setTimeout(() => {
+            document.addEventListener('click', function closeDropdown(e) {
+                if (!e.target.closest('.user-menu')) {
+                    dropdowns.forEach(d => d.classList.remove('show'));
+                    document.removeEventListener('click', closeDropdown);
+                }
+            });
+        }, 10);
+    }
+    
+    // === ADMINISTRATION DES UTILISATEURS ===
+    async function loadUsersList() {
+        try {
+            const res = await authFetch('/api/auth/users');
+            const data = await res.json();
+            
+            if (data.success) {
+                const usersList = document.getElementById('users-list');
+                const usersCount = document.getElementById('users-count');
+                const btnDeleteAll = document.getElementById('btn-delete-all-users');
+                
+                usersCount.textContent = data.users.length;
+                btnDeleteAll.style.display = data.users.length > 1 ? 'block' : 'none';
+                
+                if (data.users.length === 0) {
+                    usersList.innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-icon"><i class="fas fa-users-slash"></i></div>
+                            <p class="empty-state-text">Aucun utilisateur</p>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                usersList.innerHTML = data.users.map(user => `
+                    <div class="user-item" style="display:flex;align-items:center;padding:12px;border-bottom:1px solid var(--border);gap:12px">
+                        <div class="user-avatar" style="width:40px;height:40px;font-size:1rem">${user.username.charAt(0).toUpperCase()}</div>
+                        <div style="flex:1">
+                            <div style="font-weight:500">${escapeHtml(user.username)}</div>
+                            <div style="font-size:0.75rem;color:var(--text-secondary)">
+                                ${user.isAdmin ? '<span class="badge badge-primary" style="margin-right:4px">Admin</span>' : ''}
+                                ${user.mustChangePassword ? '<span class="badge badge-warning" style="margin-right:4px">Mot de passe à changer</span>' : ''}
+                                Créé: ${new Date(user.createdAt).toLocaleDateString()}
+                            </div>
+                        </div>
+                        ${user.username !== currentUser.username ? `
+                            <button class="btn btn-danger btn-sm" onclick="confirmDeleteUser('${escapeHtml(user.username)}')">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        ` : ''}
+                    </div>
+                `).join('');
+            }
+        } catch (e) {
+            showToast('Erreur lors du chargement des utilisateurs', 'error');
+        }
+    }
+    
+    async function confirmDeleteUser(username) {
+        if (confirm(`Êtes-vous sûr de vouloir supprimer l'utilisateur "${username}" ?`)) {
+            try {
+                const res = await authFetch(`/api/auth/users/${encodeURIComponent(username)}`, { method: 'DELETE' });
+                const data = await res.json();
+                
+                if (data.success) {
+                    showToast(`Utilisateur "${username}" supprimé`, 'success');
+                    loadUsersList();
+                } else {
+                    showToast(data.message || 'Erreur lors de la suppression', 'error');
+                }
+            } catch (e) {
+                showToast('Erreur lors de la suppression', 'error');
+            }
+        }
+    }
+    
+    async function confirmDeleteAllUsers() {
+        if (confirm('Êtes-vous sûr de vouloir supprimer TOUS les utilisateurs (sauf vous) ?\n\nCette action est irréversible!')) {
+            try {
+                const res = await authFetch('/api/auth/users');
+                const data = await res.json();
+                
+                if (data.success) {
+                    const usersToDelete = data.users.filter(u => u.username !== currentUser.username);
+                    let deleted = 0;
+                    
+                    for (const user of usersToDelete) {
+                        const delRes = await authFetch(`/api/auth/users/${encodeURIComponent(user.username)}`, { method: 'DELETE' });
+                        if (delRes.ok) deleted++;
+                    }
+                    
+                    showToast(`${deleted} utilisateur(s) supprimé(s)`, 'success');
+                    loadUsersList();
+                }
+            } catch (e) {
+                showToast('Erreur lors de la suppression', 'error');
+            }
+        }
+    }
+    
+    // Helper pour les headers JSON
+    function getAuthHeaders() {
+        return { 'Content-Type': 'application/json' };
+    }
+    
+    // Wrapper fetch avec gestion du 401 - cookies envoyés automatiquement
+    async function authFetch(url, options = {}) {
+        if (!options.headers) options.headers = {};
+        if (!options.credentials) options.credentials = 'same-origin';
+        
+        const res = await fetch(url, options);
+        
+        if (res.status === 401) {
+            const data = await res.json().catch(() => ({}));
+            if (data.requireAuth) {
+                currentUser = null;
+                showAuthOverlay(false);
+            }
+            return res;
+        }
+        
+        return res;
+    }
+    
+    // getApiUrlWithAuth n'est plus nécessaire avec les cookies
+    function getApiUrlWithAuth(url) {
+        return url;
+    }
+
+    /* ═══════════════════════════════════════
        NAVIGATION
        ═══════════════════════════════════════ */
     function navigateTo(page, el) {
@@ -2175,6 +3257,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         
         // Load page-specific data
         if (page === 'menus') loadMenusData();
+        if (page === 'admin') loadUsersList();
     }
 
     function toggleSidebar() {
@@ -2221,7 +3304,8 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
     /* ═══════════════════════════════════════
        INITIALIZATION
        ═══════════════════════════════════════ */
-    document.addEventListener('DOMContentLoaded', () => {
+    
+    function initApp() {
         loadConfig();
         loadStats();
         checkStatus();
@@ -2229,14 +3313,26 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         loadGroups();
         loadPatterns();
         loadUserExceptions();
+        loadSessions();
+        updateUserMenu();
 
         setInterval(checkStatus, 5000);
         setInterval(refreshLogs, 10000);
         setInterval(loadStats, 30000);
         setInterval(loadActivityChart, 60000);
+        setInterval(loadSessions, 10000);
         
         // Charger le chart d'activité au démarrage
         loadActivityChart();
+    }
+    
+    document.addEventListener('DOMContentLoaded', () => {
+        // Vérifier l'authentification d'abord
+        checkAuthStatus().then(isAuthed => {
+            if (isAuthed) {
+                initApp();
+            }
+        });
     });
 
     /* ═══════════════════════════════════════
@@ -2244,7 +3340,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
        ═══════════════════════════════════════ */
     async function loadConfig() {
         try {
-            const res = await fetch(getApiUrl('/api/config'));
+            const res = await authFetch(getApiUrlWithAuth('/api/config'));
             const cfg = await res.json();
 
             document.getElementById('maxWarnings').value = cfg.MAX_WARNINGS || 3;
@@ -2277,9 +3373,9 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         };
 
         try {
-            const res = await fetch('/api/config', {
+            const res = await authFetch('/api/config', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders(),
                 body: JSON.stringify(addSessionIdToBody(config))
             });
             const result = await res.json();
@@ -2299,7 +3395,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
        ═══════════════════════════════════════ */
     async function loadStats() {
         try {
-            const res = await fetch(getApiUrl('/api/stats'));
+            const res = await authFetch(getApiUrlWithAuth('/api/stats'));
             const s = await res.json();
 
             animateValue('stat-groups', s.adminGroups || 0);
@@ -2314,7 +3410,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
     
     async function loadActivityChart() {
         try {
-            const res = await fetch(getApiUrl('/api/stats/activity'));
+            const res = await authFetch(getApiUrlWithAuth('/api/stats/activity'));
             const data = await res.json();
             const container = document.getElementById('activity-chart');
             
@@ -2365,7 +3461,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
        ═══════════════════════════════════════ */
     async function checkStatus() {
         try {
-            const res = await fetch('/api/status');
+            const res = await authFetch('/api/status');
             const status = await res.json();
 
             const dot = document.getElementById('status-dot');
@@ -2474,7 +3570,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
 
     async function refreshLogs() {
         try {
-            const res = await fetch(getApiUrl('/api/logs'));
+            const res = await authFetch(getApiUrlWithAuth('/api/logs'));
             const data = await res.json();
             const logs = data.logs || data;
 
@@ -2583,9 +3679,9 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
 
     async function toggleGroupWelcome(groupId, enabled) {
         try {
-            await fetch('/api/groups/welcome', {
+            await authFetch('/api/groups/welcome', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders(),
                 body: JSON.stringify(addSessionIdToBody({ groupId, enabled }))
             });
             showToast(enabled ? '👋 Message de bienvenue activé' : '🔇 Message de bienvenue désactivé', 'success');
@@ -2596,9 +3692,9 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
 
     async function toggleGroupException(groupId, exclude) {
         try {
-            await fetch('/api/groups/exceptions', {
+            await authFetch('/api/groups/exceptions', {
                 method: exclude ? 'POST' : 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders(),
                 body: JSON.stringify(addSessionIdToBody({ groupId }))
             });
             loadGroups();
@@ -2629,7 +3725,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                 <p class="empty-state-text">Chargement des groupes…</p>
             </div>`;
             
-            const res = await fetch('/api/groups/all');
+            const res = await authFetch('/api/groups/all');
             if (!res.ok) {
                 container.innerHTML = `<div class="empty-state">
                     <div class="empty-state-icon">❌</div>
@@ -2690,9 +3786,9 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         if (!confirm(`Voulez-vous vraiment quitter le groupe « ${groupName} » ?`)) return;
         
         try {
-            const res = await fetch('/api/groups/leave', {
+            const res = await authFetch('/api/groups/leave', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders(),
                 body: JSON.stringify(addSessionIdToBody({ groupId }))
             });
             const result = await res.json();
@@ -2713,9 +3809,9 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         if (!confirm(`⚠️ DERNIÈRE CONFIRMATION\n\nSupprimer définitivement « ${groupName} » ?`)) return;
         
         try {
-            const res = await fetch('/api/groups/delete', {
+            const res = await authFetch('/api/groups/delete', {
                 method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders(),
                 body: JSON.stringify({ groupId })
             });
             const result = await res.json();
@@ -2736,7 +3832,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
        ═══════════════════════════════════════ */
     async function loadPatterns() {
         try {
-            const res = await fetch(getApiUrl('/api/groups/exceptions'));
+            const res = await authFetch(getApiUrlWithAuth('/api/groups/exceptions'));
             const data = await res.json();
             const container = document.getElementById('patterns-list');
 
@@ -2761,9 +3857,9 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         if (!pattern) return;
 
         try {
-            await fetch('/api/groups/exceptions', {
+            await authFetch('/api/groups/exceptions', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders(),
                 body: JSON.stringify(addSessionIdToBody({ pattern }))
             });
             input.value = '';
@@ -2777,9 +3873,9 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
 
     async function removePattern(pattern) {
         try {
-            await fetch('/api/groups/exceptions', {
+            await authFetch('/api/groups/exceptions', {
                 method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders(),
                 body: JSON.stringify(addSessionIdToBody({ pattern }))
             });
             loadPatterns();
@@ -2795,7 +3891,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
        ═══════════════════════════════════════ */
     async function loadUserExceptions() {
         try {
-            const res = await fetch(getApiUrl('/api/users/exceptions'));
+            const res = await authFetch(getApiUrlWithAuth('/api/users/exceptions'));
             const data = await res.json();
 
             document.getElementById('excludeAdmins').checked = data.excludedAdmins !== false;
@@ -2838,9 +3934,9 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
     async function toggleExcludeAdmins() {
         const val = document.getElementById('excludeAdmins').checked;
         try {
-            await fetch('/api/users/exceptions/admins', {
+            await authFetch('/api/users/exceptions/admins', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders(),
                 body: JSON.stringify({ excludedAdmins: val })
             });
             showToast(val ? 'Admins protégés automatiquement' : 'Protection des admins désactivée', val ? 'success' : 'warning');
@@ -2855,9 +3951,9 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         if (!userId) return;
 
         try {
-            await fetch('/api/users/exceptions', {
+            await authFetch('/api/users/exceptions', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders(),
                 body: JSON.stringify(addSessionIdToBody({ userId, linkException: true, callException: false }))
             });
             input.value = '';
@@ -2870,9 +3966,9 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
 
     async function removeUserException(userId) {
         try {
-            await fetch('/api/users/exceptions', {
+            await authFetch('/api/users/exceptions', {
                 method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders(),
                 body: JSON.stringify(addSessionIdToBody({ userId }))
             });
             loadUserExceptions();
@@ -2888,9 +3984,9 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             if (type === 'link') body.linkException = value;
             if (type === 'call') body.callException = value;
             
-            await fetch('/api/users/exceptions', {
+            await authFetch('/api/users/exceptions', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders(),
                 body: JSON.stringify(addSessionIdToBody(body))
             });
             showToast(`Option mise à jour pour ${userId}`, 'success');
@@ -2908,9 +4004,9 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         showToast('Scan en cours…', 'warning', 'Veuillez patienter');
 
         try {
-            const res = await fetch('/api/scan', { 
+            const res = await authFetch('/api/scan', { 
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders(),
                 body: JSON.stringify(addSessionIdToBody({}))
             });
             const result = await res.json();
@@ -2926,9 +4022,9 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         if (!confirm('Effacer tous les avertissements ? Cette action est irréversible.')) return;
 
         try {
-            await fetch('/api/warnings', { 
+            await authFetch('/api/warnings', { 
                 method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders(),
                 body: JSON.stringify(addSessionIdToBody({}))
             });
             showToast('Tous les avertissements ont été effacés', 'success');
@@ -3021,7 +4117,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         modal.classList.add('active');
         
         try {
-            const res = await fetch(getApiUrl(`/api/stats/${type}`));
+            const res = await authFetch(getApiUrlWithAuth(`/api/stats/${type}`));
             const data = await res.json();
             
             let html = '';
@@ -3073,7 +4169,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
     
     async function loadMenus() {
         try {
-            const res = await fetch(getApiUrl('/api/menus'));
+            const res = await authFetch(getApiUrlWithAuth('/api/menus'));
             const data = await res.json();
             const menus = data.menus || data;
             const container = document.getElementById('menus-list');
@@ -3328,9 +4424,9 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             const method = currentEditingMenu ? 'PUT' : 'POST';
             const url = currentEditingMenu ? `/api/menus/${currentEditingMenu}` : '/api/menus';
             
-            const res = await fetch(url, {
+            const res = await authFetch(url, {
                 method,
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders(),
                 body: JSON.stringify(addSessionIdToBody(menuData))
             });
             
@@ -3356,9 +4452,9 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         if (!confirm('Supprimer ce menu ?')) return;
         
         try {
-            await fetch(`/api/menus/${menuId}`, { 
+            await authFetch(`/api/menus/${menuId}`, { 
                 method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders(),
                 body: JSON.stringify(addSessionIdToBody({}))
             });
             showToast('Menu supprimé', 'success');
@@ -3370,9 +4466,9 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
     
     async function testMenu(menuId) {
         try {
-            const res = await fetch(`/api/menus/${menuId}/test`, { 
+            const res = await authFetch(`/api/menus/${menuId}/test`, { 
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders(),
                 body: JSON.stringify(addSessionIdToBody({}))
             });
             const result = await res.json();
@@ -3396,7 +4492,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
     
     async function loadMenusData() {
         try {
-            const res = await fetch(getApiUrl('/api/menus'));
+            const res = await authFetch(getApiUrlWithAuth('/api/menus'));
             const data = await res.json();
             interactiveMenus = data.menus || data;
             loadMenus();
@@ -3414,7 +4510,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
     
     async function loadSessions() {
         try {
-            const res = await fetch('/api/sessions');
+            const res = await authFetch('/api/sessions');
             const data = await res.json();
             allSessions = data.sessions || [];
             activeSessionId = data.activeSessionId;
@@ -3438,15 +4534,28 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                                session.status === 'stopped' ? 'stopped' : 'disconnected';
             const displayName = session.name || session.id.split('_').slice(-1)[0];
             const phone = session.phoneNumber || '';
+            const owner = session.ownerUsername;
+            const isMySession = owner === currentUser?.username;
+            
+            // Badge propriétaire
+            let ownerBadge = '';
+            if (isMySession) {
+                ownerBadge = '<span class="badge badge-success" style="font-size:0.6rem;margin-left:4px">Moi</span>';
+            } else if (owner) {
+                ownerBadge = `<span class="badge badge-secondary" style="font-size:0.6rem;margin-left:4px">${escapeHtml(owner)}</span>`;
+            }
             
             return `
                 <div class="session-item ${isActive ? 'active' : ''}" onclick="activateSession('${session.id}')">
                     <div class="session-status-dot ${statusClass}"></div>
                     <div class="session-info">
-                        <div class="session-name">${escapeHtml(displayName)}</div>
+                        <div class="session-name">${escapeHtml(displayName)}${ownerBadge}</div>
                         <div class="session-phone">${phone ? 'Tel: ' + phone : getStatusText(session.status)}</div>
                     </div>
                     <div class="session-actions">
+                        ${session.status === 'stopped' ? 
+                            `<button class="session-action-btn" onclick="event.stopPropagation();startSession('${session.id}')" title="Démarrer"><i class="fas fa-play"></i></button>` : ''
+                        }
                         ${session.status === 'connected' ? 
                             `<button class="session-action-btn" onclick="event.stopPropagation();showSessionQR('${session.id}')" title="QR Code"><i class="fas fa-qrcode"></i></button>` : 
                             session.status === 'qr' ?
@@ -3473,7 +4582,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
     
     async function activateSession(sessionId) {
         try {
-            const res = await fetch(`/api/sessions/${sessionId}/activate`, { method: 'POST' });
+            const res = await authFetch(`/api/sessions/${sessionId}/activate`, { method: 'POST' });
             const result = await res.json();
             if (result.success) {
                 activeSessionId = sessionId;
@@ -3498,7 +4607,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         if (!confirm('Supprimer cette session ? Les données d\'authentification seront perdues.')) return;
         
         try {
-            const res = await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' });
+            const res = await authFetch(`/api/sessions/${sessionId}`, { method: 'DELETE' });
             const result = await res.json();
             if (result.success) {
                 loadSessions();
@@ -3509,23 +4618,40 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         }
     }
     
+    async function startSession(sessionId) {
+        try {
+            const res = await authFetch(`/api/sessions/${sessionId}/start`, { method: 'POST' });
+            const result = await res.json();
+            if (result.success) {
+                loadSessions();
+                showToast('Session démarrée', 'success');
+            } else {
+                showToast(result.message || 'Erreur', 'error');
+            }
+        } catch (e) {
+            showToast('Erreur lors du démarrage', 'error');
+        }
+    }
+    
     async function showNewSessionModal() {
         const name = prompt('Nom de la nouvelle session (optionnel):', '');
         if (name === null) return; // Cancelled
         
         try {
-            const res = await fetch('/api/sessions', {
+            const res = await authFetch('/api/sessions', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders(),
                 body: JSON.stringify({ name: name || 'Nouvelle session' })
             });
             const result = await res.json();
             
             if (result.success) {
-                showToast('Session créée! Scannez le QR code.', 'success');
+                showToast('Session créée! Génération du QR code...', 'success');
                 loadSessions();
-                // Show QR modal after a short delay
-                setTimeout(() => checkStatus(), 2000);
+                // Afficher automatiquement le QR code de la nouvelle session
+                if (result.session && result.session.id) {
+                    pollForQR(result.session.id);
+                }
             } else {
                 showToast(result.message || 'Erreur', 'error');
             }
@@ -3534,9 +4660,40 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         }
     }
     
+    async function pollForQR(sessionId, attempts = 0) {
+        if (attempts > 10) {
+            showToast('QR code non disponible, réessayez manuellement', 'warning');
+            return;
+        }
+        
+        try {
+            const res = await authFetch(`/api/sessions/${sessionId}`);
+            const session = await res.json();
+            
+            if (session.currentQR) {
+                showQRCode(session.currentQR);
+                // Continuer à vérifier si la session se connecte
+                setTimeout(() => pollForQR(sessionId, attempts + 1), 2000);
+            } else if (session.status === 'connected') {
+                closeQRModal();
+                showToast('Session connectée avec succès!', 'success');
+                loadSessions();
+            } else {
+                // Réessayer après 1 seconde
+                setTimeout(() => pollForQR(sessionId, attempts + 1), 1000);
+            }
+        } catch (e) {
+            setTimeout(() => pollForQR(sessionId, attempts + 1), 1000);
+        }
+    }
+    
+    function closeQRModal() {
+        document.getElementById('qr-modal').style.display = 'none';
+    }
+    
     async function showSessionQR(sessionId) {
         try {
-            const res = await fetch(`/api/sessions/${sessionId}`);
+            const res = await authFetch(`/api/sessions/${sessionId}`);
             const session = await res.json();
             
             if (session.currentQR) {
@@ -3550,12 +4707,6 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             showToast('Erreur récupération QR', 'error');
         }
     }
-    
-    // Load sessions on startup and refresh periodically
-    document.addEventListener('DOMContentLoaded', () => {
-        loadSessions();
-        setInterval(loadSessions, 10000);
-    });
     </script>
 
     <!-- Stat Modal -->
