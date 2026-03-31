@@ -3859,7 +3859,11 @@ app.put('/api/auth/users/:username/admin', requireAuth, (req, res) => {
 // ============ API SESSIONS (protégées) ============
 
 app.get('/api/sessions', requireAuth, (req, res) => {
-    const sessions = sessionManager.getAllSessionsStatus();
+    const allSessions = sessionManager.getAllSessionsStatus();
+    // Filtrer les sessions: admin voit tout, utilisateur normal voit seulement ses sessions
+    const sessions = req.user.isAdmin 
+        ? allSessions 
+        : allSessions.filter(s => s.ownerUsername === req.user.username);
     res.json({
         sessions,
         activeSessionId: sessionManager.activeSessionId
