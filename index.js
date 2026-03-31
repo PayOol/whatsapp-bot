@@ -3703,9 +3703,23 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
-// Route principale - Landing page
+// Helper pour obtenir l'URL de base
+function getBaseUrl(req) {
+    const proto = req.get('x-forwarded-proto') || req.protocol;
+    const host = req.get('x-forwarded-host') || req.get('host');
+    return `${proto}://${host}`;
+}
+
+// Route principale - Landing page avec injection dynamique de l'URL
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'landing.html'));
+    const baseUrl = getBaseUrl(req);
+    const fs = require('fs');
+    let html = fs.readFileSync(path.join(__dirname, 'public', 'landing.html'), 'utf8');
+    
+    // Remplacer les placeholders {{BASE_URL}} par l'URL réelle
+    html = html.replace(/\{\{BASE_URL\}\}/g, baseUrl);
+    
+    res.send(html);
 });
 
 // Route pour la page de connexion/inscription utilisateur
