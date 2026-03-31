@@ -2848,6 +2848,9 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
 
         document.getElementById('page-' + page).classList.add('active');
         if (el) el.classList.add('active');
+        
+        // Sauvegarder la page dans l'URL
+        history.replaceState(null, '', '#page=' + page);
 
         // Close mobile sidebar
         document.getElementById('sidebar').classList.remove('open');
@@ -2859,6 +2862,26 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         // Load page-specific data
         if (page === 'menus') loadMenusData();
         if (page === 'admin') loadUsersList();
+        if (page === 'announcements') {
+            loadAnnouncements();
+            loadAnnouncementGroups();
+        }
+    }
+    
+    function restorePageFromUrl() {
+        const hash = window.location.hash;
+        const match = hash.match(/#page=([a-zA-Z0-9_-]+)/);
+        if (match) {
+            const page = match[1];
+            const pageEl = document.getElementById('page-' + page);
+            if (pageEl) {
+                // Trouver le lien de navigation correspondant
+                const navLink = document.querySelector(`.nav-link[data-page="${page}"]`);
+                navigateTo(page, navLink);
+                return true;
+            }
+        }
+        return false;
     }
 
     function toggleSidebar() {
@@ -2932,6 +2955,8 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         checkAuthStatus().then(isAuthed => {
             if (isAuthed) {
                 initApp();
+                // Restaurer la page depuis l'URL après l'initialisation
+                restorePageFromUrl();
             }
         });
     });
