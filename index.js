@@ -3426,6 +3426,12 @@ async function handleMessage(client, message, sessionId) {
 
         let authorId = message.author || message.from;
         if (authorId.includes('@g.us')) return;
+        
+        // Debug: vérifier si l'auteur est admin
+        const authorP = participants.find(p => p.id._serialized === authorId);
+        const isAuthorAdmin = authorP?.isAdmin || authorP?.isSuperAdmin || false;
+        sessionData.addLog(`[REALTIME] Message de ${authorId.split('@')[0]} - isAdmin: ${isAuthorAdmin}, excludedAdmins: ${sessionData.userExceptions.excludedAdmins}`);
+        
         if (sessionData.isUserExcluded(authorId, participants)) return;
 
         // ✅ Marquer comme lu
