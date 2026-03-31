@@ -3444,7 +3444,8 @@ async function handleMessage(client, message, sessionId) {
         const authorInParticipants = participants.find(p => p.id._serialized?.split('@')[0] === authorNumber);
         sessionData.addLog(`[REALTIME] authorId=${authorId}, realNumber=${authorNumber}, found=${!!authorInParticipants}, isAdmin=${authorInParticipants?.isAdmin}`);
         
-        if (sessionData.isUserExcluded(authorId, participants)) return;
+        // Utiliser le numéro réel pour l'exclusion (pas l'ID @lid)
+        if (sessionData.isUserExcluded(authorNumber, participants)) return;
 
         // ✅ Marquer comme lu
         try { await chat.sendSeen(); } catch (e) {}
