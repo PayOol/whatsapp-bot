@@ -19,7 +19,8 @@ const CAPTURE_OPTIONS = {
     viewport: { width: OG_IMAGE_WIDTH, height: OG_IMAGE_HEIGHT },
     fullPage: false,
     omitBackground: false,
-    type: 'png',
+    type: 'jpeg',
+    quality: 85, // Compression JPEG pour réduire la taille
     encoding: 'binary'
 };
 
@@ -55,7 +56,7 @@ async function captureLandingPage(url = LANDING_URL, headless = true) {
         await page.setViewport({
             width: OG_IMAGE_WIDTH,
             height: OG_IMAGE_HEIGHT,
-            deviceScaleFactor: 2 // Haute résolution pour la qualité
+            deviceScaleFactor: 1 // Facteur 1 pour réduire la taille (au lieu de 2)
         });
         
         // Naviguer vers le landing page
@@ -93,10 +94,11 @@ async function captureLandingPage(url = LANDING_URL, headless = true) {
         // Attendre que les styles soient appliqués
         await new Promise(resolve => setTimeout(resolve, 500));
         
-        // Capturer la page
+        // Capturer la page en JPEG pour réduire la taille
         console.log(`   Capture...`);
         const screenshot = await page.screenshot({
-            type: 'png',
+            type: 'jpeg',
+            quality: 80,
             fullPage: false,
             clip: {
                 x: 0,
