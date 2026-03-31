@@ -848,6 +848,7 @@
     
     <script>
         var currentUser = null;
+        var showAllUsers = false;
         
         function checkAuth() {
             fetch('/api/auth/verify', { credentials: 'same-origin' })
@@ -888,9 +889,15 @@
                         return;
                     }
                     
+                    // Trier par date de création décroissante (plus récent d'abord)
+                    users.sort(function(a, b) { return new Date(b.createdAt) - new Date(a.createdAt); });
+                    
+                    // Afficher seulement 5 ou tous selon l'état
+                    var displayUsers = showAllUsers ? users : users.slice(0, 5);
+                    
                     var html = '';
-                    for (var i = 0; i < users.length; i++) {
-                        var user = users[i];
+                    for (var i = 0; i < displayUsers.length; i++) {
+                        var user = displayUsers[i];
                         var badges = '';
                         if (user.isAdmin) badges += '<span class="badge badge-primary">Admin</span> ';
                         
@@ -909,6 +916,16 @@
                             '<div class="user-item-actions">' + deleteBtn + '</div>' +
                             '</div>';
                     }
+                    
+                    // Ajouter le bouton "Voir tous" / "Voir moins" si plus de 5 utilisateurs
+                    if (users.length > 5) {
+                        if (showAllUsers) {
+                            html += '<div style="text-align:center;padding:12px"><button class="btn btn-secondary btn-sm" onclick="toggleShowAllUsers()"><i class="fas fa-chevron-up"></i> Voir moins</button></div>';
+                        } else {
+                            html += '<div style="text-align:center;padding:12px"><button class="btn btn-secondary btn-sm" onclick="toggleShowAllUsers()"><i class="fas fa-chevron-down"></i> Voir tous (' + users.length + ')</button></div>';
+                        }
+                    }
+                    
                     container.innerHTML = html;
                 } else {
                     document.getElementById('users-list').innerHTML = '<div class="empty-state"><p>Erreur chargement</p></div>';
@@ -917,6 +934,11 @@
             .catch(function(e) {
                 document.getElementById('users-list').innerHTML = '<div class="empty-state"><p>Erreur chargement utilisateurs</p></div>';
             });
+        }
+        
+        function toggleShowAllUsers() {
+            showAllUsers = !showAllUsers;
+            loadUsers();
         }
         
         function loadSessions() {
