@@ -3430,7 +3430,10 @@ async function handleMessage(client, message, sessionId) {
         // Debug: vérifier si l'auteur est admin
         const authorP = participants.find(p => p.id._serialized === authorId);
         const isAuthorAdmin = authorP?.isAdmin || authorP?.isSuperAdmin || false;
-        sessionData.addLog(`[REALTIME] Message de ${authorId.split('@')[0]} - isAdmin: ${isAuthorAdmin}, excludedAdmins: ${sessionData.userExceptions.excludedAdmins}`);
+        
+        // Debug: afficher les IDs des participants pour comprendre le format
+        const participantIds = participants.slice(0, 3).map(p => `${p.id._serialized} (admin:${p.isAdmin})`).join(', ');
+        sessionData.addLog(`[REALTIME] authorId=${authorId}, isAdmin=${isAuthorAdmin}, participants sample: ${participantIds}`);
         
         if (sessionData.isUserExcluded(authorId, participants)) return;
 
