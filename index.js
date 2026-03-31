@@ -3439,9 +3439,11 @@ async function handleMessage(client, message, sessionId) {
         const authorP = participants.find(p => p.id._serialized === authorId);
         const isAuthorAdmin = authorP?.isAdmin || authorP?.isSuperAdmin || false;
         
-        // Debug: afficher les IDs des participants pour comprendre le format
-        const participantIds = participants.slice(0, 3).map(p => `${p.id._serialized} (admin:${p.isAdmin})`).join(', ');
-        sessionData.addLog(`[REALTIME] authorId=${authorId}, isAdmin=${isAuthorAdmin}, participants sample: ${participantIds}`);
+        // Debug: afficher TOUS les participants pour trouver l'auteur
+        const authorNumber = authorId.split('@')[0];
+        const allParticipantNumbers = participants.map(p => `${p.id._serialized?.split('@')[0]}(admin:${p.isAdmin})`);
+        const authorInParticipants = participants.find(p => p.id._serialized?.split('@')[0] === authorNumber);
+        sessionData.addLog(`[REALTIME] authorId=${authorId}, found=${!!authorInParticipants}, isAdmin=${authorInParticipants?.isAdmin}, all participants: ${allParticipantNumbers.join(', ')}`);
         
         if (sessionData.isUserExcluded(authorId, participants)) return;
 
