@@ -1405,6 +1405,27 @@ function optionalAuth(req, res, next) {
     next();
 }
 
+// Middleware admin uniquement
+function requireAdmin(req, res, next) {
+    const token = req.cookies.authToken;
+    
+    if (!token) {
+        return res.status(401).json({ success: false, message: 'Authentification requise', requireAuth: true });
+    }
+    
+    const validation = authManager.validateToken(token);
+    if (!validation.valid) {
+        return res.status(401).json({ success: false, message: validation.message, requireAuth: true });
+    }
+    
+    if (!validation.isAdmin) {
+        return res.status(403).json({ success: false, message: 'Accès admin requis' });
+    }
+    
+    req.user = { username: validation.username, isAdmin: true };
+    next();
+}
+
 // ============================================================
 // 🗂️ SESSION DATA MANAGER - Données isolées par session
 // ============================================================
@@ -5419,7 +5440,7 @@ app.get('/og-image.png', (req, res) => {
 });
 
 // Rafraîchir l'image OG (admin uniquement)
-app.post('/api/admin/og-image/refresh', authenticateAdmin, async (req, res) => {
+app.post('/api/admin/og-image/refresh', requireAdmin, async (req, res) => {
     try {
         const url = req.body.url || `http://localhost:${PORT}/landing.html`;
         await captureLandingPage(url);
