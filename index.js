@@ -5396,15 +5396,22 @@ app.get('/api/announcements/groups', requireAuth, async (req, res) => {
         const sessionClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
         
         if (!sessionClient || !sessionClient.info) {
+            addLog('[ANNOUNCEMENTS] /api/announcements/groups: Session non connectée');
             return res.json({ success: true, groups: [], message: 'Session non connectée' });
         }
         
         const chats = await sessionClient.getChats();
+        const botId = sessionClient.info.wid._serialized;
+        const allGroups = chats.filter(c => c.isGroup);
         const adminGroups = [];
         
-        for (const chat of chats.filter(c => c.isGroup)) {
-            const botParticipant = chat.participants?.find(p => p.id._serialized === sessionClient.info.wid._serialized);
-            if (botParticipant?.isAdmin) {
+        addLog(`[ANNOUNCEMENTS] Vérification de ${allGroups.length} groupes pour le bot ${botId}`);
+        
+        for (const chat of allGroups) {
+            const botParticipant = chat.participants?.find(p => p.id._serialized === botId);
+            const isAdmin = botParticipant?.isAdmin || botParticipant?.isSuperAdmin || false;
+            addLog(`[ANNOUNCEMENTS] Groupe "${chat.name}": botParticipant=${!!botParticipant}, isAdmin=${isAdmin}`);
+            if (isAdmin) {
                 adminGroups.push({
                     id: chat.id._serialized,
                     name: chat.name,
@@ -5413,8 +5420,10 @@ app.get('/api/announcements/groups', requireAuth, async (req, res) => {
             }
         }
         
+        addLog(`[ANNOUNCEMENTS] /api/announcements/groups: ${adminGroups.length} groupes admin trouvés`);
         res.json({ success: true, groups: adminGroups, total: adminGroups.length });
     } catch (error) {
+        addLog(`[ANNOUNCEMENTS] Erreur /api/announcements/groups: ${error.message}`);
         res.status(500).json({ success: false, message: error.message });
     }
 });
