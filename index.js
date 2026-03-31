@@ -1584,10 +1584,7 @@ class SessionDataManager {
         
         if (userException) {
             const hasLinkException = typeof userException === 'object' ? userException.linkException : true;
-            if (hasLinkException) {
-                this.addLog(`[EXCLUDE] User ${userNumber} exclu via liste personnalisée`);
-                return true;
-            }
+            if (hasLinkException) return true;
         }
         
         if (this.userExceptions.excludedAdmins) {
@@ -1596,10 +1593,7 @@ class SessionDataManager {
                 const partNumber = part.id._serialized?.split('@')[0];
                 return partNumber === userNumber || part.id._serialized === userId;
             });
-            if (p && (p.isAdmin || p.isSuperAdmin)) {
-                this.addLog(`[EXCLUDE] User ${userNumber} exclu car admin (isAdmin=${p.isAdmin}, isSuperAdmin=${p.isSuperAdmin})`);
-                return true;
-            }
+            if (p && (p.isAdmin || p.isSuperAdmin)) return true;
         }
         return false;
     }
@@ -2953,11 +2947,6 @@ async function scanOldMessages(chat, limit = 100, sessionId = null) {
         let authorId = message.author || message.from;
         if (authorId.includes('@g.us')) continue;
         
-        // Debug: vérifier si l'auteur est admin
-        const authorP = participants.find(p => p.id._serialized === authorId);
-        const isAuthorAdmin = authorP?.isAdmin || authorP?.isSuperAdmin || false;
-        log(`[SCAN] Message de ${authorId.split('@')[0]} - isAdmin: ${isAuthorAdmin}`);
-        
         if (sessionData && sessionData.isUserExcluded(authorId, participants)) continue;
         else if (!sessionData && isUserExcluded(authorId, participants)) continue;
 
@@ -3438,11 +3427,6 @@ async function handleMessage(client, message, sessionId) {
         // Récupérer le vrai numéro de téléphone via le contact (car authorId peut être un @lid)
         const authorContact = await message.getContact();
         const authorNumber = authorContact?.number || authorId.split('@')[0];
-        
-        // Debug: afficher TOUS les participants pour trouver l'auteur
-        const allParticipantNumbers = participants.map(p => `${p.id._serialized?.split('@')[0]}(admin:${p.isAdmin})`);
-        const authorInParticipants = participants.find(p => p.id._serialized?.split('@')[0] === authorNumber);
-        sessionData.addLog(`[REALTIME] authorId=${authorId}, realNumber=${authorNumber}, found=${!!authorInParticipants}, isAdmin=${authorInParticipants?.isAdmin}`);
         
         // Utiliser le numéro réel pour l'exclusion (pas l'ID @lid)
         if (sessionData.isUserExcluded(authorNumber, participants)) return;
@@ -5204,7 +5188,6 @@ app.get('/api/announcements/groups', requireAuth, async (req, res) => {
         const sessionClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
         
         if (!sessionClient || !sessionClient.info) {
-            addLog('[ANNOUNCEMENTS] /api/announcements/groups: Session non connectée');
             return res.json({ success: true, groups: [], message: 'Session non connectée' });
         }
         
@@ -5213,12 +5196,9 @@ app.get('/api/announcements/groups', requireAuth, async (req, res) => {
         const allGroups = chats.filter(c => c.isGroup);
         const adminGroups = [];
         
-        addLog(`[ANNOUNCEMENTS] Vérification de ${allGroups.length} groupes pour le bot ${botId}`);
-        
         for (const chat of allGroups) {
             const botParticipant = chat.participants?.find(p => p.id._serialized === botId);
             const isAdmin = botParticipant?.isAdmin || botParticipant?.isSuperAdmin || false;
-            addLog(`[ANNOUNCEMENTS] Groupe "${chat.name}": botParticipant=${!!botParticipant}, isAdmin=${isAdmin}`);
             if (isAdmin) {
                 adminGroups.push({
                     id: chat.id._serialized,
@@ -5228,10 +5208,8 @@ app.get('/api/announcements/groups', requireAuth, async (req, res) => {
             }
         }
         
-        addLog(`[ANNOUNCEMENTS] /api/announcements/groups: ${adminGroups.length} groupes admin trouvés`);
         res.json({ success: true, groups: adminGroups, total: adminGroups.length });
     } catch (error) {
-        addLog(`[ANNOUNCEMENTS] Erreur /api/announcements/groups: ${error.message}`);
         res.status(500).json({ success: false, message: error.message });
     }
 });

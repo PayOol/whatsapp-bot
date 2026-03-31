@@ -4439,16 +4439,12 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
     }
 
     async function loadAnnouncementGroups() {
-        console.log('[DEBUG] loadAnnouncementGroups called');
         try {
             const res = await authFetch(getApiUrl('/api/announcements/groups'));
-            console.log('[DEBUG] Response status:', res.status);
             const data = await res.json();
-            console.log('[DEBUG] Data:', data);
             announcementGroups = data.groups || [];
             renderAnnouncementGroupsList();
         } catch (e) {
-            console.error('[DEBUG] Error:', e);
             announcementGroups = [];
             renderAnnouncementGroupsList();
         }
