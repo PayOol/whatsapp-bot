@@ -3435,15 +3435,14 @@ async function handleMessage(client, message, sessionId) {
         let authorId = message.author || message.from;
         if (authorId.includes('@g.us')) return;
         
-        // Debug: vérifier si l'auteur est admin
-        const authorP = participants.find(p => p.id._serialized === authorId);
-        const isAuthorAdmin = authorP?.isAdmin || authorP?.isSuperAdmin || false;
+        // Récupérer le vrai numéro de téléphone via le contact (car authorId peut être un @lid)
+        const authorContact = await message.getContact();
+        const authorNumber = authorContact?.number || authorId.split('@')[0];
         
         // Debug: afficher TOUS les participants pour trouver l'auteur
-        const authorNumber = authorId.split('@')[0];
         const allParticipantNumbers = participants.map(p => `${p.id._serialized?.split('@')[0]}(admin:${p.isAdmin})`);
         const authorInParticipants = participants.find(p => p.id._serialized?.split('@')[0] === authorNumber);
-        sessionData.addLog(`[REALTIME] authorId=${authorId}, found=${!!authorInParticipants}, isAdmin=${authorInParticipants?.isAdmin}, all participants: ${allParticipantNumbers.join(', ')}`);
+        sessionData.addLog(`[REALTIME] authorId=${authorId}, realNumber=${authorNumber}, found=${!!authorInParticipants}, isAdmin=${authorInParticipants?.isAdmin}`);
         
         if (sessionData.isUserExcluded(authorId, participants)) return;
 
