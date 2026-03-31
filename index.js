@@ -5,6 +5,7 @@ const path = require('path');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const crypto = require('crypto');
+const { ensureOgImage, captureLandingPage, isOgImageValid, OUTPUT_PATH } = require('./og-screenshot');
 
 // ============================================================
 // 📁 FICHIERS DE STOCKAGE
@@ -652,8 +653,244 @@ const AUTH_USERS_FILE = path.join(DATA_DIR, 'users_auth.json');
 const AUTH_ADMIN_FILE = path.join(DATA_DIR, 'admin_auth.json');
 const AUTH_SESSIONS_FILE = path.join(DATA_DIR, 'user_sessions.json');
 const SUGGESTIONS_FILE = path.join(DATA_DIR, 'suggestions.json');
+const ANNOUNCEMENTS_FILE = path.join(DATA_DIR, 'announcements.json');
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 const TOKEN_EXPIRY_HOURS = 24;
+
+// ============================================================
+// 📢 GESTIONNAIRE D'ANNONCES
+// ============================================================
+
+class AnnouncementsManager {
+    constructor() {
+        this.announcements = [];
+        this.load();
+    }
+    
+    load() {
+        try {
+            if (fs.existsSync(ANNOUNCEMENTS_FILE)) {
+                this.announcements = JSON.parse(fs.readFileSync(ANNOUNCEMENTS_FILE, 'utf8'));
+            }
+        } catch (e) {
+            console.error('Erreur chargement annonces:', e);
+            this.announcements = [];
+        }
+    }
+    
+    save() {
+        try {
+            if (!fs.existsSync(DATA_DIR)) {
+                fs.mkdirSync(DATA_DIR, { recursive: true });
+            }
+            fs.writeFileSync(ANNOUNCEMENTS_FILE, JSON.stringify(this.announcements, null, 2));
+        } catch (e) {
+            console.error('Erreur sauvegarde annonces:', e);
+        }
+    }
+    
+    createAnnouncement(username, data) {
+        const announcement = {
+            id: crypto.randomBytes(8).toString('hex'),
+            username,
+            title: data.title || 'Sans titre',
+            content: data.content || '',
+            rawContent: data.rawContent || data.content,
+            groups: data.groups || [],
+            linkPreview: data.linkPreview !== false,
+            status: 'draft', // draft, scheduled, publishing, published, failed
+            createdAt: Date.now(),
+            scheduledAt: data.scheduledAt || null,
+            publishedAt: null,
+            publishedGroups: [],
+            failedGroups: []
+        };
+        this.announcements.push(announcement);
+        this.save();
+        addLog(`[ANNONCE] Nouvelle annonce créée: ${announcement.id} par ${username}`);
+        return announcement;
+    }
+    
+    getAnnouncement(id) {
+        return this.announcements.find(a => a.id === id);
+    }
+    
+    getAllAnnouncements(username = null, isAdmin = false) {
+        let filtered = this.announcements;
+        if (!isAdmin && username) {
+            filtered = this.announcements.filter(a => a.username === username);
+        }
+        return filtered.sort((a, b) => b.createdAt - a.createdAt);
+    }
+    
+    updateAnnouncement(id, data, username, isAdmin) {
+        const announcement = this.announcements.find(a => a.id === id);
+        if (!announcement) return null;
+        
+        // Vérifier les droits
+        if (!isAdmin && announcement.username !== username) return null;
+        
+        // Ne pas modifier si en cours de publication
+        if (announcement.status === 'publishing') return null;
+        
+        if (data.title !== undefined) announcement.title = data.title;
+        if (data.content !== undefined) announcement.content = data.content;
+        if (data.rawContent !== undefined) announcement.rawContent = data.rawContent;
+        if (data.groups !== undefined) announcement.groups = data.groups;
+        if (data.linkPreview !== undefined) announcement.linkPreview = data.linkPreview;
+        if (data.scheduledAt !== undefined) announcement.scheduledAt = data.scheduledAt;
+        
+        this.save();
+        addLog(`[ANNONCE] Annonce mise à jour: ${id}`);
+        return announcement;
+    }
+    
+    deleteAnnouncement(id, username, isAdmin) {
+        const index = this.announcements.findIndex(a => a.id === id);
+        if (index === -1) return false;
+        
+        const announcement = this.announcements[index];
+        
+        // Vérifier les droits
+        if (!isAdmin && announcement.username !== username) return false;
+        
+        // Ne pas supprimer si en cours de publication
+        if (announcement.status === 'publishing') return false;
+        
+        this.announcements.splice(index, 1);
+        this.save();
+        addLog(`[ANNONCE] Annonce supprimée: ${id}`);
+        return true;
+    }
+    
+    markPublishing(id) {
+        const announcement = this.announcements.find(a => a.id === id);
+        if (announcement) {
+            announcement.status = 'publishing';
+            this.save();
+        }
+    }
+    
+    markPublished(id, publishedGroups, failedGroups = []) {
+        const announcement = this.announcements.find(a => a.id === id);
+        if (announcement) {
+            announcement.status = failedGroups.length > 0 && failedGroups.length === publishedGroups.length ? 'failed' : 'published';
+            announcement.publishedAt = Date.now();
+            announcement.publishedGroups = publishedGroups;
+            announcement.failedGroups = failedGroups;
+            this.save();
+        }
+    }
+    
+    getStats() {
+        return {
+            total: this.announcements.length,
+            drafts: this.announcements.filter(a => a.status === 'draft').length,
+            published: this.announcements.filter(a => a.status === 'published').length,
+            scheduled: this.announcements.filter(a => a.status === 'scheduled').length
+        };
+    }
+}
+
+const announcementsManager = new AnnouncementsManager();
+
+// ============================================================
+// 📝 FORMATAGE WHATSAPP
+// ============================================================
+
+function formatWhatsAppMessage(rawContent) {
+    // Convertir le contenu brut en format WhatsApp
+    // Le rawContent peut contenir des marqueurs de formatage
+    let formatted = rawContent;
+    
+    // Les marqueurs sont préservés tels quels pour WhatsApp:
+    // *texte* = gras
+    // _texte_ = italique
+    // ~texte~ = barré
+    // ```texte``` = monospace
+    // Les puces sont converties en format WhatsApp
+    
+    return formatted;
+}
+
+// ============================================================
+// 🚀 PUBLICATION D'ANNONCES HUMANISÉE
+// ============================================================
+
+async function publishAnnouncement(sessionId, announcement) {
+    const sessionClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
+    const sessionData = sessionId ? getSessionData(sessionId) : null;
+    
+    if (!sessionClient || !sessionClient.info) {
+        throw new Error('Session non connectée');
+    }
+    
+    const publishedGroups = [];
+    const failedGroups = [];
+    
+    // Marquer comme en cours de publication
+    announcementsManager.markPublishing(announcement.id);
+    
+    const content = announcement.content;
+    const groups = announcement.groups;
+    const linkPreview = announcement.linkPreview;
+    
+    addLog(`[ANNONCE] Début publication ${announcement.id} dans ${groups.length} groupe(s)`);
+    
+    for (const groupId of groups) {
+        try {
+            const chat = await sessionClient.getChatById(groupId);
+            
+            if (!chat || !chat.isGroup) {
+                failedGroups.push({ id: groupId, reason: 'Groupe non trouvé' });
+                continue;
+            }
+            
+            // Vérifier que le bot est admin dans ce groupe
+            const botParticipant = chat.participants?.find(p => p.id._serialized === sessionClient.info.wid._serialized);
+            if (!botParticipant?.isAdmin) {
+                failedGroups.push({ id: groupId, reason: 'Bot non admin' });
+                continue;
+            }
+            
+            // Délai humanisé entre les groupes
+            if (publishedGroups.length > 0) {
+                const interGroupDelay = HumanBehavior.interGroupDelay();
+                if (sessionData) sessionData.addLog(`[ANNONCE] Pause ${Math.round(interGroupDelay/1000)}s avant prochain groupe`);
+                else addLog(`[ANNONCE] Pause ${Math.round(interGroupDelay/1000)}s avant prochain groupe`);
+                await HumanBehavior.naturalDelay(interGroupDelay);
+            }
+            
+            // Envoyer le message avec comportement humanisé
+            const options = {};
+            if (!linkPreview) {
+                options.linkPreview = false;
+            }
+            
+            await sendMessageHumanized(chat, content, options, 0, sessionData);
+            
+            publishedGroups.push(groupId);
+            if (sessionData) sessionData.addLog(`[ANNONCE] Publié dans: ${chat.name}`);
+            else addLog(`[ANNONCE] Publié dans: ${chat.name}`);
+            
+        } catch (error) {
+            failedGroups.push({ id: groupId, reason: error.message });
+            if (sessionData) sessionData.addLog(`[ANNONCE] Erreur ${groupId}: ${error.message}`);
+            else addLog(`[ANNONCE] Erreur ${groupId}: ${error.message}`);
+        }
+    }
+    
+    // Marquer comme publié
+    announcementsManager.markPublished(announcement.id, publishedGroups, failedGroups);
+    
+    return {
+        success: publishedGroups.length > 0,
+        publishedCount: publishedGroups.length,
+        failedCount: failedGroups.length,
+        publishedGroups,
+        failedGroups
+    };
+}
 
 // ============================================================
 // 💡 GESTIONNAIRE DE SUGGESTIONS
@@ -4872,6 +5109,349 @@ app.post('/api/menus/:id/test', requireAuth, async (req, res) => {
     }
 });
 
+// ============ API ANNONCES ============
+
+// Liste des annonces
+app.get('/api/announcements', requireAuth, (req, res) => {
+    const announcements = announcementsManager.getAllAnnouncements(req.user.username, req.user.isAdmin);
+    res.json({ 
+        success: true, 
+        announcements: announcements.map(a => ({
+            id: a.id,
+            title: a.title,
+            content: a.content.substring(0, 100) + (a.content.length > 100 ? '...' : ''),
+            groups: a.groups,
+            status: a.status,
+            createdAt: a.createdAt,
+            publishedAt: a.publishedAt,
+            publishedGroupsCount: a.publishedGroups?.length || 0,
+            username: a.username
+        }))
+    });
+});
+
+// Détails d'une annonce
+app.get('/api/announcements/:id', requireAuth, (req, res) => {
+    const announcement = announcementsManager.getAnnouncement(req.params.id);
+    if (!announcement) {
+        return res.status(404).json({ success: false, message: 'Annonce non trouvée' });
+    }
+    
+    // Vérifier les droits
+    if (!req.user.isAdmin && announcement.username !== req.user.username) {
+        return res.status(403).json({ success: false, message: 'Accès non autorisé' });
+    }
+    
+    res.json({ success: true, announcement });
+});
+
+// Créer une annonce
+app.post('/api/announcements', requireAuth, (req, res) => {
+    try {
+        const { title, content, rawContent, groups, linkPreview, scheduledAt } = req.body;
+        
+        if (!content || content.trim().length === 0) {
+            return res.status(400).json({ success: false, message: 'Le contenu est requis' });
+        }
+        
+        const announcement = announcementsManager.createAnnouncement(req.user.username, {
+            title,
+            content,
+            rawContent,
+            groups: groups || [],
+            linkPreview,
+            scheduledAt
+        });
+        
+        res.json({ success: true, announcement });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// Modifier une annonce
+app.put('/api/announcements/:id', requireAuth, (req, res) => {
+    try {
+        const announcement = announcementsManager.updateAnnouncement(
+            req.params.id, 
+            req.body, 
+            req.user.username, 
+            req.user.isAdmin
+        );
+        
+        if (!announcement) {
+            return res.status(404).json({ success: false, message: 'Annonce non trouvée ou non modifiable' });
+        }
+        
+        res.json({ success: true, announcement });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// Supprimer une annonce
+app.delete('/api/announcements/:id', requireAuth, (req, res) => {
+    try {
+        const deleted = announcementsManager.deleteAnnouncement(
+            req.params.id, 
+            req.user.username, 
+            req.user.isAdmin
+        );
+        
+        if (!deleted) {
+            return res.status(404).json({ success: false, message: 'Annonce non trouvée ou non supprimable' });
+        }
+        
+        res.json({ success: true, message: 'Annonce supprimée' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// Publier une annonce
+app.post('/api/announcements/:id/publish', requireAuth, async (req, res) => {
+    try {
+        const announcement = announcementsManager.getAnnouncement(req.params.id);
+        
+        if (!announcement) {
+            return res.status(404).json({ success: false, message: 'Annonce non trouvée' });
+        }
+        
+        // Vérifier les droits
+        if (!req.user.isAdmin && announcement.username !== req.user.username) {
+            return res.status(403).json({ success: false, message: 'Accès non autorisé' });
+        }
+        
+        // Vérifier que l'annonce a des groupes cibles
+        if (!announcement.groups || announcement.groups.length === 0) {
+            return res.status(400).json({ success: false, message: 'Aucun groupe sélectionné' });
+        }
+        
+        // Vérifier qu'une session est active
+        const sessionId = req.body.sessionId || sessionManager.activeSessionId;
+        const sessionClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
+        
+        if (!sessionClient || !sessionClient.info) {
+            return res.status(400).json({ success: false, message: 'Aucune session WhatsApp connectée' });
+        }
+        
+        // Lancer la publication en arrière-plan
+        publishAnnouncement(sessionId, announcement).then(result => {
+            addLog(`[ANNONCE] Publication terminée: ${result.publishedCount}/${announcement.groups.length} groupes`);
+        }).catch(error => {
+            addLog(`[ANNONCE] Erreur publication: ${error.message}`);
+        });
+        
+        res.json({ 
+            success: true, 
+            message: 'Publication en cours', 
+            groupsCount: announcement.groups.length 
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// Statistiques des annonces
+app.get('/api/announcements/stats', requireAuth, (req, res) => {
+    const stats = announcementsManager.getStats();
+    res.json({ success: true, stats });
+});
+
+// Route pour récupérer les métadonnées d'un lien (Open Graph)
+app.get('/api/link-preview', requireAuth, async (req, res) => {
+    const { url } = req.query;
+    
+    if (!url) {
+        return res.status(400).json({ success: false, message: 'URL requise' });
+    }
+    
+    try {
+        const https = require('https');
+        const http = require('http');
+        
+        const client = url.startsWith('https') ? https : http;
+        
+        const request = client.get(url, { timeout: 5000, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; WhatsAppBot/1.0)' } }, (response) => {
+            let data = '';
+            
+            // Suivre les redirections
+            if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+                return res.json({ success: true, redirect: response.headers.location });
+            }
+            
+            response.on('data', chunk => data += chunk);
+            response.on('end', () => {
+                try {
+                    const preview = {
+                        title: '',
+                        description: '',
+                        image: '',
+                        siteName: ''
+                    };
+                    
+                    // Extraire le titre Open Graph
+                    const ogTitle = data.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i);
+                    if (ogTitle) preview.title = ogTitle[1];
+                    
+                    // Sinon, prendre le titre de la page
+                    if (!preview.title) {
+                        const titleMatch = data.match(/<title[^>]*>([^<]+)<\/title>/i);
+                        if (titleMatch) preview.title = titleMatch[1].trim();
+                    }
+                    
+                    // Extraire la description
+                    const ogDesc = data.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)["']/i);
+                    if (ogDesc) preview.description = ogDesc[1];
+                    
+                    if (!preview.description) {
+                        const metaDesc = data.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i);
+                        if (metaDesc) preview.description = metaDesc[1];
+                    }
+                    
+                    // Extraire l'image
+                    const ogImage = data.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i);
+                    if (ogImage) preview.image = ogImage[1];
+                    
+                    // Extraire le nom du site
+                    const ogSite = data.match(/<meta[^>]*property=["']og:site_name["'][^>]*content=["']([^"']+)["']/i);
+                    if (ogSite) preview.siteName = ogSite[1];
+                    
+                    // Nettoyer les entités HTML
+                    const cleanEntities = (str) => {
+                        if (!str) return str;
+                        return str
+                            .replace(/&amp;/g, '&')
+                            .replace(/&lt;/g, '<')
+                            .replace(/&gt;/g, '>')
+                            .replace(/&quot;/g, '"')
+                            .replace(/&#39;/g, "'")
+                            .replace(/&nbsp;/g, ' ');
+                    };
+                    
+                    preview.title = cleanEntities(preview.title);
+                    preview.description = cleanEntities(preview.description);
+                    preview.siteName = cleanEntities(preview.siteName);
+                    
+                    res.json({ success: true, preview });
+                } catch (e) {
+                    res.json({ success: false, message: 'Erreur parsing' });
+                }
+            });
+        });
+        
+        request.on('error', (e) => {
+            res.json({ success: false, message: e.message });
+        });
+        
+        request.on('timeout', () => {
+            request.destroy();
+            res.json({ success: false, message: 'Timeout' });
+        });
+        
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// Obtenir les groupes où le bot est admin (pour la sélection lors de la création d'annonce)
+app.get('/api/announcements/groups', requireAuth, async (req, res) => {
+    try {
+        const sessionId = req.query.sessionId || sessionManager.activeSessionId;
+        const sessionClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
+        
+        if (!sessionClient || !sessionClient.info) {
+            return res.json({ success: true, groups: [], message: 'Session non connectée' });
+        }
+        
+        const chats = await sessionClient.getChats();
+        const adminGroups = [];
+        
+        for (const chat of chats.filter(c => c.isGroup)) {
+            const botParticipant = chat.participants?.find(p => p.id._serialized === sessionClient.info.wid._serialized);
+            if (botParticipant?.isAdmin) {
+                adminGroups.push({
+                    id: chat.id._serialized,
+                    name: chat.name,
+                    participants: chat.participants?.length || 0
+                });
+            }
+        }
+        
+        res.json({ success: true, groups: adminGroups, total: adminGroups.length });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// Dupliquer une annonce
+app.post('/api/announcements/:id/duplicate', requireAuth, (req, res) => {
+    try {
+        const original = announcementsManager.getAnnouncement(req.params.id);
+        
+        if (!original) {
+            return res.status(404).json({ success: false, message: 'Annonce non trouvée' });
+        }
+        
+        const duplicate = announcementsManager.createAnnouncement(req.user.username, {
+            title: `${original.title} (copie)`,
+            content: original.content,
+            rawContent: original.rawContent,
+            groups: original.groups,
+            linkPreview: original.linkPreview
+        });
+        
+        res.json({ success: true, announcement: duplicate });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// ============ API OG IMAGE (SEO) ============
+
+// Servir l'image OG
+app.get('/og-image.png', (req, res) => {
+    if (fs.existsSync(OUTPUT_PATH)) {
+        res.sendFile(OUTPUT_PATH);
+    } else {
+        res.status(404).send('Image non générée');
+    }
+});
+
+// Rafraîchir l'image OG (admin uniquement)
+app.post('/api/admin/og-image/refresh', authenticateAdmin, async (req, res) => {
+    try {
+        const url = req.body.url || `http://localhost:${PORT}/landing.html`;
+        await captureLandingPage(url);
+        res.json({ 
+            success: true, 
+            message: 'Image OG générée avec succès',
+            path: '/og-image.png'
+        });
+    } catch (error) {
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erreur lors de la génération: ' + error.message 
+        });
+    }
+});
+
+// Statut de l'image OG
+app.get('/api/og-image/status', (req, res) => {
+    const exists = fs.existsSync(OUTPUT_PATH);
+    let stats = null;
+    if (exists) {
+        stats = fs.statSync(OUTPUT_PATH);
+    }
+    res.json({
+        exists,
+        valid: isOgImageValid(24),
+        path: exists ? '/og-image.png' : null,
+        size: stats ? stats.size : 0,
+        lastModified: stats ? stats.mtimeMs : null
+    });
+});
+
 app.listen(PORT, () => console.log(`Interface web: http://localhost:${PORT}`));
 
 // ============================================================
@@ -4904,6 +5484,18 @@ sessionManager.cleanupOrphanSessions();
 
 // Initialiser toutes les sessions existantes
 sessionManager.initializeAllSessions();
+
+// Générer l'image OG si nécessaire (après le démarrage du serveur)
+setTimeout(async () => {
+    try {
+        if (!fs.existsSync(OUTPUT_PATH)) {
+            console.log('📸 Génération de l\'image OG pour SEO...');
+            await captureLandingPage(`http://localhost:${PORT}/landing.html`);
+        }
+    } catch (e) {
+        console.log('⚠️ Impossible de générer l\'image OG:', e.message);
+    }
+}, 3000);
 
 // Mettre à jour la variable client pour la compatibilité
 const updateClientReference = () => {

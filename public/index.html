@@ -980,7 +980,80 @@
             color:var(--text-muted);
             font-size:0.85rem;
         }
-        .log-empty-icon{font-size:2rem;margin-bottom:8px;opacity:0.5}
+
+        /* WhatsApp Preview Styles */
+        .wa-preview-container{
+            background:linear-gradient(135deg,#0b141a,#0d1f26);
+            border-radius:var(--radius-lg);
+            padding:20px;
+            position:relative;
+            direction:rtl;
+        }
+        .wa-preview-bubble{
+            background:#005c4b;
+            border-radius:0 12px 12px 12px;
+            padding:8px 12px 12px;
+            max-width:85%;
+            display:inline-block;
+            direction:ltr;
+            box-shadow:0 1px 2px rgba(0,0,0,0.2);
+        }
+        .wa-preview-header{
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            margin-bottom:4px;
+            padding-bottom:4px;
+        }
+        .wa-preview-title{
+            color:#00a88e;
+            font-size:0.85rem;
+            font-weight:600;
+        }
+        .wa-preview-time{
+            color:rgba(255,255,255,0.5);
+            font-size:0.7rem;
+        }
+        .wa-preview-text{
+            color:#ffffff;
+            font-size:0.9rem;
+            line-height:1.45;
+            white-space:pre-wrap;
+            word-wrap:break-word;
+        }
+        .wa-preview-text .wa-bold{font-weight:700;color:#ffffff}
+        .wa-preview-text .wa-italic{font-style:italic;color:#ffffff}
+        .wa-preview-text .wa-strike{text-decoration:line-through;color:#ffffff}
+        .wa-preview-text .wa-mono{font-family:monospace;background:rgba(0,0,0,0.3);padding:2px 6px;border-radius:4px;color:#ffffff}
+        .wa-preview-tail{
+            position:absolute;
+            right:0;
+            top:20px;
+            width:0;
+            height:0;
+            border-style:solid;
+            border-width:0 10px 10px 0;
+            border-color:transparent #005c4b transparent transparent;
+        }
+        [data-theme="light"] .wa-preview-container{
+            background:linear-gradient(135deg,#e5ddd5,#d4cfc6);
+        }
+        [data-theme="light"] .wa-preview-bubble{
+            background:#dcf8c6;
+        }
+        [data-theme="light"] .wa-preview-title{
+            color:#075e54;
+        }
+        [data-theme="light"] .wa-preview-text{
+            color:#111b21;
+        }
+        [data-theme="light"] .wa-preview-text .wa-bold{color:#111b21}
+        [data-theme="light"] .wa-preview-text .wa-italic{color:#111b21}
+        [data-theme="light"] .wa-preview-text .wa-strike{color:#111b21}
+        [data-theme="light"] .wa-preview-text .wa-mono{color:#111b21;background:rgba(0,0,0,0.1)}
+        [data-theme="light"] .wa-preview-tail{
+            border-color:transparent #dcf8c6 transparent transparent;
+        }
 
         /* ═══════════════════════════════════════
            QR MODAL
@@ -1731,6 +1804,10 @@
                         <span class="nav-icon"><i class="fas fa-chart-line"></i></span>
                         <span class="nav-label">Tableau de bord</span>
                     </div>
+                    <div class="nav-link" data-page="announcements" onclick="navigateTo('announcements',this)">
+                        <span class="nav-icon"><i class="fas fa-bullhorn"></i></span>
+                        <span class="nav-label">Annonces</span>
+                    </div>
                     <div class="nav-link" data-page="config" onclick="navigateTo('config',this)">
                         <span class="nav-icon"><i class="fas fa-sliders-h"></i></span>
                         <span class="nav-label">Configuration</span>
@@ -2358,6 +2435,131 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                     </div>
                 </div>
 
+                <!-- ═══════════ ANNONCES ═══════════ -->
+                <div id="page-announcements" class="page">
+                    <div class="page-header">
+                        <div class="page-header-text">
+                            <h2 class="page-title">Annonces</h2>
+                            <p class="page-subtitle">Envoyez des messages formatés à vos groupes</p>
+                        </div>
+                        <button class="btn btn-ghost btn-sm" onclick="loadAnnouncements();loadAnnouncementGroups()">
+                            <i class="fas fa-sync-alt"></i> Rafraîchir
+                        </button>
+                    </div>
+
+                    <div class="cards-grid">
+                        <!-- Formulaire de création/édition -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 class="card-title">
+                                    <span class="card-title-icon"><i class="fas fa-edit"></i></span>
+                                    <span id="announcement-form-title">Nouvelle annonce</span>
+                                </h3>
+                                <button class="btn btn-ghost btn-sm" onclick="resetAnnouncementForm()" id="btn-reset-announcement" style="display:none">
+                                    <i class="fas fa-times"></i> Annuler
+                                </button>
+                            </div>
+                            <div class="card-body">
+                                <input type="hidden" id="announcement-edit-id">
+                                
+                                <div class="form-group">
+                                    <label class="form-label">Titre de l'annonce</label>
+                                    <input type="text" class="form-input" id="announcement-title-input" placeholder="Ex: Promotion spéciale" oninput="updateAnnouncementPreview()">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label class="form-label">Contenu du message</label>
+                                    <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+                                        <button type="button" class="btn btn-ghost btn-xs" onclick="formatAnnouncementText('bold')" title="Gras"><i class="fas fa-bold"></i></button>
+                                        <button type="button" class="btn btn-ghost btn-xs" onclick="formatAnnouncementText('italic')" title="Italique"><i class="fas fa-italic"></i></button>
+                                        <button type="button" class="btn btn-ghost btn-xs" onclick="formatAnnouncementText('strikethrough')" title="Barré"><i class="fas fa-strikethrough"></i></button>
+                                        <button type="button" class="btn btn-ghost btn-xs" onclick="formatAnnouncementText('monospace')" title="Monospace"><i class="fas fa-code"></i></button>
+                                    </div>
+                                    <textarea class="form-input" id="announcement-content-input" placeholder="Écrivez votre annonce ici...&#10;&#10;Formatage WhatsApp:&#10;*texte* = gras&#10;_texte_ = italique&#10;~texte~ = barré" rows="6" oninput="updateAnnouncementPreview()"></textarea>
+                                    <p class="form-hint">Utilisez *texte* pour le gras, _texte_ pour l'italique, ~texte~ pour le barré</p>
+                                </div>
+                                
+                                <div class="setting-row" style="border:none;padding:0 0 16px 0">
+                                    <div class="setting-info">
+                                        <div class="setting-icon"><i class="fas fa-link"></i></div>
+                                        <div class="setting-text">
+                                            <h4>Prévisualisation des liens</h4>
+                                            <p>Afficher un aperçu des liens dans le message</p>
+                                        </div>
+                                    </div>
+                                    <label class="toggle">
+                                        <input type="checkbox" id="announcement-link-preview" checked onchange="updateAnnouncementPreview()">
+                                        <span class="toggle-track"></span>
+                                    </label>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                                        <label class="form-label" style="margin:0">Groupes cibles</label>
+                                        <div style="display:flex;gap:8px;align-items:center">
+                                            <span id="announcement-selected-count" style="font-size:0.75rem;color:var(--text-muted)">0 groupe(s)</span>
+                                            <button type="button" class="btn btn-ghost btn-xs" onclick="selectAllAnnouncementGroups()">Tout</button>
+                                            <button type="button" class="btn btn-ghost btn-xs" onclick="deselectAllAnnouncementGroups()">Aucun</button>
+                                        </div>
+                                    </div>
+                                    <div id="announcement-groups-list" style="max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius-md)">
+                                        <div class="log-empty"><p>Chargement…</p></div>
+                                    </div>
+                                </div>
+                                
+                                <div class="btn-group" style="margin-top:16px">
+                                    <button type="button" class="btn btn-ghost" onclick="saveAnnouncement()">
+                                        <i class="fas fa-save"></i> Enregistrer le brouillon
+                                    </button>
+                                    <button type="button" class="btn btn-primary" onclick="saveAndPublishAnnouncement()">
+                                        <i class="fas fa-paper-plane"></i> Publier
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Liste des annonces -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 class="card-title">
+                                    <span class="card-title-icon"><i class="fas fa-bullhorn"></i></span>
+                                    Mes annonces
+                                </h3>
+                            </div>
+                            <div class="card-body" id="announcements-list" style="padding:0;max-height:400px;overflow-y:auto">
+                                <div class="log-empty">
+                                    <div class="log-empty-icon"><i class="fas fa-spinner fa-spin"></i></div>
+                                    <p>Chargement…</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Prévisualisation WhatsApp -->
+                    <div class="card" style="margin-top:16px">
+                        <div class="card-header">
+                            <h3 class="card-title">
+                                <span class="card-title-icon"><i class="fas fa-eye"></i></span>
+                                Aperçu WhatsApp
+                            </h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="wa-preview-container">
+                                <div class="wa-preview-bubble">
+                                    <div class="wa-preview-header">
+                                        <span class="wa-preview-title" id="announcement-preview-title">Annonce</span>
+                                        <span class="wa-preview-time">maintenant</span>
+                                    </div>
+                                    <div class="wa-preview-text" id="announcement-preview-text">
+                                        <span style="color:rgba(255,255,255,0.5)">Votre message apparaîtra ici...</span>
+                                    </div>
+                                </div>
+                                <div class="wa-preview-tail"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
             </div>
         </main>
     </div>
@@ -2455,6 +2657,10 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                         ${currentUser.isAdmin ? '<span class="badge badge-primary" style="margin-left:auto">Admin</span>' : ''}
                     </div>
                     <div class="user-dropdown-divider"></div>
+                    <div class="user-dropdown-item" onclick="location.href='/announcements'">
+                        <i class="fas fa-bullhorn"></i>
+                        <span>Annonces</span>
+                    </div>
                     <div class="user-dropdown-item danger" onclick="handleLogout()">
                         <i class="fas fa-sign-out-alt"></i>
                         <span>Déconnexion</span>
@@ -2486,6 +2692,10 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                         ${currentUser.isAdmin ? '<span class="badge badge-primary" style="margin-left:auto">Admin</span>' : ''}
                     </div>
                     <div class="user-dropdown-divider"></div>
+                    <div class="user-dropdown-item" onclick="location.href='/announcements'">
+                        <i class="fas fa-bullhorn"></i>
+                        <span>Annonces</span>
+                    </div>
                     <div class="user-dropdown-item danger" onclick="handleLogout()">
                         <i class="fas fa-sign-out-alt"></i>
                         <span>Déconnexion</span>
@@ -4147,6 +4357,415 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                 document.getElementById('beta-badge').classList.add('show');
             }
         });
+
+    // === ANNONCES ===
+    let announcementsData = [];
+    let announcementGroups = [];
+    let selectedAnnouncementGroups = [];
+    let editingAnnouncementId = null;
+
+    async function loadAnnouncements() {
+        try {
+            const res = await authFetch('/api/announcements');
+            const data = await res.json();
+            announcementsData = data.announcements || [];
+            renderAnnouncementsList();
+        } catch (e) {
+            document.getElementById('announcements-list').innerHTML = '<div class="log-empty"><p>Erreur chargement</p></div>';
+        }
+    }
+
+    function renderAnnouncementsList() {
+        const container = document.getElementById('announcements-list');
+        if (announcementsData.length === 0) {
+            container.innerHTML = '<div class="log-empty"><div class="log-empty-icon"><i class="fas fa-bullhorn"></i></div><p>Aucune annonce</p></div>';
+            return;
+        }
+        container.innerHTML = announcementsData.map(a => `
+            <div class="group-item" style="cursor:pointer" onclick="editAnnouncement('${a.id}')">
+                <div class="group-info">
+                    <div class="group-name">${escapeHtml(a.title || 'Sans titre')}</div>
+                    <div class="group-meta">
+                        <span>${a.groups?.length || 0} groupe(s)</span>
+                        <span>•</span>
+                        <span>${new Date(a.createdAt).toLocaleDateString()}</span>
+                        <span class="tag tag-${a.status === 'published' ? 'success' : a.status === 'draft' ? 'neutral' : 'warning'}">${getAnnouncementStatusLabel(a.status)}</span>
+                    </div>
+                </div>
+                <div class="group-actions" onclick="event.stopPropagation()">
+                    ${a.status === 'draft' || a.status === 'failed' ? `<button class="btn btn-primary btn-sm" onclick="publishAnnouncement('${a.id}')"><i class="fas fa-paper-plane"></i></button>` : ''}
+                    <button class="btn btn-ghost btn-sm" onclick="duplicateAnnouncement('${a.id}')"><i class="fas fa-copy"></i></button>
+                    <button class="btn btn-danger btn-sm" onclick="deleteAnnouncement('${a.id}')"><i class="fas fa-trash"></i></button>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function getAnnouncementStatusLabel(status) {
+        const labels = { draft: 'Brouillon', published: 'Publiée', publishing: 'En cours', failed: 'Échec', scheduled: 'Programmée' };
+        return labels[status] || status;
+    }
+
+    async function loadAnnouncementGroups() {
+        try {
+            const res = await authFetch('/api/announcements/groups');
+            const data = await res.json();
+            announcementGroups = data.groups || [];
+            renderAnnouncementGroupsList();
+        } catch (e) {
+            announcementGroups = [];
+            renderAnnouncementGroupsList();
+        }
+    }
+
+    function renderAnnouncementGroupsList() {
+        const container = document.getElementById('announcement-groups-list');
+        if (announcementGroups.length === 0) {
+            container.innerHTML = '<div class="log-empty"><p>Aucun groupe où le bot est admin</p></div>';
+            return;
+        }
+        container.innerHTML = announcementGroups.map(g => `
+            <label class="group-item" style="cursor:pointer">
+                <input type="checkbox" ${selectedAnnouncementGroups.includes(g.id) ? 'checked' : ''} onchange="toggleAnnouncementGroup('${g.id}')">
+                <div class="group-info">
+                    <div class="group-name">${escapeHtml(g.name)}</div>
+                    <div class="group-meta">${g.participants} membres</div>
+                </div>
+            </label>
+        `).join('');
+        document.getElementById('announcement-selected-count').textContent = `${selectedAnnouncementGroups.length} groupe(s)`;
+    }
+
+    function toggleAnnouncementGroup(id) {
+        const idx = selectedAnnouncementGroups.indexOf(id);
+        if (idx > -1) selectedAnnouncementGroups.splice(idx, 1);
+        else selectedAnnouncementGroups.push(id);
+        document.getElementById('announcement-selected-count').textContent = `${selectedAnnouncementGroups.length} groupe(s)`;
+    }
+
+    function selectAllAnnouncementGroups() {
+        selectedAnnouncementGroups = announcementGroups.map(g => g.id);
+        renderAnnouncementGroupsList();
+    }
+
+    function deselectAllAnnouncementGroups() {
+        selectedAnnouncementGroups = [];
+        renderAnnouncementGroupsList();
+    }
+
+    function formatAnnouncementText(type) {
+        const textarea = document.getElementById('announcement-content-input');
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const text = textarea.value;
+        const selected = text.substring(start, end);
+        let formatted = '';
+        switch (type) {
+            case 'bold': formatted = `*${selected || 'texte'}*`; break;
+            case 'italic': formatted = `_${selected || 'texte'}_`; break;
+            case 'strikethrough': formatted = `~${selected || 'texte'}~`; break;
+            case 'monospace': formatted = `\`\`\`${selected || 'texte'}\`\`\``; break;
+        }
+        textarea.value = text.substring(0, start) + formatted + text.substring(end);
+        textarea.focus();
+        updateAnnouncementPreview();
+    }
+
+    function updateAnnouncementPreview() {
+        const content = document.getElementById('announcement-content-input').value;
+        const title = document.getElementById('announcement-title-input').value || 'Annonce';
+        const linkPreview = document.getElementById('announcement-link-preview').checked;
+        const previewTitle = document.getElementById('announcement-preview-title');
+        const previewText = document.getElementById('announcement-preview-text');
+        
+        previewTitle.textContent = title;
+        
+        if (!content.trim()) {
+            previewText.innerHTML = '<span style="color:rgba(255,255,255,0.5)">Votre message apparaîtra ici...</span>';
+            return;
+        }
+        
+        // Convertir le formatage WhatsApp en HTML pour la prévisualisation
+        let html = escapeHtml(content);
+        
+        // Monospace (doit être traité en premier car il contient d'autres caractères)
+        html = html.replace(/```([^`]+)```/g, '<span class="wa-mono">$1</span>');
+        
+        // Gras
+        html = html.replace(/\*([^*]+)\*/g, '<span class="wa-bold">$1</span>');
+        
+        // Italique
+        html = html.replace(/_([^_]+)_/g, '<span class="wa-italic">$1</span>');
+        
+        // Barré
+        html = html.replace(/~([^~]+)~/g, '<span class="wa-strike">$1</span>');
+        
+        // Détecter les URLs
+        const urlMatch = content.match(/(https?:\/\/[^\s]+)/);
+        
+        // Rendre les URLs cliquables
+        html = html.replace(/(https?:\/\/[^\s<]+)/g, (url) => {
+            return `<a href="${url}" target="_blank" style="color:#71b9ff;text-decoration:underline">${url}</a>`;
+        });
+        
+        // Préserver les sauts de ligne
+        html = html.replace(/\n/g, '<br>');
+        
+        // Ajouter un placeholder pour l'aperçu du lien si activé
+        if (linkPreview && urlMatch) {
+            const firstUrl = urlMatch[1];
+            html += `<div id="link-preview-card" class="wa-link-preview-loading" style="margin-top:8px;border-left:3px solid #71b9ff;padding:8px 12px;background:rgba(0,0,0,0.2);border-radius:4px">
+                <div style="font-size:0.75rem;color:rgba(255,255,255,0.5)"><i class="fas fa-spinner fa-spin"></i> Chargement de l'aperçu...</div>
+            </div>`;
+            
+            // Récupérer les métadonnées réelles
+            fetchLinkPreview(firstUrl);
+        }
+        
+        previewText.innerHTML = html;
+    }
+
+    // Cache pour les aperçus de liens
+    const linkPreviewCache = new Map();
+    
+    async function fetchLinkPreview(url) {
+        // Vérifier le cache
+        if (linkPreviewCache.has(url)) {
+            renderLinkPreview(linkPreviewCache.get(url), url);
+            return;
+        }
+        
+        try {
+            const res = await authFetch(`/api/link-preview?url=${encodeURIComponent(url)}`);
+            const data = await res.json();
+            
+            if (data.success && data.preview) {
+                linkPreviewCache.set(url, data.preview);
+                renderLinkPreview(data.preview, url);
+            } else {
+                // Afficher un aperçu basique si échec
+                renderLinkPreview(null, url);
+            }
+        } catch (e) {
+            renderLinkPreview(null, url);
+        }
+    }
+    
+    function renderLinkPreview(preview, url) {
+        const card = document.getElementById('link-preview-card');
+        if (!card) return;
+        
+        try {
+            const urlObj = new URL(url);
+            const domain = urlObj.hostname.replace('www.', '');
+            
+            if (preview && (preview.title || preview.description)) {
+                let cardHtml = `<div class="wa-link-preview" style="margin-top:8px;border-radius:8px;overflow:hidden;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1)">`;
+                
+                // Image si disponible
+                if (preview.image) {
+                    cardHtml += `<div style="background-image:url('${escapeHtml(preview.image)}');background-size:cover;background-position:center;height:120px"></div>`;
+                }
+                
+                cardHtml += `<div style="padding:10px">
+                    <div style="font-size:0.7rem;color:#71b9ff;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">${escapeHtml(preview.siteName || domain)}</div>`;
+                
+                if (preview.title) {
+                    cardHtml += `<div style="font-size:0.9rem;color:#fff;font-weight:500;line-height:1.3">${escapeHtml(preview.title)}</div>`;
+                }
+                
+                if (preview.description) {
+                    const shortDesc = preview.description.length > 100 ? preview.description.substring(0, 100) + '...' : preview.description;
+                    cardHtml += `<div style="font-size:0.75rem;color:rgba(255,255,255,0.6);margin-top:4px;line-height:1.4">${escapeHtml(shortDesc)}</div>`;
+                }
+                
+                cardHtml += `</div></div>`;
+                card.outerHTML = cardHtml;
+            } else {
+                // Aperçu basique sans métadonnées
+                card.innerHTML = `
+                    <div style="font-size:0.75rem;color:#71b9ff;margin-bottom:2px">${domain}</div>
+                    <div style="font-size:0.8rem;color:#fff;font-weight:500">${escapeHtml(title) || domain}</div>
+                    <div style="font-size:0.7rem;color:rgba(255,255,255,0.6);margin-top:2px">${escapeHtml(url.substring(0, 50))}${url.length > 50 ? '...' : ''}</div>
+                `;
+                card.classList.remove('wa-link-preview-loading');
+            }
+        } catch (e) {
+            card.innerHTML = `<div style="font-size:0.75rem;color:rgba(255,255,255,0.5)">Aperçu non disponible</div>`;
+        }
+    }
+
+    function resetAnnouncementForm() {
+        editingAnnouncementId = null;
+        selectedAnnouncementGroups = [];
+        document.getElementById('announcement-edit-id').value = '';
+        document.getElementById('announcement-title-input').value = '';
+        document.getElementById('announcement-content-input').value = '';
+        document.getElementById('announcement-link-preview').checked = true;
+        document.getElementById('announcement-form-title').textContent = 'Nouvelle annonce';
+        document.getElementById('btn-reset-announcement').style.display = 'none';
+        renderAnnouncementGroupsList();
+        updateAnnouncementPreview();
+    }
+
+    async function editAnnouncement(id) {
+        try {
+            const res = await authFetch(`/api/announcements/${id}`);
+            const data = await res.json();
+            if (data.success) {
+                editingAnnouncementId = id;
+                selectedAnnouncementGroups = data.announcement.groups || [];
+                document.getElementById('announcement-edit-id').value = id;
+                document.getElementById('announcement-title-input').value = data.announcement.title || '';
+                document.getElementById('announcement-content-input').value = data.announcement.content || '';
+                document.getElementById('announcement-link-preview').checked = data.announcement.linkPreview !== false;
+                document.getElementById('announcement-form-title').textContent = 'Modifier l\'annonce';
+                document.getElementById('btn-reset-announcement').style.display = 'inline-flex';
+                renderAnnouncementGroupsList();
+                updateAnnouncementPreview();
+                // Scroll vers le formulaire
+                document.getElementById('page-announcements').scrollIntoView({ behavior: 'smooth' });
+            }
+        } catch (e) {
+            showToast('Erreur chargement annonce', 'error');
+        }
+    }
+
+    async function saveAnnouncement() {
+        const title = document.getElementById('announcement-title-input').value.trim();
+        const content = document.getElementById('announcement-content-input').value.trim();
+        const linkPreview = document.getElementById('announcement-link-preview').checked;
+
+        if (!content) {
+            showToast('Le contenu est requis', 'error');
+            return;
+        }
+
+        try {
+            const url = editingAnnouncementId ? `/api/announcements/${editingAnnouncementId}` : '/api/announcements';
+            const method = editingAnnouncementId ? 'PUT' : 'POST';
+            const res = await authFetch(url, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title, content, groups: selectedAnnouncementGroups, linkPreview })
+            });
+            const data = await res.json();
+            if (data.success) {
+                showToast('Annonce enregistrée', 'success');
+                resetAnnouncementForm();
+                loadAnnouncements();
+            } else {
+                showToast(data.message || 'Erreur', 'error');
+            }
+        } catch (e) {
+            showToast('Erreur réseau', 'error');
+        }
+    }
+
+    async function saveAndPublishAnnouncement() {
+        const title = document.getElementById('announcement-title-input').value.trim();
+        const content = document.getElementById('announcement-content-input').value.trim();
+        const linkPreview = document.getElementById('announcement-link-preview').checked;
+
+        if (!content) {
+            showToast('Le contenu est requis', 'error');
+            return;
+        }
+
+        if (selectedAnnouncementGroups.length === 0) {
+            showToast('Sélectionnez au moins un groupe', 'error');
+            return;
+        }
+
+        try {
+            // D'abord sauvegarder
+            let announcementId = editingAnnouncementId;
+            
+            if (!announcementId) {
+                const res = await authFetch('/api/announcements', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title, content, groups: selectedAnnouncementGroups, linkPreview })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    announcementId = data.announcement.id;
+                } else {
+                    showToast(data.message || 'Erreur', 'error');
+                    return;
+                }
+            } else {
+                const res = await authFetch(`/api/announcements/${announcementId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title, content, groups: selectedAnnouncementGroups, linkPreview })
+                });
+            }
+
+            // Puis publier
+            const res = await authFetch(`/api/announcements/${announcementId}/publish`, { method: 'POST' });
+            const data = await res.json();
+            if (data.success) {
+                showToast(`Publication en cours dans ${data.groupsCount} groupe(s)`, 'success');
+                resetAnnouncementForm();
+                loadAnnouncements();
+            } else {
+                showToast(data.message || 'Erreur', 'error');
+            }
+        } catch (e) {
+            showToast('Erreur réseau', 'error');
+        }
+    }
+
+    async function publishAnnouncement(id) {
+        if (!confirm('Publier cette annonce dans les groupes sélectionnés ?')) return;
+        try {
+            const res = await authFetch(`/api/announcements/${id}/publish`, { method: 'POST' });
+            const data = await res.json();
+            if (data.success) {
+                showToast(`Publication en cours dans ${data.groupsCount} groupe(s)`, 'success');
+                loadAnnouncements();
+            } else {
+                showToast(data.message || 'Erreur', 'error');
+            }
+        } catch (e) {
+            showToast('Erreur réseau', 'error');
+        }
+    }
+
+    async function duplicateAnnouncement(id) {
+        try {
+            const res = await authFetch(`/api/announcements/${id}/duplicate`, { method: 'POST' });
+            const data = await res.json();
+            if (data.success) {
+                showToast('Annonce dupliquée', 'success');
+                loadAnnouncements();
+            } else {
+                showToast(data.message || 'Erreur', 'error');
+            }
+        } catch (e) {
+            showToast('Erreur réseau', 'error');
+        }
+    }
+
+    async function deleteAnnouncement(id) {
+        if (!confirm('Supprimer cette annonce ?')) return;
+        try {
+            const res = await authFetch(`/api/announcements/${id}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (data.success) {
+                showToast('Annonce supprimée', 'success');
+                if (editingAnnouncementId === id) {
+                    resetAnnouncementForm();
+                }
+                loadAnnouncements();
+            } else {
+                showToast(data.message || 'Erreur', 'error');
+            }
+        } catch (e) {
+            showToast('Erreur réseau', 'error');
+        }
+    }
     </script>
 
     <!-- Stat Modal -->
