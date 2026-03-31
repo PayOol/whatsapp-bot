@@ -163,7 +163,7 @@
         }
 
         [data-theme="light"] .mobile-header {
-            background: rgba(255,255,255,0.9);
+            background: var(--bg-surface);
             border-bottom: 1px solid var(--border);
         }
 
@@ -306,33 +306,33 @@
 
         .sidebar-nav{
             flex:1;
-            padding:16px 12px;
+            padding:10px 8px;
             overflow-y:auto;
             scrollbar-width:none;
         }
         .sidebar-nav::-webkit-scrollbar{display:none}
 
-        .nav-group{margin-bottom:24px}
+        .nav-group{margin-bottom:12px}
         .nav-group-label{
             font-size:0.65rem;
             font-weight:700;
             color:var(--text-muted);
             text-transform:uppercase;
             letter-spacing:1.2px;
-            padding:0 16px;
-            margin-bottom:8px;
+            padding:0 12px;
+            margin-bottom:4px;
         }
 
         .nav-link{
             display:flex;
             align-items:center;
-            gap:14px;
-            padding:11px 16px;
+            gap:10px;
+            padding:8px 12px;
             border-radius:var(--radius-md);
             cursor:pointer;
             transition:all var(--transition-fast);
             color:var(--text-secondary);
-            margin-bottom:2px;
+            margin-bottom:1px;
             position:relative;
             user-select:none;
             border:1px solid transparent;
@@ -1616,6 +1616,15 @@
             .page-title{font-size:1.4rem}
             .toast{min-width:280px;max-width:calc(100vw - 48px)}
             .toast-container{right:12px;top:calc(var(--header-height) + 12px);left:12px}
+            .sidebar-nav{padding:8px 6px}
+            .nav-group{margin-bottom:8px}
+            .nav-group-label{padding:0 10px;margin-bottom:3px;font-size:0.6rem}
+            .nav-link{padding:6px 10px;gap:8px}
+            .nav-link .nav-icon{width:18px;height:18px;font-size:1rem}
+            .nav-link .nav-label{font-size:0.85rem}
+            .sidebar-brand{padding:16px 16px 12px}
+            .brand-logo{width:40px;height:40px;font-size:20px}
+            .sidebar-footer{padding:10px}
         }
 
         @media(max-width:480px){
@@ -1766,7 +1775,7 @@
     <div class="mobile-header">
         <div class="mobile-brand">
             <div class="brand-logo"><svg width="28" height="28" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="16" r="15" fill="#25D366"/><path d="M16 6c-5.523 0-10 4.477-10 10 0 1.767.46 3.427 1.265 4.874L6 26l5.247-1.35A9.955 9.955 0 0016 26c5.523 0 10-4.477 10-10S21.523 6 16 6zm4.7 13.5c-.25.5-1.1.8-1.8.8-.5 0-1.1-.1-1.9-.5-2.2-1-3.5-3.2-3.6-3.4-.1-.2-.8-1.1-.8-2.1s.5-1.5.7-1.7c.2-.2.4-.3.6-.3h.5c.2 0 .4 0 .5.4.2.5.7 1.7.7 1.8.1.1.1.3 0 .4-.1.2-.1.3-.2.4l-.3.4c-.1.1-.2.3-.1.5.1.2.5.8 1.1 1.4.8.7 1.4 1 1.6 1.1.2.1.4.1.5-.1.1-.2.5-.6.7-.8.2-.2.3-.2.5-.1l1.6.8c.2.1.4.2.5.3.1.2.1.9-.2 1.4z" fill="white"/></svg></div>
-            <h2>WhatsApp Bot</h2>
+            <h2>WhatsApp Bot<span class="beta-badge" id="beta-badge-mobile">Beta</span></h2>
         </div>
         <div class="hamburger" onclick="toggleSidebar()">
             <span></span><span></span><span></span>
@@ -1804,14 +1813,10 @@
                         <span class="nav-icon"><i class="fas fa-chart-line"></i></span>
                         <span class="nav-label">Tableau de bord</span>
                     </div>
-                    <div class="nav-link" data-page="announcements" onclick="navigateTo('announcements',this)">
-                        <span class="nav-icon"><i class="fas fa-bullhorn"></i></span>
-                        <span class="nav-label">Annonces</span>
-                    </div>
-                    <div class="nav-link" data-page="config" onclick="navigateTo('config',this)">
-                        <span class="nav-icon"><i class="fas fa-sliders-h"></i></span>
-                        <span class="nav-label">Configuration</span>
-                    </div>
+                </div>
+
+                <div class="nav-group">
+                    <div class="nav-group-label">Gestion</div>
                     <div class="nav-link" data-page="groups" onclick="navigateTo('groups',this)">
                         <span class="nav-icon"><i class="fas fa-users"></i></span>
                         <span class="nav-label">Groupes</span>
@@ -1820,22 +1825,21 @@
                         <span class="nav-icon"><i class="fas fa-shield-alt"></i></span>
                         <span class="nav-label">Utilisateurs</span>
                     </div>
-                    <div class="nav-link" data-page="menus" onclick="navigateTo('menus',this)">
-                        <span class="nav-icon"><i class="fas fa-cog"></i></span>
-                        <span class="nav-label">Menus</span>
-                    </div>
-                    <div class="nav-link" onclick="showSuggestionModal()">
-                        <span class="nav-icon"><i class="fas fa-lightbulb"></i></span>
-                        <span class="nav-label">Envoyer un commentaire</span>
+                    <div class="nav-link" data-page="announcements" onclick="navigateTo('announcements',this)">
+                        <span class="nav-icon"><i class="fas fa-bullhorn"></i></span>
+                        <span class="nav-label">Annonces</span>
                     </div>
                 </div>
 
                 <div class="nav-group">
-                    <div class="nav-group-label">Surveillance</div>
-                    <div class="nav-link" data-page="logs" onclick="navigateTo('logs',this)">
-                        <span class="nav-icon"><i class="fas fa-clipboard-list"></i></span>
-                        <span class="nav-label">Logs</span>
-                        <span class="nav-badge" id="logs-count" style="display:none">0</span>
+                    <div class="nav-group-label">Configuration</div>
+                    <div class="nav-link" data-page="config" onclick="navigateTo('config',this)">
+                        <span class="nav-icon"><i class="fas fa-sliders-h"></i></span>
+                        <span class="nav-label">Configuration</span>
+                    </div>
+                    <div class="nav-link" data-page="menus" onclick="navigateTo('menus',this)">
+                        <span class="nav-icon"><i class="fas fa-cog"></i></span>
+                        <span class="nav-label">Menus</span>
                     </div>
                 </div>
 
@@ -1844,6 +1848,14 @@
                     <div class="nav-link" data-page="admin" onclick="navigateTo('admin',this)">
                         <span class="nav-icon"><i class="fas fa-user-shield"></i></span>
                         <span class="nav-label">Admin</span>
+                    </div>
+                </div>
+
+                <div class="nav-group">
+                    <div class="nav-group-label">Aide</div>
+                    <div class="nav-link" onclick="showSuggestionModal()">
+                        <span class="nav-icon"><i class="fas fa-lightbulb"></i></span>
+                        <span class="nav-label">Envoyer un commentaire</span>
                     </div>
                 </div>
             </nav>
@@ -2007,7 +2019,7 @@
                             </button>
                         </div>
                         <div class="card-body" style="padding:0">
-                            <div class="logs-box" id="logs-container" style="max-height:300px">
+                            <div class="logs-box" id="logs-container" style="max-height:500px">
                                 <div class="log-empty">
                                     <div class="log-empty-icon"><i class="fas fa-clipboard-list"></i></div>
                                     <p>Chargement des logs…</p>
@@ -2399,36 +2411,6 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                                         <li>Partager un lien autorisé</li>
                                         <li>Appeler un webhook externe</li>
                                     </ul>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- ═══════════ LOGS ═══════════ -->
-                <div id="page-logs" class="page">
-                    <div class="page-header">
-                        <div class="page-header-text">
-                            <h2 class="page-title">Journal d'activité</h2>
-                            <p class="page-subtitle">Historique détaillé de toutes les actions du bot</p>
-                        </div>
-                        <button class="btn btn-ghost btn-sm" onclick="refreshLogs()">
-                            Rafraichir
-                        </button>
-                    </div>
-
-                    <div class="card">
-                        <div class="card-header">
-                            <h3 class="card-title">
-                                <span class="card-title-icon"><i class="fas fa-history"></i></span>
-                                Tous les evenements
-                            </h3>
-                        </div>
-                        <div class="card-body" style="padding:0">
-                            <div class="logs-box" id="logs-page-container" style="max-height:640px">
-                                <div class="log-empty">
-                                    <div class="log-empty-icon"><i class="fas fa-clipboard-list"></i></div>
-                                    <p>Chargement des logs…</p>
                                 </div>
                             </div>
                         </div>
@@ -3201,12 +3183,10 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             const logs = data.logs || data;
 
             const c1 = document.getElementById('logs-container');
-            const c2 = document.getElementById('logs-page-container');
 
             if (!logs.length) {
                 const empty = `<div class="log-empty"><div class="log-empty-icon"><i class="fas fa-clipboard-list"></i></div><p>Aucun événement enregistré</p></div>`;
                 c1.innerHTML = empty;
-                c2.innerHTML = empty;
                 return;
             }
 
@@ -3229,14 +3209,6 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             }).join('');
 
             c1.innerHTML = html;
-            c2.innerHTML = html;
-
-            // Update badge
-            const badge = document.getElementById('logs-count');
-            if (logs.length > 0) {
-                badge.style.display = 'inline';
-                badge.textContent = logs.length;
-            }
         } catch (e) {
             console.error('Logs error:', e);
         }
@@ -4380,6 +4352,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         .then(data => {
             if (data.betaMode) {
                 document.getElementById('beta-badge').classList.add('show');
+                document.getElementById('beta-badge-mobile').classList.add('show');
             }
         });
 
