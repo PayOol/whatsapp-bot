@@ -1626,6 +1626,42 @@
     <!-- Toast Container -->
     <div class="toast-container" id="toast-container"></div>
 
+    <!-- Suggestion Modal -->
+    <div class="modal-overlay" id="suggestion-modal" onclick="closeSuggestionModal()">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3><i class="fas fa-lightbulb" style="color:var(--warning);margin-right:8px"></i>Envoyer un commentaire</h3>
+                <button class="modal-close" onclick="closeSuggestionModal()">×</button>
+            </div>
+            <div id="suggestion-modal-content" style="padding:20px">
+                <div style="margin-bottom:16px">
+                    <p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:16px">
+                        Partagez vos idées, suggestions d'amélioration ou signalez des problèmes. Votre feedback nous aide à améliorer le bot.
+                    </p>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Type de commentaire</label>
+                    <select class="form-input form-select" id="suggestion-type">
+                        <option value="suggestion"><i class="fas fa-lightbulb"></i> Suggestion d'amélioration</option>
+                        <option value="feature"><i class="fas fa-star"></i> Nouvelle fonctionnalité</option>
+                        <option value="bug"><i class="fas fa-bug"></i> Signalement de bug</option>
+                        <option value="other"><i class="fas fa-comment"></i> Autre</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Votre commentaire</label>
+                    <textarea class="form-input" id="suggestion-text" placeholder="Décrivez votre suggestion, l'amélioration souhaitée ou le problème rencontré..." style="min-height:120px"></textarea>
+                </div>
+                <div style="display:flex;gap:10px;justify-content:flex-end">
+                    <button class="btn btn-secondary" onclick="closeSuggestionModal()">Annuler</button>
+                    <button class="btn btn-primary" onclick="submitSuggestion()">
+                        <i class="fas fa-paper-plane"></i> Envoyer
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- QR Code Modal -->
     <div class="qr-modal" id="qr-modal" style="display:none" onclick="closeQRModal()">
         <div class="qr-modal-content" onclick="event.stopPropagation()">
@@ -1710,6 +1746,10 @@
                     <div class="nav-link" data-page="menus" onclick="navigateTo('menus',this)">
                         <span class="nav-icon"><i class="fas fa-cog"></i></span>
                         <span class="nav-label">Menus</span>
+                    </div>
+                    <div class="nav-link" onclick="showSuggestionModal()">
+                        <span class="nav-icon"><i class="fas fa-lightbulb"></i></span>
+                        <span class="nav-label">Envoyer un commentaire</span>
                     </div>
                 </div>
 
@@ -4040,6 +4080,46 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
     
     function closeQRModal() {
         document.getElementById('qr-modal').style.display = 'none';
+    }
+    
+    // === SUGGESTIONS ===
+    function showSuggestionModal() {
+        document.getElementById('suggestion-modal').classList.add('active');
+        document.getElementById('suggestion-text').value = '';
+        document.getElementById('suggestion-type').value = 'suggestion';
+    }
+    
+    function closeSuggestionModal() {
+        document.getElementById('suggestion-modal').classList.remove('active');
+    }
+    
+    async function submitSuggestion() {
+        const type = document.getElementById('suggestion-type').value;
+        const text = document.getElementById('suggestion-text').value.trim();
+        
+        if (!text) {
+            showToast('Veuillez entrer votre commentaire', 'error');
+            return;
+        }
+        
+        try {
+            const res = await authFetch('/api/suggestions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type, text })
+            });
+            
+            const data = await res.json();
+            
+            if (data.success) {
+                showToast('Commentaire envoyé avec succès !', 'success');
+                closeSuggestionModal();
+            } else {
+                showToast(data.message || 'Erreur lors de l\'envoi', 'error');
+            }
+        } catch (e) {
+            showToast('Erreur lors de l\'envoi du commentaire', 'error');
+        }
     }
     
     async function showSessionQR(sessionId) {

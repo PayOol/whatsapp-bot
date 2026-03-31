@@ -622,8 +622,76 @@ const DATA_DIR = path.join(__dirname, 'data');
 const AUTH_USERS_FILE = path.join(DATA_DIR, 'users_auth.json');
 const AUTH_ADMIN_FILE = path.join(DATA_DIR, 'admin_auth.json');
 const AUTH_SESSIONS_FILE = path.join(DATA_DIR, 'user_sessions.json');
+const SUGGESTIONS_FILE = path.join(DATA_DIR, 'suggestions.json');
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 const TOKEN_EXPIRY_HOURS = 24;
+
+// ============================================================
+// 💡 GESTIONNAIRE DE SUGGESTIONS
+// ============================================================
+
+class SuggestionsManager {
+    constructor() {
+        this.suggestions = [];
+        this.load();
+    }
+    
+    load() {
+        try {
+            if (fs.existsSync(SUGGESTIONS_FILE)) {
+                this.suggestions = JSON.parse(fs.readFileSync(SUGGESTIONS_FILE, 'utf8'));
+            }
+        } catch (e) {
+            console.error('Erreur chargement suggestions:', e);
+            this.suggestions = [];
+        }
+    }
+    
+    save() {
+        try {
+            if (!fs.existsSync(DATA_DIR)) {
+                fs.mkdirSync(DATA_DIR, { recursive: true });
+            }
+            fs.writeFileSync(SUGGESTIONS_FILE, JSON.stringify(this.suggestions, null, 2));
+        } catch (e) {
+            console.error('Erreur sauvegarde suggestions:', e);
+        }
+    }
+    
+    addSuggestion(username, type, text) {
+        const suggestion = {
+            id: crypto.randomBytes(8).toString('hex'),
+            username,
+            type, // suggestion, feature, bug, other
+            text,
+            createdAt: Date.now(),
+            read: false
+        };
+        this.suggestions.push(suggestion);
+        this.save();
+        return suggestion;
+    }
+    
+    getAllSuggestions() {
+        return this.suggestions.sort((a, b) => b.createdAt - a.createdAt);
+    }
+    
+    deleteSuggestion(id) {
+        const index = this.suggestions.findIndex(s => s.id === id);
+        if (index !== -1) {
+            this.suggestions.splice(index, 1);
+            this.save();
+            return true;
+        }
+        return false;
+    }
+    
+    getSuggestionsCount() {
+        return this.suggestions.length;
+    }
+}
+
+const suggestionsManager = new SuggestionsManager();
 
 class AuthManager {
     constructor() {
@@ -3853,6 +3921,83 @@ app.put('/api/auth/users/:username/admin', requireAuth, (req, res) => {
         res.json(result);
     } else {
         res.status(404).json(result);
+    }
+});
+
+// ============ API SUGGESTIONS ============
+
+// Envoyer une suggestion (tous les utilisateurs connectés)
+app.post('/api/suggestions', requireAuth, (req, res) => {
+    const { type, text } = req.body;
+    const username = req.user.username;
+    
+    if (!text || !text.trim()) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Le commentaire ne peut pas être vide' 
+        });
+    }
+    
+    if (text.length > 2000) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Le commentaire est trop long (max 2000 caractères)' 
+        });
+    }
+    
+    const suggestion = suggestionsManager.addSuggestion(username, type || 'other', text.trim());
+    addLog(`[SUGGESTION] Nouveau commentaire de ${username}: ${type}`);
+    
+    res.json({ 
+        success: true, 
+        message: 'Commentaire envoyé avec succès',
+        suggestion: {
+            id: suggestion.id,
+            type: suggestion.type,
+            createdAt: suggestion.createdAt
+        }
+    });
+});
+
+// Lister les suggestions (admin uniquement)
+app.get('/api/suggestions', requireAuth, (req, res) => {
+    if (!req.user.isAdmin) {
+        return res.status(403).json({ 
+            success: false, 
+            message: 'Accès réservé aux administrateurs' 
+        });
+    }
+    
+    const suggestions = suggestionsManager.getAllSuggestions();
+    res.json({ 
+        success: true, 
+        suggestions: suggestions.map(s => ({
+            id: s.id,
+            username: s.username,
+            type: s.type,
+            text: s.text,
+            createdAt: s.createdAt,
+            read: s.read
+        }))
+    });
+});
+
+// Supprimer une suggestion (admin uniquement)
+app.delete('/api/suggestions/:id', requireAuth, (req, res) => {
+    if (!req.user.isAdmin) {
+        return res.status(403).json({ 
+            success: false, 
+            message: 'Accès réservé aux administrateurs' 
+        });
+    }
+    
+    const deleted = suggestionsManager.deleteSuggestion(req.params.id);
+    
+    if (deleted) {
+        addLog(`[SUGGESTION] Supprimée: ${req.params.id}`);
+        res.json({ success: true, message: 'Suggestion supprimée' });
+    } else {
+        res.status(404).json({ success: false, message: 'Suggestion non trouvée' });
     }
 });
 

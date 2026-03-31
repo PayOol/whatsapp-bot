@@ -349,6 +349,122 @@
             transform: translateX(24px);
         }
 
+        /* Notification Bell */
+        .notification-bell {
+            position: relative;
+            cursor: pointer;
+            padding: 8px;
+            border-radius: 8px;
+            transition: background 0.2s;
+        }
+        .notification-bell:hover {
+            background: var(--bg-card-hover);
+        }
+        .notification-bell i {
+            font-size: 1.25rem;
+            color: var(--text-secondary);
+        }
+        .notification-badge {
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            min-width: 18px;
+            height: 18px;
+            background: var(--danger);
+            color: white;
+            font-size: 0.65rem;
+            font-weight: 600;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 4px;
+        }
+        .notification-badge:empty,
+        .notification-badge[data-count="0"] {
+            display: none;
+        }
+
+        /* Notification Dropdown */
+        .notification-dropdown {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            margin-top: 8px;
+            width: 380px;
+            max-width: 90vw;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            box-shadow: var(--shadow-lg);
+            z-index: 100;
+            display: none;
+        }
+        .notification-dropdown.show {
+            display: block;
+        }
+        .notification-dropdown-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+        .notification-dropdown-header h4 {
+            font-size: 0.95rem;
+            font-weight: 600;
+        }
+        .notification-dropdown-body {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .notification-item {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+        }
+        .notification-item:last-child {
+            border-bottom: none;
+        }
+        .notification-item-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+        .notification-item-type {
+            width: 24px;
+            height: 24px;
+            background: rgba(99, 102, 241, 0.2);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--primary);
+            font-size: 0.75rem;
+        }
+        .notification-item-meta {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+        }
+        .notification-item-text {
+            font-size: 0.85rem;
+            color: var(--text-primary);
+            line-height: 1.4;
+        }
+        .notification-item-actions {
+            margin-top: 8px;
+        }
+        .notification-empty {
+            padding: 40px 20px;
+            text-align: center;
+            color: var(--text-secondary);
+        }
+        .notification-empty i {
+            font-size: 2rem;
+            margin-bottom: 12px;
+            opacity: 0.5;
+        }
+
         /* ===== RESPONSIVE DESIGN ===== */
 
         /* Tablet (768px and below) */
@@ -606,6 +722,24 @@
                 </div>
             </div>
             <div class="admin-user">
+                <div style="position:relative">
+                    <div class="notification-bell" onclick="toggleNotifications(event)">
+                        <i class="fas fa-bell"></i>
+                        <span class="notification-badge" id="notification-badge" data-count="0">0</span>
+                    </div>
+                    <div class="notification-dropdown" id="notification-dropdown">
+                        <div class="notification-dropdown-header">
+                            <h4>Suggestions</h4>
+                            <button class="btn btn-sm" onclick="loadSuggestions()"><i class="fas fa-sync"></i></button>
+                        </div>
+                        <div class="notification-dropdown-body" id="notification-list">
+                            <div class="notification-empty">
+                                <i class="fas fa-inbox"></i>
+                                <p>Aucune suggestion</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
                 <span id="admin-username">Admin</span>
                 <div class="user-avatar" id="admin-avatar">A</div>
                 <button class="btn btn-secondary btn-sm" onclick="handleLogout()">
@@ -1110,8 +1244,96 @@
             });
         }
         
+        // === SUGGESTIONS ===
+        function toggleNotifications(e) {
+            e.stopPropagation();
+            var dropdown = document.getElementById('notification-dropdown');
+            dropdown.classList.toggle('show');
+            
+            if (dropdown.classList.contains('show')) {
+                document.addEventListener('click', closeNotificationsOnClickOutside);
+            } else {
+                document.removeEventListener('click', closeNotificationsOnClickOutside);
+            }
+        }
+        
+        function closeNotificationsOnClickOutside(e) {
+            var dropdown = document.getElementById('notification-dropdown');
+            if (!e.target.closest('.notification-bell') && !e.target.closest('.notification-dropdown')) {
+                dropdown.classList.remove('show');
+                document.removeEventListener('click', closeNotificationsOnClickOutside);
+            }
+        }
+        
+        function loadSuggestions() {
+            fetch('/api/suggestions', { credentials: 'same-origin' })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    var suggestions = data.suggestions || [];
+                    
+                    // Update badge
+                    var badge = document.getElementById('notification-badge');
+                    badge.textContent = suggestions.length;
+                    badge.setAttribute('data-count', suggestions.length);
+                    
+                    var container = document.getElementById('notification-list');
+                    
+                    if (suggestions.length === 0) {
+                        container.innerHTML = '<div class="notification-empty"><i class="fas fa-inbox"></i><p>Aucune suggestion</p></div>';
+                        return;
+                    }
+                    
+                    var typeIcons = { suggestion: 'fa-lightbulb', feature: 'fa-star', bug: 'fa-bug', other: 'fa-comment' };
+                    var typeLabels = { suggestion: 'Suggestion', feature: 'Fonctionnalité', bug: 'Bug', other: 'Autre' };
+                    
+                    var html = '';
+                    for (var i = 0; i < suggestions.length; i++) {
+                        var s = suggestions[i];
+                        html += '<div class="notification-item">' +
+                            '<div class="notification-item-header">' +
+                            '<div class="notification-item-type"><i class="fas ' + (typeIcons[s.type] || 'fa-comment') + '"></i></div>' +
+                            '<span class="badge badge-primary">' + (typeLabels[s.type] || 'Autre') + '</span>' +
+                            '<span class="notification-item-meta">' + escapeHtml(s.username) + ' • ' + new Date(s.createdAt).toLocaleString() + '</span>' +
+                            '</div>' +
+                            '<p class="notification-item-text">' + escapeHtml(s.text) + '</p>' +
+                            '<div class="notification-item-actions">' +
+                            '<button class="btn btn-danger btn-sm" onclick="deleteSuggestion(\'' + s.id + '\')"><i class="fas fa-trash"></i> Supprimer</button>' +
+                            '</div>' +
+                            '</div>';
+                    }
+                    container.innerHTML = html;
+                }
+            })
+            .catch(function(e) {
+                document.getElementById('notification-list').innerHTML = '<div class="notification-empty"><p>Erreur chargement</p></div>';
+            });
+        }
+        
+        function deleteSuggestion(id) {
+            if (!confirm('Supprimer cette suggestion ?')) return;
+            
+            fetch('/api/suggestions/' + id, {
+                method: 'DELETE',
+                credentials: 'same-origin'
+            })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    showToast('Suggestion supprimée', 'success');
+                    loadSuggestions();
+                } else {
+                    showToast(data.message || 'Erreur', 'error');
+                }
+            })
+            .catch(function(e) {
+                showToast('Erreur', 'error');
+            });
+        }
+        
         checkAuth();
         loadBetaStatus();
+        loadSuggestions();
     </script>
 </body>
 </html>
