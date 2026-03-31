@@ -5196,6 +5196,46 @@ app.get('/api/announcements', requireAuth, (req, res) => {
     });
 });
 
+// Obtenir les groupes où le bot est admin (pour la sélection lors de la création d'annonce)
+// IMPORTANT: Cette route doit être AVANT /api/announcements/:id
+app.get('/api/announcements/groups', requireAuth, async (req, res) => {
+    try {
+        const sessionId = req.query.sessionId || sessionManager.activeSessionId;
+        const sessionClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
+        
+        if (!sessionClient || !sessionClient.info) {
+            addLog('[ANNOUNCEMENTS] /api/announcements/groups: Session non connectée');
+            return res.json({ success: true, groups: [], message: 'Session non connectée' });
+        }
+        
+        const chats = await sessionClient.getChats();
+        const botId = sessionClient.info.wid._serialized;
+        const allGroups = chats.filter(c => c.isGroup);
+        const adminGroups = [];
+        
+        addLog(`[ANNOUNCEMENTS] Vérification de ${allGroups.length} groupes pour le bot ${botId}`);
+        
+        for (const chat of allGroups) {
+            const botParticipant = chat.participants?.find(p => p.id._serialized === botId);
+            const isAdmin = botParticipant?.isAdmin || botParticipant?.isSuperAdmin || false;
+            addLog(`[ANNOUNCEMENTS] Groupe "${chat.name}": botParticipant=${!!botParticipant}, isAdmin=${isAdmin}`);
+            if (isAdmin) {
+                adminGroups.push({
+                    id: chat.id._serialized,
+                    name: chat.name,
+                    participants: chat.participants?.length || 0
+                });
+            }
+        }
+        
+        addLog(`[ANNOUNCEMENTS] /api/announcements/groups: ${adminGroups.length} groupes admin trouvés`);
+        res.json({ success: true, groups: adminGroups, total: adminGroups.length });
+    } catch (error) {
+        addLog(`[ANNOUNCEMENTS] Erreur /api/announcements/groups: ${error.message}`);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
 // Détails d'une annonce
 app.get('/api/announcements/:id', requireAuth, (req, res) => {
     const announcement = announcementsManager.getAnnouncement(req.params.id);
@@ -5416,45 +5456,6 @@ app.get('/api/link-preview', requireAuth, async (req, res) => {
         });
         
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-});
-
-// Obtenir les groupes où le bot est admin (pour la sélection lors de la création d'annonce)
-app.get('/api/announcements/groups', requireAuth, async (req, res) => {
-    try {
-        const sessionId = req.query.sessionId || sessionManager.activeSessionId;
-        const sessionClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
-        
-        if (!sessionClient || !sessionClient.info) {
-            addLog('[ANNOUNCEMENTS] /api/announcements/groups: Session non connectée');
-            return res.json({ success: true, groups: [], message: 'Session non connectée' });
-        }
-        
-        const chats = await sessionClient.getChats();
-        const botId = sessionClient.info.wid._serialized;
-        const allGroups = chats.filter(c => c.isGroup);
-        const adminGroups = [];
-        
-        addLog(`[ANNOUNCEMENTS] Vérification de ${allGroups.length} groupes pour le bot ${botId}`);
-        
-        for (const chat of allGroups) {
-            const botParticipant = chat.participants?.find(p => p.id._serialized === botId);
-            const isAdmin = botParticipant?.isAdmin || botParticipant?.isSuperAdmin || false;
-            addLog(`[ANNOUNCEMENTS] Groupe "${chat.name}": botParticipant=${!!botParticipant}, isAdmin=${isAdmin}`);
-            if (isAdmin) {
-                adminGroups.push({
-                    id: chat.id._serialized,
-                    name: chat.name,
-                    participants: chat.participants?.length || 0
-                });
-            }
-        }
-        
-        addLog(`[ANNOUNCEMENTS] /api/announcements/groups: ${adminGroups.length} groupes admin trouvés`);
-        res.json({ success: true, groups: adminGroups, total: adminGroups.length });
-    } catch (error) {
-        addLog(`[ANNOUNCEMENTS] Erreur /api/announcements/groups: ${error.message}`);
         res.status(500).json({ success: false, message: error.message });
     }
 });
