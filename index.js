@@ -1591,7 +1591,11 @@ class SessionDataManager {
         }
         
         if (this.userExceptions.excludedAdmins) {
-            const p = participants.find(p => p.id._serialized === userId);
+            // Matcher par numéro de téléphone car WhatsApp utilise différents formats d'ID (@lid, @c.us)
+            const p = participants.find(part => {
+                const partNumber = part.id._serialized?.split('@')[0];
+                return partNumber === userNumber || part.id._serialized === userId;
+            });
             if (p && (p.isAdmin || p.isSuperAdmin)) {
                 this.addLog(`[EXCLUDE] User ${userNumber} exclu car admin (isAdmin=${p.isAdmin}, isSuperAdmin=${p.isSuperAdmin})`);
                 return true;
@@ -2253,8 +2257,12 @@ function isUserExcludedFromLinks(userId, participants = []) {
     }
 
     if (USER_EXCEPTIONS.excludedAdmins) {
-        const p = participants.find(p => p.id._serialized === userId);
-        if (p && p.isAdmin) return true;
+        // Matcher par numéro de téléphone car WhatsApp utilise différents formats d'ID (@lid, @c.us)
+        const p = participants.find(part => {
+            const partNumber = part.id._serialized?.split('@')[0];
+            return partNumber === userNumber || part.id._serialized === userId;
+        });
+        if (p && (p.isAdmin || p.isSuperAdmin)) return true;
     }
     return false;
 }
