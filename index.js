@@ -1584,12 +1584,18 @@ class SessionDataManager {
         
         if (userException) {
             const hasLinkException = typeof userException === 'object' ? userException.linkException : true;
-            if (hasLinkException) return true;
+            if (hasLinkException) {
+                this.addLog(`[EXCLUDE] User ${userNumber} exclu via liste personnalisée`);
+                return true;
+            }
         }
         
         if (this.userExceptions.excludedAdmins) {
             const p = participants.find(p => p.id._serialized === userId);
-            if (p && p.isAdmin) return true;
+            if (p && (p.isAdmin || p.isSuperAdmin)) {
+                this.addLog(`[EXCLUDE] User ${userNumber} exclu car admin (isAdmin=${p.isAdmin}, isSuperAdmin=${p.isSuperAdmin})`);
+                return true;
+            }
         }
         return false;
     }
@@ -2938,6 +2944,12 @@ async function scanOldMessages(chat, limit = 100, sessionId = null) {
 
         let authorId = message.author || message.from;
         if (authorId.includes('@g.us')) continue;
+        
+        // Debug: vérifier si l'auteur est admin
+        const authorP = participants.find(p => p.id._serialized === authorId);
+        const isAuthorAdmin = authorP?.isAdmin || authorP?.isSuperAdmin || false;
+        log(`[SCAN] Message de ${authorId.split('@')[0]} - isAdmin: ${isAuthorAdmin}`);
+        
         if (sessionData && sessionData.isUserExcluded(authorId, participants)) continue;
         else if (!sessionData && isUserExcluded(authorId, participants)) continue;
 
