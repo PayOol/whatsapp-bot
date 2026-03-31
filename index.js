@@ -6,8 +6,43 @@ const express = require('express');
 const cookieParser = require('cookie-parser');
 const crypto = require('crypto');
 
+// ============================================================
+// 📁 FICHIERS DE STOCKAGE
+// ============================================================
+
+const DATA_DIR = path.join(__dirname, 'data');
+
 // Configuration globale pour le mode Beta
+const BETA_MODE_FILE = path.join(DATA_DIR, 'beta_mode.json');
 let betaMode = false;
+
+// Charger le mode Beta depuis le fichier
+function loadBetaMode() {
+    try {
+        if (fs.existsSync(BETA_MODE_FILE)) {
+            const data = JSON.parse(fs.readFileSync(BETA_MODE_FILE, 'utf8'));
+            betaMode = !!data.enabled;
+        }
+    } catch (e) {
+        console.error('Erreur chargement beta mode:', e);
+        betaMode = false;
+    }
+}
+
+// Sauvegarder le mode Beta dans le fichier
+function saveBetaMode() {
+    try {
+        if (!fs.existsSync(DATA_DIR)) {
+            fs.mkdirSync(DATA_DIR, { recursive: true });
+        }
+        fs.writeFileSync(BETA_MODE_FILE, JSON.stringify({ enabled: betaMode }, null, 2));
+    } catch (e) {
+        console.error('Erreur sauvegarde beta mode:', e);
+    }
+}
+
+// Charger le mode Beta au démarrage
+loadBetaMode();
 
 // ============================================================
 // 🧠 SYSTÈME DE COMPORTEMENT HUMAIN
@@ -608,12 +643,6 @@ let CONFIG = {
 
 Merci de respecter ces règles. Bonne discussion ! 🎉`
 };
-
-// ============================================================
-// 📁 FICHIERS DE STOCKAGE
-// ============================================================
-
-const DATA_DIR = path.join(__dirname, 'data');
 
 // ============================================================
 // 🔐 SYSTÈME D'AUTHENTIFICATION
@@ -3653,6 +3682,7 @@ app.post('/api/admin/beta-mode', requireAuth, (req, res) => {
     }
     const { enabled } = req.body;
     betaMode = !!enabled;
+    saveBetaMode();
     res.json({ success: true, betaMode: betaMode });
 });
 
