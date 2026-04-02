@@ -2947,6 +2947,10 @@ async function scanOldMessages(chat, limit = 100, sessionId = null) {
         let authorId = message.author || message.from;
         if (authorId.includes('@g.us')) continue;
         
+        // ✅ Autoriser directement les admins du groupe (détection dynamique)
+        const authorP = participants.find(p => p.id._serialized === authorId);
+        if (authorP?.isAdmin || authorP?.isSuperAdmin) continue;
+        
         if (sessionData && sessionData.isUserExcluded(authorId, participants)) continue;
         else if (!sessionData && isUserExcluded(authorId, participants)) continue;
 
@@ -3424,11 +3428,14 @@ async function handleMessage(client, message, sessionId) {
         let authorId = message.author || message.from;
         if (authorId.includes('@g.us')) return;
         
+        // ✅ Autoriser directement les admins du groupe (détection dynamique via senderP)
+        if (senderP?.isAdmin || senderP?.isSuperAdmin) return;
+        
         // Récupérer le vrai numéro de téléphone via le contact (car authorId peut être un @lid)
         const authorContact = await message.getContact();
         const authorNumber = authorContact?.number || authorId.split('@')[0];
         
-        // Utiliser le numéro réel pour l'exclusion (pas l'ID @lid)
+        // Vérifier les autres exceptions (utilisateurs whitelisted)
         if (sessionData.isUserExcluded(authorNumber, participants)) return;
 
         // ✅ Marquer comme lu
