@@ -635,6 +635,7 @@ let CONFIG = {
     CALL_SPAM_THRESHOLD: 4,
     CALL_SPAM_WINDOW_MIN: 10,
     CALL_BLOCK_DURATION_MIN: 30,
+    DELETE_STATUS_MENTIONS: true, // Supprimer automatiquement les notifications de statut dans les groupes
     WELCOME_MESSAGE: `👋 Bienvenue {mention} dans *{group}* !
 
 📜 *Règles importantes:*
@@ -3285,6 +3286,36 @@ async function handleMessage(client, message, sessionId) {
 
         const senderP = participants.find(p => p.id._serialized === senderId);
 
+        // ✅ Suppression automatique des notifications de statut (status mentions)
+        // Quand un utilisateur identifie un groupe dans son statut WhatsApp, une notification est envoyée dans le groupe
+        if (sessionData.config.DELETE_STATUS_MENTIONS) {
+            // Les messages de notification de statut ont un type spécifique
+            // Types possibles: 'status_mention', 'status', ou via le protocol message
+            const isStatusMention = message.type === 'status_mention' || 
+                                    message.type === 'status' ||
+                                    message.type === 'notification' ||
+                                    (message._data && message._data.type === 'status_mention') ||
+                                    (message._data && message._data.isStatusMention) ||
+                                    // Vérification via le body pour les messages système de statut
+                                    (message.body && message.body.includes('a ajouté ce groupe à son statut')) ||
+                                    (message.body && message.body.includes('mentioned this group in their status'));
+            
+            if (isStatusMention) {
+                const msgId = message.id._serialized || message.id.id;
+                if (!sessionData.isAlreadyProcessed(msgId)) {
+                    sessionData.markAsProcessed(msgId);
+                    sessionData.addLog(`[STATUS] Notification de statut détectée de ${senderId} dans ${chat.name}`);
+                    
+                    const wasDeleted = await deleteMessageHumanized(message);
+                    if (wasDeleted) {
+                        sessionData.stats.totalDeleted++;
+                        sessionData.addLog(`[STATUS] Notification de statut supprimée dans ${chat.name}`);
+                    }
+                }
+                return; // Ne pas continuer le traitement normal
+            }
+        }
+
         // ✅ Commande !scan
         if (messageText === '!scan') {
             if (senderP?.isAdmin) {
@@ -4454,7 +4485,8 @@ app.get('/api/config', requireAuth, (req, res) => {
         CALL_REJECT_ENABLED: config.CALL_REJECT_ENABLED,
         CALL_SPAM_THRESHOLD: config.CALL_SPAM_THRESHOLD,
         CALL_SPAM_WINDOW_MIN: config.CALL_SPAM_WINDOW_MIN,
-        CALL_BLOCK_DURATION_MIN: config.CALL_BLOCK_DURATION_MIN
+        CALL_BLOCK_DURATION_MIN: config.CALL_BLOCK_DURATION_MIN,
+        DELETE_STATUS_MENTIONS: config.DELETE_STATUS_MENTIONS
     });
 });
 
@@ -4479,6 +4511,7 @@ app.post('/api/config', requireAuth, (req, res) => {
         if (nc.CALL_SPAM_THRESHOLD !== undefined) config.CALL_SPAM_THRESHOLD = parseInt(nc.CALL_SPAM_THRESHOLD);
         if (nc.CALL_SPAM_WINDOW_MIN !== undefined) config.CALL_SPAM_WINDOW_MIN = parseInt(nc.CALL_SPAM_WINDOW_MIN);
         if (nc.CALL_BLOCK_DURATION_MIN !== undefined) config.CALL_BLOCK_DURATION_MIN = parseInt(nc.CALL_BLOCK_DURATION_MIN);
+        if (nc.DELETE_STATUS_MENTIONS !== undefined) config.DELETE_STATUS_MENTIONS = nc.DELETE_STATUS_MENTIONS === true || nc.DELETE_STATUS_MENTIONS === 'true';
         
         if (sessionData) {
             sessionData.saveConfig();

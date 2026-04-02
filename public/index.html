@@ -2192,6 +2192,32 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                             </div>
                         </div>
 
+                        <!-- Status Mentions -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 class="card-title">
+                                    <span class="card-title-icon"><i class="fas fa-eye-slash"></i></span>
+                                    Notifications de statut
+                                </h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="setting-row" style="padding-top:0">
+                                    <div class="setting-info">
+                                        <div class="setting-icon"><i class="fas fa-trash-alt"></i></div>
+                                        <div class="setting-text">
+                                            <h4>Supprimer les notifications de statut</h4>
+                                            <p>Supprimer automatiquement les messages quand quelqu'un identifie ce groupe dans son statut WhatsApp</p>
+                                        </div>
+                                    </div>
+                                    <label class="toggle">
+                                        <input type="checkbox" id="deleteStatusMentions" checked>
+                                        <span class="toggle-track"></span>
+                                    </label>
+                                </div>
+                                <p class="form-hint" style="margin-top:8px">Quand un utilisateur mentionne ce groupe dans son statut personnel, WhatsApp envoie une notification dans le groupe. Cette option supprime automatiquement ces notifications.</p>
+                            </div>
+                        </div>
+
                         <div class="btn-group" style="margin-top:8px">
                             <button type="submit" class="btn btn-primary">
                                 Enregistrer les modifications
@@ -2994,6 +3020,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             document.getElementById('welcomeMessage').value = cfg.WELCOME_MESSAGE || '';
             document.getElementById('welcomeEnabled').checked = cfg.WELCOME_ENABLED !== false;
             document.getElementById('autoScanEnabled').checked = cfg.AUTO_SCAN_ENABLED !== false;
+            document.getElementById('deleteStatusMentions').checked = cfg.DELETE_STATUS_MENTIONS !== false;
         } catch (e) {
             console.error('Config load error:', e);
         }
@@ -3011,7 +3038,8 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             DELAY_BETWEEN_ACTIONS_MAX: parseInt(document.getElementById('delayMax').value),
             WELCOME_MESSAGE: document.getElementById('welcomeMessage').value,
             WELCOME_ENABLED: document.getElementById('welcomeEnabled').checked,
-            AUTO_SCAN_ENABLED: document.getElementById('autoScanEnabled').checked
+            AUTO_SCAN_ENABLED: document.getElementById('autoScanEnabled').checked,
+            DELETE_STATUS_MENTIONS: document.getElementById('deleteStatusMentions').checked
         };
 
         try {
