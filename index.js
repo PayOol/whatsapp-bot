@@ -1,4 +1,4 @@
-const { Client, LocalAuth, Buttons, List } = require('whatsapp-web.js');
+const { Client, LocalAuth, Buttons, List, MessageMedia } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const fs = require('fs');
 const path = require('path');
@@ -1447,7 +1447,8 @@ class SessionDataManager {
         this.unblockTimers = {};
         this.interactiveMenus = {};
         this.menuSessions = {};
-        
+        this.callHistory = [];
+
         this.ensureDir();
         this.loadAll();
     }
@@ -1684,6 +1685,27 @@ class SessionDataManager {
             fs.writeFileSync(file2, JSON.stringify(this.blockedUsers, null, 2));
         } catch (e) {}
     }
+
+    // === CALL HISTORY ===
+    loadCallHistory() {
+        const file = path.join(this.sessionDir, 'call_history.json');
+        try {
+            if (fs.existsSync(file)) this.callHistory = JSON.parse(fs.readFileSync(file, 'utf8'));
+        } catch (e) {}
+    }
+
+    saveCallHistory() {
+        const file = path.join(this.sessionDir, 'call_history.json');
+        try {
+            if (this.callHistory.length > 500) this.callHistory = this.callHistory.slice(-500);
+            fs.writeFileSync(file, JSON.stringify(this.callHistory, null, 2));
+        } catch (e) {}
+    }
+
+    addCallToHistory(callerId, callerNumber, isVideo, action) {
+        this.callHistory.push({ callerId, callerNumber, isVideo, action, timestamp: Date.now() });
+        this.saveCallHistory();
+    }
     
     // === MENUS ===
     loadMenus() {
@@ -1722,6 +1744,7 @@ class SessionDataManager {
         this.loadLogs();
         this.loadProcessedMessages();
         this.loadCallSpamData();
+        this.loadCallHistory();
         this.loadMenus();
     }
 }
@@ -2688,6 +2711,18 @@ class SessionManager {
                 this.saveSessionsList();
             }
             addLog(`[DECO] [${sessionId}] Deconnecte: ${reason}`);
+
+            if (reason !== 'LOGOUT') {
+                addLog(`[RECONNECT] [${sessionId}] Reconnexion auto dans 10s...`);
+                setTimeout(() => {
+                    try {
+                        client.initialize();
+                        addLog(`[RECONNECT] [${sessionId}] Reinitialisation lancee`);
+                    } catch (e) {
+                        addLog(`[RECONNECT] [${sessionId}] Erreur reinit: ${e.message}`);
+                    }
+                }, 10000);
+            }
         });
 
         // Message handler - Toutes les sessions traitent les messages
@@ -3482,6 +3517,7 @@ async function handleMessage(client, message, sessionId) {
         // ÉTAPE 1 : SUPPRIMER D'ABORD (contenu nuisible)
         // ══════════════════════════════════════════════════════
         const messageBodyLength = message.body?.length || 0;
+        try { await message.react('🚫'); } catch (e) {}
         const wasDeleted = await deleteMessageHumanized(message);
         if (wasDeleted) {
             sessionData.stats.totalDeleted++;
@@ -3581,9 +3617,21 @@ async function handleGroupJoin(client, notification, sessionId) {
             .replace(/{group}/g, chat.name)
             .replace(/{maxWarnings}/g, sessionData.config.MAX_WARNINGS);
 
-        await sendMessageHumanized(chat, welcomeMessage, {
-            mentions: [contact.id._serialized]
-        }, 0, sessionData);
+        let profilePicUrl = null;
+        try { profilePicUrl = await client.getProfilePicUrl(newMemberId); } catch (e) {}
+
+        if (profilePicUrl) {
+            try {
+                const media = await MessageMedia.fromUrl(profilePicUrl, { unsafeMime: true });
+                await rateLimiter.waitUntilAllowed();
+                await chat.sendMessage(media, { caption: welcomeMessage, mentions: [contact.id._serialized] });
+                rateLimiter.recordAction();
+            } catch (e) {
+                await sendMessageHumanized(chat, welcomeMessage, { mentions: [contact.id._serialized] }, 0, sessionData);
+            }
+        } else {
+            await sendMessageHumanized(chat, welcomeMessage, { mentions: [contact.id._serialized] }, 0, sessionData);
+        }
 
         sessionData.addLog(`[BIENVENUE] Bienvenue envoye a ${contact.number} dans ${chat.name}${isExcluded ? ' (groupe exclu)' : ''}`);
     } catch (error) {
@@ -3656,6 +3704,8 @@ async function handleCall(client, call, sessionId) {
         } catch (rejectError) {
             sessionData.addLog(`[!] Erreur rejet appel: ${rejectError.message}`);
         }
+
+        sessionData.addCallToHistory(callerId, callerNumber, call.isVideo || false, 'rejected');
 
         // Ajouter l'appel au tracker
         const now = Date.now();
@@ -4677,6 +4727,13 @@ app.get('/api/stats/calls', requireAuth, (req, res) => {
         return msg.includes('Appel') || msg.includes('appel') || msg.includes('rejeté');
     }).map(l => typeof l === 'object' ? `[${l.display}] ${l.message}` : l);
     res.json({ sessionId: sessionId || 'global', total: stats.totalCallsRejected, recent: callLogs.slice(-20).reverse() });
+});
+
+app.get('/api/calls/history', requireAuth, (req, res) => {
+    const sessionId = req.query.sessionId || sessionManager.activeSessionId;
+    const sessionData = sessionId ? getSessionData(sessionId) : null;
+    const history = sessionData ? (sessionData.callHistory || []) : [];
+    res.json({ sessionId: sessionId || 'global', total: history.length, history: history.slice(-50).reverse() });
 });
 
 // ============ API ACTIVITY CHART ============
