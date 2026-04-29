@@ -2680,7 +2680,8 @@ class SessionManager {
             // Toutes les sessions démarrent leurs processus
             restoreUnblockTimers(sessionId);
             startPresenceManager(sessionId);
-            if (CONFIG.AUTO_SCAN_ENABLED) {
+            const sessionData = getSessionData(sessionId);
+            if (sessionData.config.AUTO_SCAN_ENABLED) {
                 const startupDelay = HumanBehavior.gaussianRandom(15000, 8000);
                 addLog(`[TIMER] [${sessionId}] Premier scan dans ${Math.round(startupDelay / 1000)}s...`);
                 await new Promise(r => setTimeout(r, startupDelay));
@@ -3130,8 +3131,9 @@ async function scanAllGroups(sessionId = null) {
 
     const shuffled = groups.sort(() => Math.random() - 0.5);
 
+    const sdScan = getSessionData(sessionId);
     for (const group of shuffled) {
-        const result = await scanOldMessages(group, CONFIG.SCAN_LIMIT, sessionId);
+        const result = await scanOldMessages(group, sdScan.config.SCAN_LIMIT || CONFIG.SCAN_LIMIT, sessionId);
         totalDeleted += result.deleted;
         totalScanned += result.scanned;
         totalWarned += result.warned || 0;
@@ -3151,9 +3153,10 @@ async function scanAllGroups(sessionId = null) {
 const scanTimers = new Map();
 
 function scheduleNextScan(sessionId) {
-    const nextScanMs = CONFIG.AUTO_SCAN_INTERVAL_HOURS * 60 * 60 * 1000;
+    const sdTimer = getSessionData(sessionId);
+    const nextScanMs = (sdTimer.config.AUTO_SCAN_INTERVAL_HOURS || CONFIG.AUTO_SCAN_INTERVAL_HOURS) * 60 * 60 * 1000;
 
-    addLog(`[TIMER] [${sessionId}] Prochain scan dans ${CONFIG.AUTO_SCAN_INTERVAL_HOURS}h`);
+    addLog(`[TIMER] [${sessionId}] Prochain scan dans ${sdTimer.config.AUTO_SCAN_INTERVAL_HOURS || CONFIG.AUTO_SCAN_INTERVAL_HOURS}h`);
 
     // Clear existing timer for this session
     if (scanTimers.has(sessionId)) {
@@ -3162,7 +3165,8 @@ function scheduleNextScan(sessionId) {
 
     const timer = setTimeout(async () => {
         const session = sessionManager.sessions.get(sessionId);
-        if (CONFIG.AUTO_SCAN_ENABLED && session && session.data.status === 'connected') {
+        const sdTimerInner = getSessionData(sessionId);
+        if (sdTimerInner.config.AUTO_SCAN_ENABLED && session && session.data.status === 'connected') {
             addLog(`[TIMER] [${sessionId}] Scan automatique programme...`);
             try {
                 await scanAllGroups(sessionId);
@@ -3608,7 +3612,12 @@ async function handleGroupJoin(client, notification, sessionId) {
             HumanBehavior.gaussianRandom(5000, 3000)
         );
 
-        const mention = `@${contact.number}`;
+        // Utiliser pushname ou name si contact @lid (sinon affiche ID brut)
+        const isLid = contact.id && contact.id.server === 'lid';
+        const displayName = isLid
+            ? (contact.pushname || contact.name || contact.number)
+            : contact.number;
+        const mention = `@${displayName}`;
 
         const isExcluded = sessionData.isGroupExcluded(chat);
 
