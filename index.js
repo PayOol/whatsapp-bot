@@ -165,12 +165,27 @@ const MessagePool = {
             `Désolé, je ne prends pas les appels. Envoyez-moi un message svp.\n⚠️ Attention : encore ${remaining} appel(s) et vous serez bloqué(e) pendant 30 min.`,
         (remaining) =>
             `❌ Appels non acceptés. Écrivez-moi plutôt.\n🚫 ${remaining} tentative(s) restante(s) avant blocage temporaire.`,
+        (remaining) =>
+            `📵 Je ne réponds pas aux appels. Écrivez-moi un message.\n⏳ Plus que ${remaining} tentative(s) avant un blocage de 30 min.`,
+        (remaining) =>
+            `🔇 Appel refusé automatiquement. Contactez-moi par écrit.\n⚠️ ${remaining} essai(s) restant(s) avant blocage.`,
+        (remaining) =>
+            `❌ Les appels ne sont pas pris en charge ici.\n📩 Envoyez un message. ${remaining} appel(s) avant blocage temporaire.`,
+        (remaining) =>
+            `🚫 Appel rejeté. Merci d'utiliser les messages.\n🔒 Encore ${remaining} appel(s) et votre contact sera bloqué 30 min.`,
+        (remaining) =>
+            `📞❌ Les appels sont désactivés. Préférez un message texte svp.\n⚠️ ${remaining} tentative(s) restante(s) avant suspension temporaire.`,
     ],
 
     callBlocked: [
         `🔒 Vous avez été bloqué(e) pendant 30 minutes suite à des appels répétés. Merci de patienter.`,
         `⛔ Blocage temporaire de 30 minutes pour spam d'appels. Envoyez un message après.`,
         `🚫 Trop d'appels. Vous êtes bloqué(e) pour 30 minutes.`,
+        `📵 Votre contact a été temporairement bloqué (30 min) à cause d'appels répétés. Revenez plus tard.`,
+        `🔇 Blocage automatique activé pour 30 minutes. Raison : appels en excès.`,
+        `⏳ Suite à vos appels répétés, vous êtes bloqué(e) pendant 30 minutes. Envoyez un message ensuite.`,
+        `🚫 Appels excessifs détectés. Blocage temporaire de 30 min en cours. Merci de patienter.`,
+        `⛔ Vous avez dépassé la limite d'appels autorisée. Contact bloqué pour 30 minutes.`,
     ],
 
     pick(pool, ...args) {
