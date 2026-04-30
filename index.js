@@ -1911,8 +1911,10 @@ function generateList(sections) {
     };
 }
 
-async function sendInteractiveMenu(chat, menuId, options = {}) {
-    const menu = interactiveMenus[menuId];
+async function sendInteractiveMenu(chat, menuId, sessionData = null) {
+    const menus = sessionData ? sessionData.interactiveMenus : interactiveMenus;
+    const sessions = sessionData ? sessionData.menuSessions : menuSessions;
+    const menu = menus[menuId];
     if (!menu || !menu.enabled) return null;
 
     try {
@@ -1930,16 +1932,16 @@ async function sendInteractiveMenu(chat, menuId, options = {}) {
             });
             menuText += `\n_Reply avec le numéro de votre choix_`;
 
-            const sessionId = `${chat.id._serialized}_${Date.now()}`;
-            menuSessions[sessionId] = {
+            const sessKey = `${chat.id._serialized}_${Date.now()}`;
+            sessions[sessKey] = {
                 menuId,
                 buttons: menu.buttons,
                 createdAt: Date.now(),
                 expiresAt: Date.now() + 3600000
             };
-            saveMenus();
+            if (sessionData) sessionData.saveMenus(); else saveMenus();
 
-            const sent = await sendMessageHumanized(chat, menuText, options);
+            const sent = await sendMessageHumanized(chat, menuText, {});
             return sent;
         } else if (menu.type === 'list' && menu.listSections.length > 0) {
             let menuText = `📋 *${title}*\n\n`;
@@ -1957,20 +1959,20 @@ async function sendInteractiveMenu(chat, menuId, options = {}) {
             });
             menuText += `\n_Reply avec le numéro de votre choix_`;
 
-            const sessionId = `${chat.id._serialized}_${Date.now()}`;
-            menuSessions[sessionId] = {
+            const sessKey = `${chat.id._serialized}_${Date.now()}`;
+            sessions[sessKey] = {
                 menuId,
                 rows: allRows,
                 createdAt: Date.now(),
                 expiresAt: Date.now() + 3600000
             };
-            saveMenus();
+            if (sessionData) sessionData.saveMenus(); else saveMenus();
 
-            const sent = await sendMessageHumanized(chat, menuText, options);
+            const sent = await sendMessageHumanized(chat, menuText, {});
             return sent;
         } else {
             const body = description || title;
-            const sent = await sendMessageHumanized(chat, body, options);
+            const sent = await sendMessageHumanized(chat, body, {});
             return sent;
         }
     } catch (error) {
@@ -1980,12 +1982,13 @@ async function sendInteractiveMenu(chat, menuId, options = {}) {
     }
 }
 
-async function handleMenuResponse(message, responseId) {
+async function handleMenuResponse(message, responseId, sessionData = null) {
     const chat = await message.getChat();
     const senderId = message.author || message.from;
+    const menus = sessionData ? sessionData.interactiveMenus : interactiveMenus;
 
-    for (const menuId in interactiveMenus) {
-        const menu = interactiveMenus[menuId];
+    for (const menuId in menus) {
+        const menu = menus[menuId];
         if (!menu.enabled) continue;
 
         if (menu.groupId && chat.id._serialized !== menu.groupId) continue;
@@ -1994,13 +1997,13 @@ async function handleMenuResponse(message, responseId) {
             const button = menu.buttons.find(b => b.id === responseId);
             if (button) {
                 if (button.action) {
-                    return await executeMenuAction(chat, senderId, button.action, menu);
+                    return await executeMenuAction(chat, senderId, button.action, menu, sessionData);
                 }
                 if (button.nextMenu) {
-                    return await sendInteractiveMenu(chat, button.nextMenu);
+                    return await sendInteractiveMenu(chat, button.nextMenu, sessionData);
                 }
                 if (button.response) {
-                    return await sendMessageHumanized(chat, button.response, {}, message.body?.length || 0);
+                    return await sendMessageHumanized(chat, button.response, {}, message.body?.length || 0, sessionData);
                 }
             }
         }
@@ -2010,13 +2013,13 @@ async function handleMenuResponse(message, responseId) {
                 const row = section.rows.find(r => r.id === responseId);
                 if (row) {
                     if (row.action) {
-                        return await executeMenuAction(chat, senderId, row.action, menu);
+                        return await executeMenuAction(chat, senderId, row.action, menu, sessionData);
                     }
                     if (row.nextMenu) {
-                        return await sendInteractiveMenu(chat, row.nextMenu);
+                        return await sendInteractiveMenu(chat, row.nextMenu, sessionData);
                     }
                     if (row.response) {
-                        return await sendMessageHumanized(chat, row.response, {}, message.body?.length || 0);
+                        return await sendMessageHumanized(chat, row.response, {}, message.body?.length || 0, sessionData);
                     }
                 }
             }
@@ -2026,10 +2029,10 @@ async function handleMenuResponse(message, responseId) {
     return null;
 }
 
-async function executeMenuAction(chat, userId, action, menu) {
+async function executeMenuAction(chat, userId, action, menu, sessionData = null, activeClient = null) {
     switch (action.type) {
         case 'message':
-            return await sendMessageHumanized(chat, action.content, {}, 0);
+            return await sendMessageHumanized(chat, action.content, {}, 0, sessionData);
 
         case 'link':
             if (action.whitelist) {
@@ -2042,7 +2045,8 @@ async function executeMenuAction(chat, userId, action, menu) {
         case 'contact':
             if (action.contactId) {
                 try {
-                    const contact = await client.getContactById(action.contactId);
+                    const c = activeClient || client;
+                    const contact = await c.getContactById(action.contactId);
                     return await sendMessageHumanized(chat,
                         `👤 Contact demandé: @${contact.number}`,
                         { mentions: [contact.id._serialized] }, 0);
@@ -2053,8 +2057,9 @@ async function executeMenuAction(chat, userId, action, menu) {
             break;
 
         case 'submenu':
-            if (action.menuId && interactiveMenus[action.menuId]) {
-                return await sendInteractiveMenu(chat, action.menuId);
+            const subMenus = sessionData ? sessionData.interactiveMenus : interactiveMenus;
+            if (action.menuId && subMenus[action.menuId]) {
+                return await sendInteractiveMenu(chat, action.menuId, sessionData);
             }
             break;
         case 'external':
