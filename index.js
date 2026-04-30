@@ -3680,6 +3680,8 @@ async function handleGroupJoin(client, notification, sessionId) {
 // 📞 HANDLER APPELS
 // ============================================================
 
+const callProcessingLock = new Map(); // { callerId: boolean } par session
+
 async function handleCall(client, call, sessionId) {
     const sessionData = getSessionData(sessionId);
     
@@ -3688,6 +3690,16 @@ async function handleCall(client, call, sessionId) {
 
         const callerId = call.from;
         sessionData.addLog(`[CALL] Appel entrant de ${callerId}`);
+
+        // Verrou anti-concurrence : si un appel de ce numéro est déjà en cours de traitement,
+        // on rejette immédiatement sans enregistrer ni envoyer de message
+        const lockKey = `${sessionId}_${callerId}`;
+        if (callProcessingLock.get(lockKey)) {
+            try { await call.reject(); } catch (e) {}
+            sessionData.addLog(`[CALL] Appel ${callerId} rejete (traitement concurrent en cours)`);
+            return;
+        }
+        callProcessingLock.set(lockKey, true);
 
         let callerNumber = callerId.split('@')[0];
         try {
@@ -3771,18 +3783,25 @@ async function handleCall(client, call, sessionId) {
 
             await HumanBehavior.naturalDelay(HumanBehavior.blockDelay());
 
+            // Marquer en interne AVANT le contact.block() pour éviter les appels répétés
+            // même si l'API WhatsApp échoue
+            sessionData.blockedUsers[callerId] = {
+                blockedAt: Date.now(),
+                autoUnblock: true,
+                callCount: callCount
+            };
+            sessionData.saveCallSpamData();
+            sessionData.addLog(`[LOCK] ${callerId} marque bloque en interne`);
+
             try {
                 const contact = await client.getContactById(callerId);
-                await contact.block();
-                rateLimiter.recordAction();
-
-                sessionData.blockedUsers[callerId] = {
-                    blockedAt: Date.now(),
-                    autoUnblock: true,
-                    callCount: callCount
-                };
-                sessionData.saveCallSpamData();
-                sessionData.addLog(`[LOCK] ${callerId} bloque pour spam d'appels`);
+                if (!contact.isBlocked) {
+                    await contact.block();
+                    rateLimiter.recordAction();
+                    sessionData.addLog(`[LOCK] ${callerId} bloque sur WhatsApp`);
+                } else {
+                    sessionData.addLog(`[LOCK] ${callerId} deja bloque sur WhatsApp`);
+                }
 
                 // Planifier le déblocage
                 const blockDuration = sessionData.config.CALL_BLOCK_DURATION_MIN * 60 * 1000;
@@ -3805,7 +3824,9 @@ async function handleCall(client, call, sessionId) {
                 }, blockDuration);
 
             } catch (blockError) {
-                sessionData.addLog(`[X] Erreur blocage: ${blockError.message}`);
+                // blockedUsers est déjà marqué — l'utilisateur sera bloqué en interne
+                // même si l'API WhatsApp a échoué
+                sessionData.addLog(`[X] Erreur blocage WhatsApp (blocage interne actif): ${blockError.message}`);
             }
             sessionData.saveStats();
             return;
@@ -3830,6 +3851,9 @@ async function handleCall(client, call, sessionId) {
     } catch (error) {
         const sessionData = getSessionData(sessionId);
         sessionData.addLog(`[X] Erreur handler appel: ${error.message}`);
+    } finally {
+        const lockKey = `${sessionId}_${call.from}`;
+        callProcessingLock.delete(lockKey);
     }
 }
 
