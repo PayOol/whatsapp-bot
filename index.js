@@ -2667,8 +2667,13 @@ class SessionManager {
                 this.sessionsList[sessionId].phoneNumber = session.data.phoneNumber;
                 this.sessionsList[sessionId].pushName = session.data.pushName;
                 
-                // Activer automatiquement cette session si aucune n'est active
-                if (!this.activeSessionId) {
+                // Activer automatiquement si aucune session n'est active globalement
+                // OU si l'activeSessionId actuel n'appartient pas au même propriétaire
+                const ownerOfActive = this.activeSessionId
+                    ? this.sessionsList[this.activeSessionId]?.ownerUsername
+                    : null;
+                const ownerOfThis = this.sessionsList[sessionId]?.ownerUsername;
+                if (!this.activeSessionId || (ownerOfThis && ownerOfActive !== ownerOfThis && ownerOfActive === null)) {
                     this.activeSessionId = sessionId;
                     addLog(`[TARGET] Session active: ${sessionId}`);
                 }
@@ -2817,6 +2822,26 @@ class SessionManager {
         return true;
     }
 
+    getEffectiveSessionId(username, isAdmin, requestedId = null) {
+        if (requestedId) {
+            if (!isAdmin) {
+                const s = this.sessionsList[requestedId];
+                if (!s || s.ownerUsername !== username) return null;
+            }
+            return requestedId;
+        }
+        if (isAdmin) return this.activeSessionId;
+        if (this.activeSessionId) {
+            const active = this.sessionsList[this.activeSessionId];
+            if (active && active.ownerUsername === username) return this.activeSessionId;
+        }
+        const userSessions = Object.values(this.sessionsList)
+            .filter(s => s.ownerUsername === username);
+        return userSessions.find(s => s.status === 'connected')?.id
+            || userSessions[0]?.id
+            || null;
+    }
+
     setActiveSession(sessionId) {
         if (this.sessionsList[sessionId]) {
             this.activeSessionId = sessionId;
@@ -2903,6 +2928,9 @@ class SessionManager {
         }
         
         if (orphanSessions.length > 0) {
+            if (this.activeSessionId && orphanSessions.includes(this.activeSessionId)) {
+                this.activeSessionId = null;
+            }
             this.saveSessionsList();
             console.log(`${orphanSessions.length} session(s) orpheline(s) supprimée(s)`);
         }
@@ -4423,9 +4451,12 @@ app.get('/api/sessions', requireAuth, (req, res) => {
     const sessions = req.user.isAdmin 
         ? allSessions 
         : allSessions.filter(s => s.ownerUsername === req.user.username);
+    const effectiveActiveId = req.user.isAdmin
+        ? sessionManager.activeSessionId
+        : sessionManager.getEffectiveSessionId(req.user.username, false, null);
     res.json({
         sessions,
-        activeSessionId: sessionManager.activeSessionId
+        activeSessionId: effectiveActiveId
     });
 });
 
@@ -4526,7 +4557,7 @@ app.get('/api/status', requireAuth, (req, res) => {
 
 app.get('/api/config', requireAuth, (req, res) => {
     // Utiliser la config de la session active ou la config globale
-    const sessionId = req.query.sessionId || sessionManager.activeSessionId;
+    const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.query.sessionId);
     const sessionData = sessionId ? getSessionData(sessionId) : null;
     const config = sessionData ? sessionData.config : CONFIG;
     
@@ -4552,7 +4583,7 @@ app.get('/api/config', requireAuth, (req, res) => {
 app.post('/api/config', requireAuth, (req, res) => {
     try {
         // Utiliser la config de la session active ou la config globale
-        const sessionId = req.body.sessionId || sessionManager.activeSessionId;
+        const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.body.sessionId);
         const sessionData = sessionId ? getSessionData(sessionId) : null;
         const config = sessionData ? sessionData.config : CONFIG;
         
@@ -4585,7 +4616,7 @@ app.post('/api/config', requireAuth, (req, res) => {
 
 app.get('/api/stats', requireAuth, async (req, res) => {
     try {
-        const sessionId = req.query.sessionId || sessionManager.activeSessionId;
+        const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.query.sessionId);
         const sessionData = sessionId ? getSessionData(sessionId) : null;
         const stats = sessionData ? sessionData.stats : STATS;
         const activeClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
@@ -4601,7 +4632,7 @@ app.get('/api/stats', requireAuth, async (req, res) => {
         }
         res.json({ sessionId: sessionId || 'global', ...stats });
     } catch (error) { 
-        const sessionId = req.query.sessionId || sessionManager.activeSessionId;
+        const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.query.sessionId);
         const sessionData = sessionId ? getSessionData(sessionId) : null;
         res.json({ sessionId: sessionId || 'global', ...(sessionData ? sessionData.stats : STATS) }); 
     }
@@ -4666,7 +4697,7 @@ app.post('/api/logs/clear', requireAuth, (req, res) => {
 
 app.get('/api/stats/groups', requireAuth, async (req, res) => {
     try {
-        const sessionId = req.query.sessionId || sessionManager.activeSessionId;
+        const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.query.sessionId);
         const activeClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
         if (!activeClient || !activeClient.info) return res.json({ sessionId: sessionId || 'global', groups: [] });
         
@@ -4687,7 +4718,7 @@ app.get('/api/stats/groups', requireAuth, async (req, res) => {
 });
 
 app.get('/api/stats/deleted', requireAuth, (req, res) => {
-    const sessionId = req.query.sessionId || sessionManager.activeSessionId;
+    const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.query.sessionId);
     const sessionData = sessionId ? getSessionData(sessionId) : null;
     const logs = sessionData ? sessionData.logs : LOGS;
     const stats = sessionData ? sessionData.stats : STATS;
@@ -4700,7 +4731,7 @@ app.get('/api/stats/deleted', requireAuth, (req, res) => {
 });
 
 app.get('/api/stats/warnings', requireAuth, (req, res) => {
-    const sessionId = req.query.sessionId || sessionManager.activeSessionId;
+    const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.query.sessionId);
     const sessionData = sessionId ? getSessionData(sessionId) : null;
     const logs = sessionData ? sessionData.logs : LOGS;
     const stats = sessionData ? sessionData.stats : STATS;
@@ -4713,7 +4744,7 @@ app.get('/api/stats/warnings', requireAuth, (req, res) => {
 });
 
 app.get('/api/stats/banned', requireAuth, (req, res) => {
-    const sessionId = req.query.sessionId || sessionManager.activeSessionId;
+    const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.query.sessionId);
     const sessionData = sessionId ? getSessionData(sessionId) : null;
     const logs = sessionData ? sessionData.logs : LOGS;
     const stats = sessionData ? sessionData.stats : STATS;
@@ -4726,7 +4757,7 @@ app.get('/api/stats/banned', requireAuth, (req, res) => {
 });
 
 app.get('/api/stats/calls', requireAuth, (req, res) => {
-    const sessionId = req.query.sessionId || sessionManager.activeSessionId;
+    const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.query.sessionId);
     const sessionData = sessionId ? getSessionData(sessionId) : null;
     const logs = sessionData ? sessionData.logs : LOGS;
     const stats = sessionData ? sessionData.stats : STATS;
@@ -4739,7 +4770,7 @@ app.get('/api/stats/calls', requireAuth, (req, res) => {
 });
 
 app.get('/api/calls/history', requireAuth, (req, res) => {
-    const sessionId = req.query.sessionId || sessionManager.activeSessionId;
+    const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.query.sessionId);
     const sessionData = sessionId ? getSessionData(sessionId) : null;
     const history = sessionData ? (sessionData.callHistory || []) : [];
     res.json({ sessionId: sessionId || 'global', total: history.length, history: history.slice(-50).reverse() });
@@ -4748,7 +4779,7 @@ app.get('/api/calls/history', requireAuth, (req, res) => {
 // ============ API ACTIVITY CHART ============
 
 app.get('/api/stats/activity', requireAuth, (req, res) => {
-    const sessionId = req.query.sessionId || sessionManager.activeSessionId;
+    const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.query.sessionId);
     const sessionData = sessionId ? getSessionData(sessionId) : null;
     const logs = sessionData ? sessionData.logs : LOGS;
     
@@ -4795,7 +4826,7 @@ app.get('/api/stats/activity', requireAuth, (req, res) => {
 
 app.post('/api/scan', requireAuth, async (req, res) => {
     try {
-        const sessionId = req.body.sessionId || sessionManager.activeSessionId;
+        const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.body.sessionId);
         const activeClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
         if (!activeClient) return res.status(400).json({ success: false, message: 'Aucune session active' });
         
@@ -4810,7 +4841,7 @@ app.post('/api/scan', requireAuth, async (req, res) => {
 
 app.delete('/api/warnings', requireAuth, (req, res) => {
     try {
-        const sessionId = req.body.sessionId || sessionManager.activeSessionId;
+        const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.body.sessionId);
         const sessionData = sessionId ? getSessionData(sessionId) : null;
         
         if (sessionData) {
@@ -4827,7 +4858,7 @@ app.delete('/api/warnings', requireAuth, (req, res) => {
 
 app.get('/api/groups', requireAuth, async (req, res) => {
     try {
-        const sessionId = req.query.sessionId || sessionManager.activeSessionId;
+        const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.query.sessionId);
         const activeClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
         const sessionData = sessionId ? getSessionData(sessionId) : null;
         
@@ -4849,7 +4880,7 @@ app.get('/api/groups', requireAuth, async (req, res) => {
 
 app.get('/api/groups/all', requireAuth, async (req, res) => {
     try {
-        const sessionId = req.query.sessionId || sessionManager.activeSessionId;
+        const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.query.sessionId);
         const activeClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
         const sessionData = sessionId ? getSessionData(sessionId) : null;
         
@@ -4879,7 +4910,7 @@ app.get('/api/groups/all', requireAuth, async (req, res) => {
         else addLog(`[GROUPS] /api/groups/all: ${groups.length} groupes trouves`);
         res.json(groups);
     } catch (error) {
-        const sessionId = req.query.sessionId || sessionManager.activeSessionId;
+        const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.query.sessionId);
         const sessionData = sessionId ? getSessionData(sessionId) : null;
         if (sessionData) sessionData.addLog(`[X] Erreur /api/groups/all: ${error.message}`);
         else addLog(`[X] Erreur /api/groups/all: ${error.message}`);
@@ -4889,7 +4920,7 @@ app.get('/api/groups/all', requireAuth, async (req, res) => {
 
 app.post('/api/groups/leave', requireAuth, async (req, res) => {
     try {
-        const sessionId = req.body.sessionId || sessionManager.activeSessionId;
+        const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.body.sessionId);
         const activeClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
         const sessionData = sessionId ? getSessionData(sessionId) : null;
         
@@ -4914,7 +4945,7 @@ app.post('/api/groups/leave', requireAuth, async (req, res) => {
         else addLog(`[LEAVE] Bot a quitte le groupe: ${groupName}`);
         res.json({ success: true, message: 'Groupe quitté' });
     } catch (error) {
-        const sessionId = req.body.sessionId || sessionManager.activeSessionId;
+        const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.body.sessionId);
         const sessionData = sessionId ? getSessionData(sessionId) : null;
         if (sessionData) sessionData.addLog(`[X] Erreur quitter groupe: ${error.message}`);
         else addLog(`[X] Erreur quitter groupe: ${error.message}`);
@@ -4924,7 +4955,7 @@ app.post('/api/groups/leave', requireAuth, async (req, res) => {
 
 app.delete('/api/groups/delete', requireAuth, async (req, res) => {
     try {
-        const sessionId = req.body.sessionId || sessionManager.activeSessionId;
+        const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.body.sessionId);
         const activeClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
         const sessionData = sessionId ? getSessionData(sessionId) : null;
         
@@ -4945,7 +4976,7 @@ app.delete('/api/groups/delete', requireAuth, async (req, res) => {
         else addLog(`[SUPPR] Groupe supprime (bot etait admin): ${chat.name}`);
         res.json({ success: true, message: 'Groupe quitté (suppression complète non supportée par l\'API)' });
     } catch (error) {
-        const sessionId = req.body.sessionId || sessionManager.activeSessionId;
+        const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.body.sessionId);
         const sessionData = sessionId ? getSessionData(sessionId) : null;
         if (sessionData) sessionData.addLog(`[X] Erreur suppression groupe: ${error.message}`);
         else addLog(`[X] Erreur suppression groupe: ${error.message}`);
@@ -4954,14 +4985,14 @@ app.delete('/api/groups/delete', requireAuth, async (req, res) => {
 });
 
 app.get('/api/groups/exceptions', requireAuth, (req, res) => {
-    const sessionId = req.query.sessionId || sessionManager.activeSessionId;
+    const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.query.sessionId);
     const sessionData = sessionId ? getSessionData(sessionId) : null;
     res.json({ sessionId: sessionId || 'global', ...(sessionData ? sessionData.groupExceptions : GROUP_EXCEPTIONS) });
 });
 
 app.post('/api/groups/exceptions', requireAuth, (req, res) => {
     try {
-        const sessionId = req.body.sessionId || sessionManager.activeSessionId;
+        const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.body.sessionId);
         const sessionData = sessionId ? getSessionData(sessionId) : null;
         const exceptions = sessionData ? sessionData.groupExceptions : GROUP_EXCEPTIONS;
         
@@ -4977,7 +5008,7 @@ app.post('/api/groups/exceptions', requireAuth, (req, res) => {
 
 app.delete('/api/groups/exceptions', requireAuth, (req, res) => {
     try {
-        const sessionId = req.body.sessionId || sessionManager.activeSessionId;
+        const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.body.sessionId);
         const sessionData = sessionId ? getSessionData(sessionId) : null;
         const exceptions = sessionData ? sessionData.groupExceptions : GROUP_EXCEPTIONS;
         
@@ -4993,7 +5024,7 @@ app.delete('/api/groups/exceptions', requireAuth, (req, res) => {
 
 app.post('/api/groups/welcome', requireAuth, (req, res) => {
     try {
-        const sessionId = req.body.sessionId || sessionManager.activeSessionId;
+        const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.body.sessionId);
         const sessionData = sessionId ? getSessionData(sessionId) : null;
         const exceptions = sessionData ? sessionData.groupExceptions : GROUP_EXCEPTIONS;
         
@@ -5015,14 +5046,14 @@ app.post('/api/groups/welcome', requireAuth, (req, res) => {
 });
 
 app.get('/api/users/exceptions', requireAuth, (req, res) => {
-    const sessionId = req.query.sessionId || sessionManager.activeSessionId;
+    const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.query.sessionId);
     const sessionData = sessionId ? getSessionData(sessionId) : null;
     res.json({ sessionId: sessionId || 'global', ...(sessionData ? sessionData.userExceptions : USER_EXCEPTIONS) });
 });
 
 app.post('/api/users/exceptions', requireAuth, (req, res) => {
     try {
-        const sessionId = req.body.sessionId || sessionManager.activeSessionId;
+        const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.body.sessionId);
         const sessionData = sessionId ? getSessionData(sessionId) : null;
         const exceptions = sessionData ? sessionData.userExceptions : USER_EXCEPTIONS;
         
@@ -5050,7 +5081,7 @@ app.post('/api/users/exceptions', requireAuth, (req, res) => {
 
 app.delete('/api/users/exceptions', requireAuth, (req, res) => {
     try {
-        const sessionId = req.body.sessionId || sessionManager.activeSessionId;
+        const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.body.sessionId);
         const sessionData = sessionId ? getSessionData(sessionId) : null;
         const exceptions = sessionData ? sessionData.userExceptions : USER_EXCEPTIONS;
         
@@ -5065,7 +5096,7 @@ app.delete('/api/users/exceptions', requireAuth, (req, res) => {
 
 app.post('/api/users/exceptions/admins', requireAuth, (req, res) => {
     try {
-        const sessionId = req.body.sessionId || sessionManager.activeSessionId;
+        const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.body.sessionId);
         const sessionData = sessionId ? getSessionData(sessionId) : null;
         const exceptions = sessionData ? sessionData.userExceptions : USER_EXCEPTIONS;
         
@@ -5080,14 +5111,14 @@ app.post('/api/users/exceptions/admins', requireAuth, (req, res) => {
 // ============ API BLOCAGE APPELS ============
 
 app.get('/api/blocked', requireAuth, (req, res) => {
-    const sessionId = req.query.sessionId || sessionManager.activeSessionId;
+    const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.query.sessionId);
     const sessionData = sessionId ? getSessionData(sessionId) : null;
     res.json({ sessionId: sessionId || 'global', blockedUsers: sessionData ? sessionData.blockedUsers : blockedUsers });
 });
 
 app.post('/api/blocked/unblock', requireAuth, async (req, res) => {
     try {
-        const sessionId = req.body.sessionId || sessionManager.activeSessionId;
+        const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.body.sessionId);
         const activeClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
         const sessionData = sessionId ? getSessionData(sessionId) : null;
         const blocked = sessionData ? sessionData.blockedUsers : blockedUsers;
@@ -5136,13 +5167,13 @@ app.get('/api/ratelimit', requireAuth, (req, res) => {
 // ============ API MENUS INTERACTIFS ============
 
 app.get('/api/menus', requireAuth, (req, res) => {
-    const sessionId = req.query.sessionId || sessionManager.activeSessionId;
+    const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.query.sessionId);
     const sessionData = sessionId ? getSessionData(sessionId) : null;
     res.json({ sessionId: sessionId || 'global', menus: sessionData ? sessionData.interactiveMenus : interactiveMenus });
 });
 
 app.get('/api/menus/:id', requireAuth, (req, res) => {
-    const sessionId = req.query.sessionId || sessionManager.activeSessionId;
+    const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.query.sessionId);
     const sessionData = sessionId ? getSessionData(sessionId) : null;
     const menus = sessionData ? sessionData.interactiveMenus : interactiveMenus;
     
@@ -5153,7 +5184,7 @@ app.get('/api/menus/:id', requireAuth, (req, res) => {
 
 app.post('/api/menus', requireAuth, (req, res) => {
     try {
-        const sessionId = req.body.sessionId || sessionManager.activeSessionId;
+        const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.body.sessionId);
         const sessionData = sessionId ? getSessionData(sessionId) : null;
         
         const menu = createMenu(req.body, sessionData);
@@ -5167,7 +5198,7 @@ app.post('/api/menus', requireAuth, (req, res) => {
 
 app.put('/api/menus/:id', requireAuth, (req, res) => {
     try {
-        const sessionId = req.body.sessionId || sessionManager.activeSessionId;
+        const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.body.sessionId);
         const sessionData = sessionId ? getSessionData(sessionId) : null;
         const menus = sessionData ? sessionData.interactiveMenus : interactiveMenus;
         
@@ -5197,7 +5228,7 @@ app.put('/api/menus/:id', requireAuth, (req, res) => {
 
 app.delete('/api/menus/:id', requireAuth, (req, res) => {
     try {
-        const sessionId = req.body.sessionId || sessionManager.activeSessionId;
+        const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.body.sessionId);
         const sessionData = sessionId ? getSessionData(sessionId) : null;
         const menus = sessionData ? sessionData.interactiveMenus : interactiveMenus;
         
@@ -5223,7 +5254,7 @@ app.delete('/api/menus/:id', requireAuth, (req, res) => {
 
 app.post('/api/menus/:id/test', requireAuth, async (req, res) => {
     try {
-        const sessionId = req.body.sessionId || sessionManager.activeSessionId;
+        const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.body.sessionId);
         const activeClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
         const sessionData = sessionId ? getSessionData(sessionId) : null;
         const menus = sessionData ? sessionData.interactiveMenus : interactiveMenus;
@@ -5290,7 +5321,7 @@ app.get('/api/announcements', requireAuth, (req, res) => {
 // IMPORTANT: Cette route doit être AVANT /api/announcements/:id
 app.get('/api/announcements/groups', requireAuth, async (req, res) => {
     try {
-        const sessionId = req.query.sessionId || sessionManager.activeSessionId;
+        const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.query.sessionId);
         const sessionClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
         
         if (!sessionClient || !sessionClient.info) {
@@ -5418,7 +5449,7 @@ app.post('/api/announcements/:id/publish', requireAuth, async (req, res) => {
         }
         
         // Vérifier qu'une session est active
-        const sessionId = req.body.sessionId || sessionManager.activeSessionId;
+        const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.body.sessionId);
         const sessionClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
         
         if (!sessionClient || !sessionClient.info) {
