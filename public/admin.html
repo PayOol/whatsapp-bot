@@ -882,6 +882,10 @@
                     document.getElementById('stat-users').textContent = users.length;
                     document.getElementById('users-count').textContent = users.length;
                     
+                    var adminCount = 1; // BotAdmin
+                    for (var j = 0; j < users.length; j++) { if (users[j].isAdmin) adminCount++; }
+                    document.getElementById('stat-admins').textContent = adminCount;
+                    
                     var container = document.getElementById('users-list');
                     
                     if (users.length === 0) {
@@ -979,28 +983,6 @@
             })
             .catch(function(e) {
                 document.getElementById('sessions-list').innerHTML = '<div class="empty-state"><p>Erreur chargement sessions</p></div>';
-            });
-        }
-        
-        function deleteUser(username) {
-            if (!confirm('Supprimer l\'utilisateur "' + username + '" ?')) return;
-            
-            fetch('/api/auth/users/' + encodeURIComponent(username), {
-                method: 'DELETE',
-                credentials: 'same-origin'
-            })
-            .then(function(res) { return res.json(); })
-            .then(function(data) {
-                if (data.success) {
-                    showToast('Utilisateur supprime', 'success');
-                    loadUsers();
-                    loadSessions();
-                } else {
-                    showToast(data.message || 'Erreur', 'error');
-                }
-            })
-            .catch(function(e) {
-                showToast('Erreur', 'error');
             });
         }
         

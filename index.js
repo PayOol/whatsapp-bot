@@ -4521,17 +4521,26 @@ app.post('/api/sessions', requireAuth, (req, res) => {
 });
 
 app.get('/api/sessions/:id', requireAuth, (req, res) => {
+    const session = sessionManager.sessionsList[req.params.id];
+    if (!session) return res.status(404).json({ success: false, message: 'Session non trouvée' });
+    if (!req.user.isAdmin && session.ownerUsername !== req.user.username) {
+        return res.status(403).json({ success: false, message: 'Accès non autorisé' });
+    }
     const status = sessionManager.getSessionStatus(req.params.id);
-    if (!status) return res.status(404).json({ success: false, message: 'Session non trouvée' });
     res.json(status);
 });
 
 app.post('/api/sessions/:id/activate', requireAuth, (req, res) => {
+    const session = sessionManager.sessionsList[req.params.id];
+    if (!session) return res.status(404).json({ success: false, message: 'Session non trouvée' });
+    if (!req.user.isAdmin && session.ownerUsername !== req.user.username) {
+        return res.status(403).json({ success: false, message: 'Accès non autorisé' });
+    }
     const success = sessionManager.setActiveSession(req.params.id);
     if (success) {
         res.json({ success: true, message: 'Session activée' });
     } else {
-        res.status(404).json({ success: false, message: 'Session non trouvée' });
+        res.status(500).json({ success: false, message: 'Erreur activation' });
     }
 });
 
@@ -4561,20 +4570,30 @@ app.post('/api/sessions/:id/start', requireAuth, (req, res) => {
 });
 
 app.post('/api/sessions/:id/stop', requireAuth, async (req, res) => {
+    const session = sessionManager.sessionsList[req.params.id];
+    if (!session) return res.status(404).json({ success: false, message: 'Session non trouvée' });
+    if (!req.user.isAdmin && session.ownerUsername !== req.user.username) {
+        return res.status(403).json({ success: false, message: 'Accès non autorisé' });
+    }
     const success = await sessionManager.stopSession(req.params.id);
     if (success) {
         res.json({ success: true, message: 'Session arrêtée' });
     } else {
-        res.status(404).json({ success: false, message: 'Session non trouvée ou erreur' });
+        res.status(500).json({ success: false, message: 'Erreur arrêt session' });
     }
 });
 
 app.delete('/api/sessions/:id', requireAuth, async (req, res) => {
+    const session = sessionManager.sessionsList[req.params.id];
+    if (!session) return res.status(404).json({ success: false, message: 'Session non trouvée' });
+    if (!req.user.isAdmin && session.ownerUsername !== req.user.username) {
+        return res.status(403).json({ success: false, message: 'Accès non autorisé' });
+    }
     const success = await sessionManager.deleteSession(req.params.id);
     if (success) {
         res.json({ success: true, message: 'Session supprimée' });
     } else {
-        res.status(404).json({ success: false, message: 'Session non trouvée ou erreur' });
+        res.status(500).json({ success: false, message: 'Erreur suppression session' });
     }
 });
 
