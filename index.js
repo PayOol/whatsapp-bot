@@ -4836,7 +4836,7 @@ app.get('/api/stats/activity', requireAuth, (req, res) => {
         // Compter les actions dans les logs pour ce jour
         let count = 0;
         logs.forEach(log => {
-            const logDate = typeof log === 'object' ? log.display : log.substring(1, 11);
+            const logDate = typeof log === 'object' ? log.timestamp.substring(0, 10) : log.substring(1, 11);
             const logStr = typeof log === 'object' ? `${log.display} ${log.message}` : log;
             if (logDate === dateStr || logStr.includes(dateStr)) {
                 // Compter les actions significatives

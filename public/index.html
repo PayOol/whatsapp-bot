@@ -3254,7 +3254,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                 return;
             }
 
-            const html = logs.slice().reverse().map(log => {
+            const html = logs.map(log => {
                 // Le format est: [date/heure] message
                 // On doit séparer la date du message sans couper les tags
                 const match = log.match(/^\[([^\]]+)\] (.+)$/);
