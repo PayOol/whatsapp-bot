@@ -2361,7 +2361,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                                 </button>
                             </div>
                             <p class="form-hint">Entrez le numéro WhatsApp sans le symbole + ni espaces</p>
-                            <div class="tags-wrap" id="users-list"></div>
+                            <div class="tags-wrap" id="exception-users-list"></div>
                         </div>
                     </div>
                 </div>
@@ -2385,7 +2385,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                                 </h3>
                                 <span class="badge badge-primary" id="users-count">0</span>
                             </div>
-                            <div class="card-body" id="users-list">
+                            <div class="card-body" id="admin-users-list">
                                 <div class="empty-state">
                                     <div class="empty-state-icon"><i class="fas fa-users-slash"></i></div>
                                     <p class="empty-state-text">Chargement...</p>
@@ -2769,7 +2769,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             const data = await res.json();
             
             if (data.success) {
-                const usersList = document.getElementById('users-list');
+                const usersList = document.getElementById('admin-users-list');
                 const usersCount = document.getElementById('users-count');
                 const btnDeleteAll = document.getElementById('btn-delete-all-users');
                 
@@ -2903,6 +2903,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         
         // Load page-specific data
         if (page === 'menus') loadMenusData();
+        if (page === 'users') loadUserExceptions();
         if (page === 'admin') loadUsersList();
         if (page === 'announcements') {
             loadAnnouncements();
@@ -3556,7 +3557,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
 
             document.getElementById('excludeAdmins').checked = data.excludedAdmins !== false;
 
-            const container = document.getElementById('users-list');
+            const container = document.getElementById('exception-users-list');
             if (data.excludedUsers?.length) {
                 container.innerHTML = data.excludedUsers.map(u => {
                     const userId = typeof u === 'object' ? u.id : u;
