@@ -3727,8 +3727,7 @@ async function handleCall(client, call, sessionId) {
                 const contact = await client.getContactById(callerId);
                 if (contact.isBlocked) {
                     sessionData.addLog(`[BLOCK] ${callerId} deja bloque`);
-                    await HumanBehavior.naturalDelay(HumanBehavior.callRejectDelay());
-                    try { await call.reject(); } catch (e) {}
+                    try { await call.reject(); } catch (e) {} // Rejet immédiat, sans délai
                     return;
                 } else {
                     sessionData.addLog(`[UNBLOCK] ${callerId} debloque manuellement, mise a jour`);
