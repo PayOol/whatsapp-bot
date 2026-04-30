@@ -5391,6 +5391,12 @@ app.get('/api/announcements/groups', requireAuth, async (req, res) => {
     }
 });
 
+// Statistiques des annonces (AVANT :id pour ne pas être capturé par le paramètre)
+app.get('/api/announcements/stats', requireAuth, (req, res) => {
+    const stats = announcementsManager.getStats();
+    res.json({ success: true, stats });
+});
+
 // Détails d'une annonce
 app.get('/api/announcements/:id', requireAuth, (req, res) => {
     const announcement = announcementsManager.getAnnouncement(req.params.id);
@@ -5513,11 +5519,7 @@ app.post('/api/announcements/:id/publish', requireAuth, async (req, res) => {
     }
 });
 
-// Statistiques des annonces
-app.get('/api/announcements/stats', requireAuth, (req, res) => {
-    const stats = announcementsManager.getStats();
-    res.json({ success: true, stats });
-});
+// (Route /api/announcements/stats déplacée avant :id)
 
 // Route pour récupérer les métadonnées d'un lien (Open Graph)
 app.get('/api/link-preview', requireAuth, async (req, res) => {
