@@ -2903,6 +2903,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         
         // Load page-specific data
         if (page === 'menus') loadMenusData();
+        if (page === 'groups') { loadGroups(); loadPatterns(); }
         if (page === 'users') loadUserExceptions();
         if (page === 'admin') loadUsersList();
         if (page === 'announcements') {
@@ -3285,8 +3286,8 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
     async function loadGroups() {
         try {
             const [groupsRes, exceptionsRes] = await Promise.all([
-                fetch(getApiUrl('/api/groups')),
-                fetch(getApiUrl('/api/groups/exceptions'))
+                authFetch(getApiUrl('/api/groups')),
+                authFetch(getApiUrl('/api/groups/exceptions'))
             ]);
             const groups = await groupsRes.json();
             const exceptionsData = await exceptionsRes.json();
@@ -3473,7 +3474,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             const res = await authFetch('/api/groups/delete', {
                 method: 'DELETE',
                 headers: getAuthHeaders(),
-                body: JSON.stringify({ groupId })
+                body: JSON.stringify(addSessionIdToBody({ groupId }))
             });
             const result = await res.json();
             
