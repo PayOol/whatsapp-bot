@@ -1505,7 +1505,6 @@ class SessionDataManager {
     }
     
     addWarning(chatId, userId) {
-        this.cleanExpiredWarnings();
         if (!this.warnings[chatId]) this.warnings[chatId] = {};
         if (!this.warnings[chatId][userId]) this.warnings[chatId][userId] = [];
         this.warnings[chatId][userId].push(Date.now());
@@ -2335,7 +2334,6 @@ function cleanExpiredWarnings(warnings) {
 
 function addWarning(chatId, userId) {
     let warnings = loadWarnings();
-    warnings = cleanExpiredWarnings(warnings);
     if (!warnings[chatId]) warnings[chatId] = {};
     if (!warnings[chatId][userId]) warnings[chatId][userId] = [];
     warnings[chatId][userId].push(Date.now());
@@ -2353,8 +2351,7 @@ function resetWarnings(chatId, userId) {
 }
 
 function getWarningCount(chatId, userId) {
-    let warnings = cleanExpiredWarnings(loadWarnings());
-    saveWarnings(warnings);
+    let warnings = loadWarnings();
     return warnings[chatId]?.[userId]?.length || 0;
 }
 
