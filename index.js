@@ -2016,17 +2016,18 @@ async function handleMenuResponse(message, responseId, sessionData = null) {
 
         if (menu.groupId && chat.id._serialized !== menu.groupId) continue;
 
+        const quoteOpts = { quotedMessageId: message.id._serialized };
         if (menu.type === 'buttons') {
             const button = menu.buttons.find(b => b.id === responseId);
             if (button) {
                 if (button.action) {
-                    return await executeMenuAction(chat, senderId, button.action, menu, sessionData);
+                    return await executeMenuAction(chat, senderId, button.action, menu, sessionData, message);
                 }
                 if (button.nextMenu) {
-                    return await sendInteractiveMenu(chat, button.nextMenu, sessionData);
+                    return await sendInteractiveMenu(chat, button.nextMenu, sessionData, message);
                 }
                 if (button.response) {
-                    return await sendMessageHumanized(chat, button.response, {}, message.body?.length || 0, sessionData);
+                    return await sendMessageHumanized(chat, button.response, quoteOpts, message.body?.length || 0, sessionData);
                 }
             }
         }
@@ -2036,13 +2037,13 @@ async function handleMenuResponse(message, responseId, sessionData = null) {
                 const row = section.rows.find(r => r.id === responseId);
                 if (row) {
                     if (row.action) {
-                        return await executeMenuAction(chat, senderId, row.action, menu, sessionData);
+                        return await executeMenuAction(chat, senderId, row.action, menu, sessionData, message);
                     }
                     if (row.nextMenu) {
-                        return await sendInteractiveMenu(chat, row.nextMenu, sessionData);
+                        return await sendInteractiveMenu(chat, row.nextMenu, sessionData, message);
                     }
                     if (row.response) {
-                        return await sendMessageHumanized(chat, row.response, {}, message.body?.length || 0, sessionData);
+                        return await sendMessageHumanized(chat, row.response, quoteOpts, message.body?.length || 0, sessionData);
                     }
                 }
             }
@@ -2052,29 +2053,29 @@ async function handleMenuResponse(message, responseId, sessionData = null) {
     return null;
 }
 
-async function executeMenuAction(chat, userId, action, menu, sessionData = null, activeClient = null) {
+async function executeMenuAction(chat, userId, action, menu, sessionData = null, quotedMsg = null) {
+    const quoteOpts = quotedMsg ? { quotedMessageId: quotedMsg.id._serialized } : {};
     switch (action.type) {
         case 'message':
-            return await sendMessageHumanized(chat, action.content, {}, 0, sessionData);
+            return await sendMessageHumanized(chat, action.content, quoteOpts, 0, sessionData);
 
         case 'link':
             if (action.whitelist) {
                 addLog(`[OK] Lien autorise via menu: ${action.whitelist}`);
                 return await sendMessageHumanized(chat,
-                    `✅ Voici le lien autorisé: ${action.whitelist}`, {}, 0);
+                    `✅ Voici le lien autorisé: ${action.whitelist}`, quoteOpts, 0);
             }
             break;
 
         case 'contact':
             if (action.contactId) {
                 try {
-                    const c = activeClient || client;
-                    const contact = await c.getContactById(action.contactId);
+                    const contact = await client.getContactById(action.contactId);
                     return await sendMessageHumanized(chat,
                         `👤 Contact demandé: @${contact.number}`,
-                        { mentions: [contact.id._serialized] }, 0);
+                        { mentions: [contact.id._serialized], ...quoteOpts }, 0);
                 } catch (e) {
-                    return await sendMessageHumanized(chat, '❌ Contact non disponible', {}, 0);
+                    return await sendMessageHumanized(chat, '❌ Contact non disponible', quoteOpts, 0);
                 }
             }
             break;
@@ -2082,7 +2083,7 @@ async function executeMenuAction(chat, userId, action, menu, sessionData = null,
         case 'submenu':
             const subMenus = sessionData ? sessionData.interactiveMenus : interactiveMenus;
             if (action.menuId && subMenus[action.menuId]) {
-                return await sendInteractiveMenu(chat, action.menuId, sessionData);
+                return await sendInteractiveMenu(chat, action.menuId, sessionData, quotedMsg);
             }
             break;
         case 'external':
@@ -3356,16 +3357,17 @@ async function handleMessage(client, message, sessionId) {
                     const selectedItem = items[selectedNumber - 1];
                     sessionData.addLog(`Menu reponse textuel: ${selectedNumber} (${selectedItem.text || selectedItem.title}) de ${senderId}`);
 
+                    const quoteOpts = { quotedMessageId: message.id._serialized };
                     if (selectedItem.response) {
-                        await sendMessageHumanized(chat, selectedItem.response, {}, messageText.length, sessionData);
+                        await sendMessageHumanized(chat, selectedItem.response, quoteOpts, messageText.length, sessionData);
                     } else if (selectedItem.nextMenu) {
-                        await sendInteractiveMenu(chat, selectedItem.nextMenu, sessionData);
+                        await sendInteractiveMenu(chat, selectedItem.nextMenu, sessionData, message);
                     } else {
-                        await sendMessageHumanized(chat, `[OK] Vous avez selectionne: ${selectedItem.text || selectedItem.title}`, {}, messageText.length, sessionData);
+                        await sendMessageHumanized(chat, `[OK] Vous avez selectionne: ${selectedItem.text || selectedItem.title}`, quoteOpts, messageText.length, sessionData);
                     }
                     return;
                 } else if (items.length > 0) {
-                    await sendMessageHumanized(chat, `⚠️ Option invalide. Veuillez choisir un numéro entre *1* et *${items.length}*.`, {}, messageText.length, sessionData);
+                    await sendMessageHumanized(chat, `⚠️ Option invalide. Veuillez choisir un numéro entre *1* et *${items.length}*.`, { quotedMessageId: message.id._serialized }, messageText.length, sessionData);
                     return;
                 }
             }
