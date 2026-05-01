@@ -5389,6 +5389,7 @@ app.get('/api/announcements', requireAuth, (req, res) => {
             content: a.content.substring(0, 100) + (a.content.length > 100 ? '...' : ''),
             groups: a.groups,
             status: a.status,
+            hasImage: !!a.image,
             createdAt: a.createdAt,
             publishedAt: a.publishedAt,
             publishedGroupsCount: a.publishedGroups?.length || 0,
@@ -5449,7 +5450,8 @@ app.get('/api/announcements/:id', requireAuth, (req, res) => {
         return res.status(403).json({ success: false, message: 'Accès non autorisé' });
     }
     
-    res.json({ success: true, announcement });
+    const { image: _img, ...announcementWithoutImage } = announcement;
+    res.json({ success: true, announcement: { ...announcementWithoutImage, hasImage: !!_img } });
 });
 
 // Créer une annonce
@@ -5471,7 +5473,8 @@ app.post('/api/announcements', requireAuth, (req, res) => {
             scheduledAt
         });
         
-        res.json({ success: true, announcement });
+        const { image: _img, ...announcementWithoutImage } = announcement;
+        res.json({ success: true, announcement: { ...announcementWithoutImage, hasImage: !!_img } });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -5491,7 +5494,8 @@ app.put('/api/announcements/:id', requireAuth, (req, res) => {
             return res.status(404).json({ success: false, message: 'Annonce non trouvée ou non modifiable' });
         }
         
-        res.json({ success: true, announcement });
+        const { image: _img, ...announcementWithoutImage } = announcement;
+        res.json({ success: true, announcement: { ...announcementWithoutImage, hasImage: !!_img } });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -5676,7 +5680,8 @@ app.post('/api/announcements/:id/duplicate', requireAuth, (req, res) => {
             image: original.image
         });
         
-        res.json({ success: true, announcement: duplicate });
+        const { image: _dupImg, ...dupWithoutImage } = duplicate;
+        res.json({ success: true, announcement: { ...dupWithoutImage, hasImage: !!_dupImg } });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }

@@ -4465,7 +4465,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                         <span>${a.groups?.length || 0} groupe(s)</span>
                         <span>•</span>
                         <span>${new Date(a.createdAt).toLocaleDateString()}</span>
-                        ${a.image ? '<span class="tag tag-neutral"><i class="fas fa-image"></i></span>' : ''}
+                        ${a.hasImage ? '<span class="tag tag-neutral"><i class="fas fa-image"></i></span>' : ''}
                         <span class="tag tag-${a.status === 'published' ? 'success' : a.status === 'draft' ? 'neutral' : 'warning'}">${getAnnouncementStatusLabel(a.status)}</span>
                     </div>
                 </div>
