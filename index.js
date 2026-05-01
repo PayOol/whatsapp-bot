@@ -782,8 +782,80 @@ function activateSubscription(username, paymentId, amount, currency) {
     return subscriptions[username];
 }
 
+const SUBSCRIPTION_NOTIFIED_FILE = path.join(DATA_DIR, 'subscription_notified.json');
+let subscriptionNotified = {};
+
+function loadSubscriptionNotified() {
+    try {
+        if (fs.existsSync(SUBSCRIPTION_NOTIFIED_FILE)) {
+            subscriptionNotified = JSON.parse(fs.readFileSync(SUBSCRIPTION_NOTIFIED_FILE, 'utf8'));
+        }
+    } catch (e) { subscriptionNotified = {}; }
+}
+
+function saveSubscriptionNotified() {
+    try {
+        if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+        fs.writeFileSync(SUBSCRIPTION_NOTIFIED_FILE, JSON.stringify(subscriptionNotified, null, 2));
+    } catch (e) {}
+}
+
+async function notifyUnsubscribedUsers() {
+    if (!subscriptionSettings.enabled) return { sent: 0, skipped: 0, errors: 0 };
+    
+    let sent = 0, skipped = 0, errors = 0;
+    
+    const allSessions = Object.values(sessionManager?.sessionsList || {});
+    
+    for (const sessionInfo of allSessions) {
+        const owner = sessionInfo.ownerUsername;
+        if (!owner) continue;
+        
+        // Skip admins
+        const user = authManager.users[owner];
+        if (!user || user.isAdmin) { skipped++; continue; }
+        
+        // Skip users with active subscription
+        if (isSubscriptionActive(owner)) { skipped++; continue; }
+        
+        // Skip already notified users
+        if (subscriptionNotified[owner]) { skipped++; continue; }
+        
+        // Skip sessions that are not connected
+        const session = sessionManager.sessions.get(sessionInfo.id);
+        if (!session || !session.client || !session.client.info) { skipped++; continue; }
+        
+        const client = session.client;
+        const botNumber = client.info.wid._serialized;
+        
+        const price = new Intl.NumberFormat('fr-FR').format(subscriptionSettings.amount);
+        const message = `🔔 *Notification importante — PayOol™ Bot*\n\n` +
+            `Bonjour ! Un système d'abonnement a été mis en place sur la plateforme.\n\n` +
+            `Pour continuer à bénéficier de toutes les fonctionnalités du bot (modération, anti-spam, menus interactifs, etc.), vous devez souscrire à un abonnement.\n\n` +
+            `💰 *Tarif :* ${price} ${subscriptionSettings.currency}\n` +
+            `📅 *Durée :* ${subscriptionSettings.durationDays} jours\n\n` +
+            `Rendez-vous sur votre tableau de bord pour effectuer le paiement.\n\n` +
+            `⚠️ Sans abonnement actif, vous ne pourrez plus créer ni redémarrer de sessions.\n\n` +
+            `Merci de votre confiance ! 🙏`;
+        
+        try {
+            await client.sendMessage(botNumber, message);
+            subscriptionNotified[owner] = { notifiedAt: Date.now(), sessionId: sessionInfo.id };
+            saveSubscriptionNotified();
+            sent++;
+            addLog(`[SUB] Notification envoyée à ${owner} via session ${sessionInfo.id}`);
+        } catch (e) {
+            errors++;
+            addLog(`[SUB] Erreur envoi notification à ${owner}: ${e.message}`);
+        }
+    }
+    
+    return { sent, skipped, errors };
+}
+
 loadSubscriptionSettings();
 loadSubscriptions();
+loadSubscriptionNotified();
 
 // ============================================================
 // 📢 GESTIONNAIRE D'ANNONCES
@@ -4765,7 +4837,33 @@ app.post('/api/admin/subscription/settings', requireAdmin, (req, res) => {
     saveSubscriptionSettings();
     addLog(`[SUB] Paramètres d'abonnement mis à jour par ${req.user.username}`);
     
+    // Si le système vient d'être activé, envoyer les notifications automatiquement
+    if (enabled === true) {
+        notifyUnsubscribedUsers().then(result => {
+            addLog(`[SUB] Notifications auto: ${result.sent} envoyées, ${result.skipped} ignorées, ${result.errors} erreurs`);
+        }).catch(e => {
+            addLog(`[SUB] Erreur notifications auto: ${e.message}`);
+        });
+    }
+    
     res.json({ success: true, settings: subscriptionSettings });
+});
+
+// Admin: envoyer manuellement les notifications d'abonnement
+app.post('/api/admin/subscription/notify', requireAdmin, async (req, res) => {
+    const { resetNotified } = req.body;
+    
+    // Option pour re-notifier tout le monde
+    if (resetNotified) {
+        subscriptionNotified = {};
+        saveSubscriptionNotified();
+        addLog(`[SUB] Liste de notifications réinitialisée par ${req.user.username}`);
+    }
+    
+    const result = await notifyUnsubscribedUsers();
+    addLog(`[SUB] Notifications manuelles par ${req.user.username}: ${result.sent} envoyées, ${result.skipped} ignorées, ${result.errors} erreurs`);
+    
+    res.json({ success: true, ...result });
 });
 
 // Admin: lister tous les abonnements
