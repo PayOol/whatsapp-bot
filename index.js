@@ -5536,7 +5536,7 @@ app.post('/api/announcements/:id/publish', requireAuth, async (req, res) => {
         }
         
         // Vérifier qu'une session est active
-        const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.body.sessionId);
+        const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.body?.sessionId);
         const sessionClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
         
         if (!sessionClient || !sessionClient.info) {

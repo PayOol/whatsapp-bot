@@ -4793,7 +4793,8 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                 showToast(data.message || 'Erreur', 'error');
             }
         } catch (e) {
-            showToast('Erreur réseau', 'error');
+            console.error('Erreur saveAnnouncement:', e);
+            showToast('Erreur: ' + (e.message || 'réseau'), 'error');
         }
     }
 
@@ -4801,6 +4802,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         const title = document.getElementById('announcement-title-input').value.trim();
         const content = document.getElementById('announcement-content-input').value.trim();
         const linkPreview = document.getElementById('announcement-link-preview').checked;
+        console.log('[PUBLISH] content:', !!content, 'groups:', selectedAnnouncementGroups.length, 'image:', !!announcementImageData);
 
         if (!content) {
             showToast('Le contenu est requis', 'error');
@@ -4848,7 +4850,8 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                 showToast(data.message || 'Erreur', 'error');
             }
         } catch (e) {
-            showToast('Erreur réseau', 'error');
+            console.error('Erreur saveAndPublish:', e);
+            showToast('Erreur: ' + (e.message || 'réseau'), 'error');
         }
     }
 
