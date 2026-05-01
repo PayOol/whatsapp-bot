@@ -3373,25 +3373,29 @@ async function handleMessage(client, message, sessionId) {
         if (message.type !== 'chat') { /* skip menu trigger for non-text messages */ }
         else {
         const triggerText = message.body.trim().toLowerCase();
-        const menuCount = Object.keys(sessionData.interactiveMenus || {}).length;
-        sessionData.addLog(`[DEBUG-MENU] Message: "${triggerText}" | Menus charges: ${menuCount} | Chat: ${chat.id._serialized}`);
+        const cleanMsg = triggerText.replace(/[^\wàâäéèêëïîôùûüç\s'-]/gi, '');
+        const messageWords = cleanMsg.split(/\s+/).filter(w => w.length > 2);
         for (const menuId in sessionData.interactiveMenus) {
             const menu = sessionData.interactiveMenus[menuId];
-            sessionData.addLog(`[DEBUG-MENU] Check menu ${menuId}: enabled=${menu.enabled}, trigger="${menu.trigger}", groupId=${menu.groupId || 'aucun'}`);
             if (!menu.enabled || !menu.trigger) continue;
             if (menu.groupId && chat.id._serialized !== menu.groupId) continue;
 
             const triggers = menu.trigger.split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
-            const messageWords = triggerText.replace(/[^\w\sàâäéèêëïîôùûüç'-]/gi, '').split(/\s+/).filter(w => w.length > 1);
             const matched = triggers.find(t => {
-                if (triggerText.includes(t) || t.includes(triggerText)) return true;
-                const triggerWords = t.split(/\s+/).filter(w => w.length > 2);
-                if (triggerWords.length === 0) return false;
-                const found = triggerWords.filter(w => messageWords.some(mw => mw.includes(w) || w.includes(mw)));
-                const msgFound = messageWords.filter(mw => triggerWords.some(w => mw.includes(w) || w.includes(mw)));
-                return found.length >= 2 || msgFound.length >= Math.ceil(messageWords.length * 0.6);
+                // 1. Match exact : le message EST le trigger ou le contient tel quel
+                if (triggerText === t) return true;
+                if (triggerText.includes(t) && t.length >= 4) return true;
+                // 2. Trigger court (1-2 mots) : doit être trouvé comme mot entier dans le message
+                const tWords = t.split(/\s+/).filter(w => w.length > 2);
+                if (tWords.length <= 2) {
+                    return tWords.every(tw => messageWords.some(mw => mw === tw));
+                }
+                // 3. Trigger long (phrase) : au moins 3 mots-clés significatifs en commun (mot entier)
+                const keyWords = tWords.filter(w => w.length > 3);
+                if (keyWords.length === 0) return false;
+                const found = keyWords.filter(kw => messageWords.some(mw => mw === kw));
+                return found.length >= 3 || (found.length >= 2 && found.length >= Math.ceil(keyWords.length * 0.5));
             });
-            sessionData.addLog(`[DEBUG-MENU] Triggers: [${triggers.join(', ')}] | MsgWords: [${messageWords.join(', ')}] | Match: ${matched || 'AUCUN'}`);
             if (matched) {
                 sessionData.addLog(`Menu declenche: ${menuId} par ${senderId} (mot-cle: ${matched})`);
                 await sendInteractiveMenu(chat, menuId, sessionData);
