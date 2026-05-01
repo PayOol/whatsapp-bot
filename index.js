@@ -1907,6 +1907,7 @@ function createMenu(config, sessionData = null) {
         type: config.type || 'buttons',
         buttons: config.buttons || [],
         listSections: config.listSections || [],
+        image: config.image || null,
         groupId: config.groupId || null,
         enabled: config.enabled !== false
     };
@@ -1948,30 +1949,20 @@ async function sendInteractiveMenu(chat, menuId, sessionData = null) {
         const title = menu.title;
         const description = menu.description || '';
 
-        if (menu.type === 'buttons' && menu.buttons.length > 0) {
-            let menuText = `📋 *${title}*\n\n`;
-            if (description) menuText += `${description}\n\n`;
+        let menuText = '';
+        let sessionItems = null;
 
+        if (menu.type === 'buttons' && menu.buttons.length > 0) {
+            menuText = `📋 *${title}*\n\n`;
+            if (description) menuText += `${description}\n\n`;
             menu.buttons.slice(0, 10).forEach((btn, i) => {
                 menuText += `${i + 1}️⃣ ${btn.text}\n`;
             });
             menuText += `\n_Répondez avec le numéro de votre choix_`;
-
-            const sessKey = `${chat.id._serialized}_${Date.now()}`;
-            sessions[sessKey] = {
-                menuId,
-                buttons: menu.buttons,
-                createdAt: Date.now(),
-                expiresAt: Date.now() + 3600000
-            };
-            if (sessionData) sessionData.saveMenus(); else saveMenus();
-
-            const sent = await sendMessageHumanized(chat, menuText, {});
-            return sent;
+            sessionItems = { buttons: menu.buttons };
         } else if (menu.type === 'list' && menu.listSections.length > 0) {
-            let menuText = `📋 *${title}*\n\n`;
+            menuText = `📋 *${title}*\n\n`;
             if (description) menuText += `${description}\n\n`;
-
             let optionIndex = 0;
             const allRows = [];
             menu.listSections.forEach(section => {
@@ -1983,21 +1974,26 @@ async function sendInteractiveMenu(chat, menuId, sessionData = null) {
                 });
             });
             menuText += `\n_Répondez avec le numéro de votre choix_`;
+            sessionItems = { rows: allRows };
+        } else {
+            menuText = description || title;
+        }
 
+        if (sessionItems) {
             const sessKey = `${chat.id._serialized}_${Date.now()}`;
-            sessions[sessKey] = {
-                menuId,
-                rows: allRows,
-                createdAt: Date.now(),
-                expiresAt: Date.now() + 3600000
-            };
+            sessions[sessKey] = { menuId, ...sessionItems, createdAt: Date.now(), expiresAt: Date.now() + 3600000 };
             if (sessionData) sessionData.saveMenus(); else saveMenus();
+        }
 
-            const sent = await sendMessageHumanized(chat, menuText, {});
+        if (menu.image) {
+            const base64Data = menu.image.replace(/^data:image\/\w+;base64,/, '');
+            const mimeMatch = menu.image.match(/^data:(image\/\w+);base64,/);
+            const mimetype = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+            const media = new MessageMedia(mimetype, base64Data, 'menu.jpg');
+            const sent = await sendMessageHumanized(chat, media, { caption: menuText });
             return sent;
         } else {
-            const body = description || title;
-            const sent = await sendMessageHumanized(chat, body, {});
+            const sent = await sendMessageHumanized(chat, menuText, {});
             return sent;
         }
     } catch (error) {

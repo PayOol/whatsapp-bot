@@ -3893,6 +3893,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
     let currentEditingMenu = null;
     let availableGroups = [];
     let menusData = {};
+    let menuImageData = null;
     
     async function loadMenus() {
         try {
@@ -3952,6 +3953,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             document.getElementById('menu-type').value = menu.type || 'buttons';
             document.getElementById('menu-description').value = menu.description || '';
             document.getElementById('menu-enabled').checked = menu.enabled !== false;
+            menuImageData = menu.image || null;
             
             renderMenuButtons(menu.buttons || []);
             renderMenuSections(menu.listSections || []);
@@ -3959,8 +3961,17 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             form.reset();
             document.getElementById('menu-id').value = 'menu_' + Date.now();
             document.getElementById('menu-enabled').checked = true;
+            menuImageData = null;
             renderMenuButtons([]);
             renderMenuSections([]);
+        }
+        if (menuImageData) {
+            document.getElementById('menu-image-thumb').src = menuImageData;
+            document.getElementById('menu-image-preview').style.display = 'block';
+            document.getElementById('menu-image-placeholder').style.display = 'none';
+        } else {
+            document.getElementById('menu-image-preview').style.display = 'none';
+            document.getElementById('menu-image-placeholder').style.display = 'block';
         }
         
         modal.classList.add('active');
@@ -4174,6 +4185,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             type: document.getElementById('menu-type').value,
             description: document.getElementById('menu-description').value,
             enabled: document.getElementById('menu-enabled').checked,
+            image: menuImageData || null,
             buttons: getButtonsFromForm(),
             listSections: getSectionsFromForm()
         };
@@ -4256,6 +4268,38 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
     function closeMenuEditor() {
         document.getElementById('menu-editor-modal').classList.remove('active');
         currentEditingMenu = null;
+        menuImageData = null;
+    }
+
+    function handleMenuImage(input) {
+        const file = input.files[0];
+        if (!file) return;
+        processMenuImageFile(file);
+    }
+
+    function handleMenuImageDrop(event) {
+        const file = event.dataTransfer.files[0];
+        if (file && file.type.startsWith('image/')) processMenuImageFile(file);
+    }
+
+    function processMenuImageFile(file) {
+        if (file.size > 5 * 1024 * 1024) { showToast('Image trop lourde (max 5 Mo)', 'error'); return; }
+        if (!file.type.startsWith('image/')) { showToast('Format non supporté', 'error'); return; }
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            menuImageData = e.target.result;
+            document.getElementById('menu-image-thumb').src = menuImageData;
+            document.getElementById('menu-image-preview').style.display = 'block';
+            document.getElementById('menu-image-placeholder').style.display = 'none';
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function removeMenuImage() {
+        menuImageData = null;
+        document.getElementById('menu-image-input').value = '';
+        document.getElementById('menu-image-preview').style.display = 'none';
+        document.getElementById('menu-image-placeholder').style.display = 'block';
     }
     
     async function loadMenusData() {
@@ -5072,6 +5116,24 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                             <button type="button" class="btn btn-ghost btn-xs" onclick="formatWhatsAppText('menu-description','monospace')" title="Monospace"><i class="fas fa-code"></i></button>
                         </div>
                         <textarea class="form-input" id="menu-description" placeholder="Texte affiché avec le menu" rows="3"></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Image (optionnel)</label>
+                        <div id="menu-image-zone" style="border:2px dashed var(--border);border-radius:var(--radius-md);padding:20px;text-align:center;cursor:pointer;transition:border-color 0.2s;position:relative" onclick="document.getElementById('menu-image-input').click()" ondragover="event.preventDefault();this.style.borderColor='var(--primary)'" ondragleave="this.style.borderColor='var(--border)'" ondrop="event.preventDefault();this.style.borderColor='var(--border)';handleMenuImageDrop(event)">
+                            <input type="file" id="menu-image-input" accept="image/*" style="display:none" onchange="handleMenuImage(this)">
+                            <div id="menu-image-placeholder">
+                                <i class="fas fa-cloud-upload-alt" style="font-size:1.5rem;color:var(--text-muted);margin-bottom:8px;display:block"></i>
+                                <span style="color:var(--text-muted);font-size:0.85rem">Cliquez ou glissez une image ici</span>
+                            </div>
+                            <div id="menu-image-preview" style="display:none;position:relative">
+                                <img id="menu-image-thumb" style="max-width:100%;max-height:200px;border-radius:8px;object-fit:contain">
+                                <button type="button" class="btn btn-ghost btn-xs" onclick="event.stopPropagation();removeMenuImage()" style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,0.7);border-radius:50%;width:28px;height:28px;padding:0;display:flex;align-items:center;justify-content:center">
+                                    <i class="fas fa-times" style="color:white;font-size:0.75rem"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <p class="form-hint">Formats: JPG, PNG, GIF, WebP — Max 5 Mo</p>
                     </div>
                     
                     <div class="setting-row">
