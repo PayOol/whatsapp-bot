@@ -813,9 +813,10 @@ async function notifyUnsubscribedUsers() {
         const owner = sessionInfo.ownerUsername;
         if (!owner) continue;
         
-        // Skip admins
+        // Skip admins (vérifier dans authManager ET dans admin principal)
         const user = authManager.users[owner];
-        if (!user || user.isAdmin) { skipped++; continue; }
+        if (user && user.isAdmin) { skipped++; continue; }
+        if (authManager.admin && authManager.admin.username === owner) { skipped++; continue; }
         
         // Skip users with active subscription
         if (isSubscriptionActive(owner)) { skipped++; continue; }
