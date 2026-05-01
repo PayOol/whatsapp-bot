@@ -808,25 +808,27 @@ async function notifyUnsubscribedUsers() {
     let sent = 0, skipped = 0, errors = 0;
     
     const allSessions = Object.entries(sessionManager?.sessionsList || {});
+    addLog(`[SUB] Début notifications: ${allSessions.length} sessions trouvées`);
     
     for (const [sessionId, sessionInfo] of allSessions) {
         const owner = sessionInfo.ownerUsername;
-        if (!owner) continue;
+        if (!owner) { addLog(`[SUB] Skip ${sessionId}: pas de propriétaire`); continue; }
         
         // Skip admins (vérifier dans authManager ET dans admin principal)
         const user = authManager.users[owner];
-        if (user && user.isAdmin) { skipped++; continue; }
-        if (authManager.admin && authManager.admin.username === owner) { skipped++; continue; }
+        if (user && user.isAdmin) { addLog(`[SUB] Skip ${owner}: admin (authManager)`); skipped++; continue; }
+        if (authManager.admin && authManager.admin.username === owner) { addLog(`[SUB] Skip ${owner}: admin principal`); skipped++; continue; }
         
         // Skip users with active subscription
-        if (isSubscriptionActive(owner)) { skipped++; continue; }
+        if (isSubscriptionActive(owner)) { addLog(`[SUB] Skip ${owner}: abonnement actif`); skipped++; continue; }
         
         // Skip already notified users
-        if (subscriptionNotified[owner]) { skipped++; continue; }
+        if (subscriptionNotified[owner]) { addLog(`[SUB] Skip ${owner}: déjà notifié`); skipped++; continue; }
         
         // Skip sessions that are not connected
         const session = sessionManager.sessions.get(sessionId);
-        if (!session || !session.client || !session.client.info) { skipped++; continue; }
+        addLog(`[SUB] Session ${sessionId} owner=${owner} | sessions.has=${sessionManager.sessions.has(sessionId)} | client=${!!session?.client} | info=${!!session?.client?.info}`);
+        if (!session || !session.client || !session.client.info) { addLog(`[SUB] Skip ${owner}: session non connectée`); skipped++; continue; }
         
         const client = session.client;
         const botNumber = client.info.wid._serialized;
