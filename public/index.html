@@ -4818,17 +4818,20 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             // D'abord sauvegarder
             let announcementId = editingAnnouncementId;
             
+            console.log('[PUBLISH] Step 1 - save, editingId:', announcementId);
             if (!announcementId) {
                 const res = await authFetch('/api/announcements', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ title, content, groups: selectedAnnouncementGroups, linkPreview, image: announcementImageData })
                 });
+                console.log('[PUBLISH] Step 1 - POST response status:', res.status);
                 const data = await res.json();
+                console.log('[PUBLISH] Step 1 - POST data:', data.success, data.message);
                 if (data.success) {
                     announcementId = data.announcement.id;
                 } else {
-                    showToast(data.message || 'Erreur', 'error');
+                    showToast(data.message || 'Erreur sauvegarde', 'error');
                     return;
                 }
             } else {
@@ -4837,20 +4840,24 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ title, content, groups: selectedAnnouncementGroups, linkPreview, image: announcementImageData })
                 });
+                console.log('[PUBLISH] Step 1 - PUT response status:', res.status);
             }
 
             // Puis publier
+            console.log('[PUBLISH] Step 2 - publishing id:', announcementId);
             const res = await authFetch(`/api/announcements/${announcementId}/publish`, { method: 'POST' });
+            console.log('[PUBLISH] Step 2 - publish response status:', res.status);
             const data = await res.json();
+            console.log('[PUBLISH] Step 2 - publish data:', data);
             if (data.success) {
                 showToast(`Publication en cours dans ${data.groupsCount} groupe(s)`, 'success');
                 resetAnnouncementForm();
                 loadAnnouncements();
             } else {
-                showToast(data.message || 'Erreur', 'error');
+                showToast(data.message || 'Erreur publication', 'error');
             }
         } catch (e) {
-            console.error('Erreur saveAndPublish:', e);
+            console.error('[PUBLISH] CATCH error:', e);
             showToast('Erreur: ' + (e.message || 'réseau'), 'error');
         }
     }
