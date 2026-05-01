@@ -3380,8 +3380,9 @@ async function handleMessage(client, message, sessionId) {
             if (!menu.enabled || !menu.trigger) continue;
             if (menu.groupId && chat.id._serialized !== menu.groupId) continue;
 
-            if (triggerText === menu.trigger.toLowerCase()) {
-                sessionData.addLog(`Menu declenche: ${menuId} par ${senderId}`);
+            const triggers = menu.trigger.split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
+            if (triggers.includes(triggerText)) {
+                sessionData.addLog(`Menu declenche: ${menuId} par ${senderId} (mot-cle: ${triggerText})`);
                 await sendInteractiveMenu(chat, menuId, sessionData);
                 return;
             }

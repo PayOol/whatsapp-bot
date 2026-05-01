@@ -3920,7 +3920,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                             <div class="group-name">${escapeHtml(menu.title)}</div>
                             <div class="group-meta">
                                 <span class="group-meta-item">${menu.type === 'buttons' ? 'Boutons' : 'Liste'}</span>
-                                ${menu.trigger ? `<span class="badge badge-info">!${escapeHtml(menu.trigger)}</span>` : ''}
+                                ${menu.trigger ? menu.trigger.split(',').map(t => t.trim()).filter(Boolean).map(t => `<span class="badge badge-info">${escapeHtml(t)}</span>`).join('') : ''}
                                 ${!menu.enabled ? '<span class="badge badge-warning">Désactivé</span>' : ''}
                                 ${menu.buttons?.length ? `<span class="group-meta-item">${menu.buttons.length} boutons</span>` : ''}
                                 ${menu.listSections?.length ? `<span class="group-meta-item">${menu.listSections.reduce((a,s) => a + s.rows.length, 0)} options</span>` : ''}
@@ -5050,9 +5050,9 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                     </div>
                     
                     <div class="form-group">
-                        <label class="form-label">Mot-clé déclencheur</label>
-                        <input type="text" class="form-input" id="menu-trigger" placeholder="Ex: menu, aide, catalogue">
-                        <p class="form-hint">Les utilisateurs tapent ce mot pour afficher le menu</p>
+                        <label class="form-label">Mots-clés déclencheurs</label>
+                        <input type="text" class="form-input" id="menu-trigger" placeholder="Ex: menu, aide, catalogue, bonjour">
+                        <p class="form-hint">Séparez les mots-clés par des virgules. Le menu s'affiche quand un utilisateur envoie l'un de ces mots ou phrases.</p>
                     </div>
                     
                     <div class="form-group">
