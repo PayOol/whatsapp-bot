@@ -2684,6 +2684,9 @@ class SessionManager {
     }
 
     setupClientEvents(client, sessionId) {
+        let qrTimeout = null;
+        const QR_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
         client.on('qr', (qr) => {
             const session = this.sessions.get(sessionId);
             if (session) {
@@ -2695,9 +2698,23 @@ class SessionManager {
             addLog(`[${sessionId}] QR code genere`);
             console.log(`\n[${sessionId}] Scannez ce QR code avec WhatsApp:\n`);
             qrcode.generate(qr, { small: true });
+
+            // Démarrer/redémarrer le timer de 5 min au premier QR
+            if (!qrTimeout) {
+                qrTimeout = setTimeout(async () => {
+                    const sess = this.sessions.get(sessionId);
+                    if (sess && sess.data.status !== 'connected') {
+                        addLog(`[TIMEOUT] [${sessionId}] QR non scanné après 5 min — suppression automatique`);
+                        await this.deleteSession(sessionId);
+                    }
+                }, QR_TIMEOUT_MS);
+            }
         });
 
         client.on('ready', async () => {
+            // Annuler le timer QR si la session se connecte
+            if (qrTimeout) { clearTimeout(qrTimeout); qrTimeout = null; }
+
             const session = this.sessions.get(sessionId);
             if (session) {
                 session.data.status = 'connected';
@@ -2741,6 +2758,7 @@ class SessionManager {
         });
 
         client.on('auth_failure', (msg) => {
+            if (qrTimeout) { clearTimeout(qrTimeout); qrTimeout = null; }
             const session = this.sessions.get(sessionId);
             if (session) {
                 session.data.status = 'auth_failure';
@@ -2751,6 +2769,7 @@ class SessionManager {
         });
 
         client.on('disconnected', (reason) => {
+            if (qrTimeout) { clearTimeout(qrTimeout); qrTimeout = null; }
             const session = this.sessions.get(sessionId);
             if (session) {
                 session.data.status = 'disconnected';
