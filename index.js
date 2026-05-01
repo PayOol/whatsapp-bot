@@ -835,8 +835,9 @@ async function notifyUnsubscribedUsers(autoDisconnect = false) {
             }
         }
         
-        // Étape 2: Déconnecter la session après notification
+        // Étape 2: Attendre que le message soit livré puis déconnecter
         if (autoDisconnect) {
+            await new Promise(resolve => setTimeout(resolve, 15000));
             try {
                 await sessionManager.stopSession(sessionId);
                 disconnected++;
