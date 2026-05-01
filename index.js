@@ -4886,10 +4886,32 @@ app.post('/api/admin/subscription/settings', requireAdmin, (req, res) => {
 
 // Admin: envoyer manuellement les notifications d'abonnement
 app.post('/api/admin/subscription/notify', requireAdmin, async (req, res) => {
-    const result = await checkSubscriptions();
-    addLog(`[SUB] Notifications manuelles par ${req.user.username}: ${result.notified} notifiés, ${result.warned} avertis, ${result.disconnected} déconnectés`);
+    // Reset les états et redémarrer les sessions déconnectées
+    let restarted = 0;
+    for (const [sessionId, state] of Object.entries(subWarningState)) {
+        if (state >= 2) {
+            // Redémarrer la session si elle était déconnectée
+            try {
+                sessionManager.startSession(sessionId);
+                restarted++;
+                addLog(`[SUB] Session ${sessionId} redémarrée par ${req.user.username}`);
+            } catch (e) {
+                addLog(`[SUB] Erreur redémarrage ${sessionId}: ${e.message}`);
+            }
+        }
+        delete subWarningState[sessionId];
+    }
     
-    res.json({ success: true, ...result });
+    // Attendre que les sessions se reconnectent
+    if (restarted > 0) {
+        await new Promise(resolve => setTimeout(resolve, 15000));
+    }
+    
+    // Lancer l'étape 1 sur toutes les sessions sans abonnement
+    const result = await checkSubscriptions();
+    addLog(`[SUB] Notifications manuelles par ${req.user.username}: ${restarted} redémarrées, ${result.notified} notifiés`);
+    
+    res.json({ success: true, restarted, ...result });
 });
 
 // Admin: lister tous les abonnements
