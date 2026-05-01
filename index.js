@@ -3384,8 +3384,15 @@ async function handleMessage(client, message, sessionId) {
             if (menu.groupId && chat.id._serialized !== menu.groupId) continue;
 
             const triggers = menu.trigger.split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
-            const matched = triggers.find(t => triggerText.includes(t));
-            sessionData.addLog(`[DEBUG-MENU] Triggers: [${triggers.join(', ')}] | Match: ${matched || 'AUCUN'}`);
+            const messageWords = triggerText.replace(/[^\w\sàâäéèêëïîôùûüç'-]/gi, '').split(/\s+/).filter(Boolean);
+            const matched = triggers.find(t => {
+                if (triggerText.includes(t)) return true;
+                const triggerWords = t.split(/\s+/).filter(w => w.length > 2);
+                if (triggerWords.length <= 2) return false;
+                const found = triggerWords.filter(w => messageWords.some(mw => mw.includes(w) || w.includes(mw)));
+                return found.length >= Math.ceil(triggerWords.length * 0.5);
+            });
+            sessionData.addLog(`[DEBUG-MENU] Triggers: [${triggers.join(', ')}] | MsgWords: [${messageWords.join(', ')}] | Match: ${matched || 'AUCUN'}`);
             if (matched) {
                 sessionData.addLog(`Menu declenche: ${menuId} par ${senderId} (mot-cle: ${matched})`);
                 await sendInteractiveMenu(chat, menuId, sessionData);
