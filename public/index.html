@@ -3988,8 +3988,13 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                 </div>
                 <input type="text" class="form-input" style="margin-bottom:8px" placeholder="Texte du bouton" 
                     value="${escapeHtml(btn.text || '')}" onchange="updateButton(${i}, 'text', this.value)">
-                <input type="text" class="form-input" style="margin-bottom:8px" placeholder="Réponse (message envoyé au clic)" 
-                    value="${escapeHtml(btn.response || '')}" onchange="updateButton(${i}, 'response', this.value)">
+                <div style="display:flex;gap:4px;margin-bottom:4px">
+                    <button type="button" class="btn btn-ghost btn-xs" onclick="formatWhatsAppText('btn-response-${i}','bold')" title="Gras"><i class="fas fa-bold"></i></button>
+                    <button type="button" class="btn btn-ghost btn-xs" onclick="formatWhatsAppText('btn-response-${i}','italic')" title="Italique"><i class="fas fa-italic"></i></button>
+                    <button type="button" class="btn btn-ghost btn-xs" onclick="formatWhatsAppText('btn-response-${i}','strikethrough')" title="Barré"><i class="fas fa-strikethrough"></i></button>
+                    <button type="button" class="btn btn-ghost btn-xs" onclick="formatWhatsAppText('btn-response-${i}','monospace')" title="Monospace"><i class="fas fa-code"></i></button>
+                </div>
+                <textarea class="form-input" id="btn-response-${i}" style="margin-bottom:8px" placeholder="Réponse (message envoyé au clic)" rows="2" onchange="updateButton(${i}, 'response', this.value)">${escapeHtml(btn.response || '')}</textarea>
                 <input type="text" class="form-input" placeholder="ID du sous-menu (optionnel)" 
                     value="${escapeHtml(btn.nextMenu || '')}" onchange="updateButton(${i}, 'nextMenu', this.value)">
             </div>
@@ -4020,11 +4025,12 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         
         items.forEach((item, i) => {
             const inputs = item.querySelectorAll('input');
+            const textarea = item.querySelector('textarea');
             buttons.push({
                 id: `btn_${i}`,
                 text: inputs[0]?.value || '',
-                response: inputs[1]?.value || '',
-                nextMenu: inputs[2]?.value || null
+                response: textarea?.value || '',
+                nextMenu: inputs[1]?.value || null
             });
         });
         
@@ -4048,12 +4054,19 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                     value="${escapeHtml(section.title || '')}" onchange="updateSection(${si}, 'title', this.value)">
                 <div style="border-top:1px solid var(--border);padding-top:12px">
                     ${(section.rows || []).map((row, ri) => `
-                        <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">
-                            <input type="text" class="form-input" style="flex:1" placeholder="Titre" 
-                                value="${escapeHtml(row.title || '')}" onchange="updateRow(${si}, ${ri}, 'title', this.value)">
-                            <input type="text" class="form-input" style="flex:1" placeholder="Réponse" 
-                                value="${escapeHtml(row.response || '')}" onchange="updateRow(${si}, ${ri}, 'response', this.value)">
-                            <button class="tag-remove" onclick="removeRow(${si}, ${ri})">✕</button>
+                        <div style="margin-bottom:12px;padding:8px;background:var(--bg-secondary);border-radius:8px">
+                            <div style="display:flex;gap:8px;margin-bottom:6px;align-items:center">
+                                <input type="text" class="form-input" style="flex:1" placeholder="Titre" 
+                                    value="${escapeHtml(row.title || '')}" onchange="updateRow(${si}, ${ri}, 'title', this.value)">
+                                <button class="tag-remove" onclick="removeRow(${si}, ${ri})">✕</button>
+                            </div>
+                            <div style="display:flex;gap:4px;margin-bottom:4px">
+                                <button type="button" class="btn btn-ghost btn-xs" onclick="formatWhatsAppText('row-response-${si}-${ri}','bold')" title="Gras"><i class="fas fa-bold"></i></button>
+                                <button type="button" class="btn btn-ghost btn-xs" onclick="formatWhatsAppText('row-response-${si}-${ri}','italic')" title="Italique"><i class="fas fa-italic"></i></button>
+                                <button type="button" class="btn btn-ghost btn-xs" onclick="formatWhatsAppText('row-response-${si}-${ri}','strikethrough')" title="Barré"><i class="fas fa-strikethrough"></i></button>
+                                <button type="button" class="btn btn-ghost btn-xs" onclick="formatWhatsAppText('row-response-${si}-${ri}','monospace')" title="Monospace"><i class="fas fa-code"></i></button>
+                            </div>
+                            <textarea class="form-input" id="row-response-${si}-${ri}" placeholder="Réponse" rows="2" onchange="updateRow(${si}, ${ri}, 'response', this.value)">${escapeHtml(row.response || '')}</textarea>
                         </div>
                     `).join('')}
                     <button class="btn btn-ghost btn-xs" onclick="addRow(${si})">+ Ajouter une option</button>
@@ -4108,16 +4121,17 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         
         sectionDivs.forEach(div => {
             const titleInput = div.querySelector('input[placeholder="Titre de la section"]');
-            const rowDivs = div.querySelectorAll('div[style*="gap:8px"]');
+            const rowDivs = div.querySelectorAll('div[style*="background:var(--bg-secondary)"]');
             
             const rows = [];
             rowDivs.forEach(rowDiv => {
-                const inputs = rowDiv.querySelectorAll('input');
-                if (inputs[0]?.value || inputs[1]?.value) {
+                const titleField = rowDiv.querySelector('input[placeholder="Titre"]');
+                const responseField = rowDiv.querySelector('textarea');
+                if (titleField?.value || responseField?.value) {
                     rows.push({
                         id: 'row_' + rows.length,
-                        title: inputs[0]?.value || '',
-                        response: inputs[1]?.value || ''
+                        title: titleField?.value || '',
+                        response: responseField?.value || ''
                     });
                 }
             });
@@ -4582,10 +4596,16 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
     }
 
     function formatAnnouncementText(type) {
-        const textarea = document.getElementById('announcement-content-input');
-        const start = textarea.selectionStart;
-        const end = textarea.selectionEnd;
-        const text = textarea.value;
+        formatWhatsAppText('announcement-content-input', type);
+        updateAnnouncementPreview();
+    }
+
+    function formatWhatsAppText(fieldId, type) {
+        const field = document.getElementById(fieldId);
+        if (!field) return;
+        const start = field.selectionStart;
+        const end = field.selectionEnd;
+        const text = field.value;
         const selected = text.substring(start, end);
         let formatted = '';
         switch (type) {
@@ -4594,9 +4614,9 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             case 'strikethrough': formatted = `~${selected || 'texte'}~`; break;
             case 'monospace': formatted = `\`\`\`${selected || 'texte'}\`\`\``; break;
         }
-        textarea.value = text.substring(0, start) + formatted + text.substring(end);
-        textarea.focus();
-        updateAnnouncementPreview();
+        field.value = text.substring(0, start) + formatted + text.substring(end);
+        field.focus();
+        field.setSelectionRange(start + formatted.length, start + formatted.length);
     }
 
     function updateAnnouncementPreview() {
@@ -5024,6 +5044,12 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                     
                     <div class="form-group">
                         <label class="form-label">Description</label>
+                        <div style="display:flex;gap:4px;margin-bottom:6px">
+                            <button type="button" class="btn btn-ghost btn-xs" onclick="formatWhatsAppText('menu-description','bold')" title="Gras"><i class="fas fa-bold"></i></button>
+                            <button type="button" class="btn btn-ghost btn-xs" onclick="formatWhatsAppText('menu-description','italic')" title="Italique"><i class="fas fa-italic"></i></button>
+                            <button type="button" class="btn btn-ghost btn-xs" onclick="formatWhatsAppText('menu-description','strikethrough')" title="Barré"><i class="fas fa-strikethrough"></i></button>
+                            <button type="button" class="btn btn-ghost btn-xs" onclick="formatWhatsAppText('menu-description','monospace')" title="Monospace"><i class="fas fa-code"></i></button>
+                        </div>
                         <textarea class="form-input" id="menu-description" placeholder="Texte affiché avec le menu" rows="3"></textarea>
                     </div>
                     

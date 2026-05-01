@@ -1955,7 +1955,7 @@ async function sendInteractiveMenu(chat, menuId, sessionData = null) {
             menu.buttons.slice(0, 10).forEach((btn, i) => {
                 menuText += `${i + 1}️⃣ ${btn.text}\n`;
             });
-            menuText += `\n_Reply avec le numéro de votre choix_`;
+            menuText += `\n_Répondez avec le numéro de votre choix_`;
 
             const sessKey = `${chat.id._serialized}_${Date.now()}`;
             sessions[sessKey] = {
@@ -1982,7 +1982,7 @@ async function sendInteractiveMenu(chat, menuId, sessionData = null) {
                     allRows.push(row);
                 });
             });
-            menuText += `\n_Reply avec le numéro de votre choix_`;
+            menuText += `\n_Répondez avec le numéro de votre choix_`;
 
             const sessKey = `${chat.id._serialized}_${Date.now()}`;
             sessions[sessKey] = {
