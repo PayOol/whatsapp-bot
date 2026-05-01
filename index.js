@@ -670,8 +670,120 @@ const AUTH_ADMIN_FILE = path.join(DATA_DIR, 'admin_auth.json');
 const AUTH_SESSIONS_FILE = path.join(DATA_DIR, 'user_sessions.json');
 const SUGGESTIONS_FILE = path.join(DATA_DIR, 'suggestions.json');
 const ANNOUNCEMENTS_FILE = path.join(DATA_DIR, 'announcements.json');
+const SUBSCRIPTION_SETTINGS_FILE = path.join(DATA_DIR, 'subscription_settings.json');
+const SUBSCRIPTIONS_FILE = path.join(DATA_DIR, 'subscriptions.json');
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 const TOKEN_EXPIRY_HOURS = 24;
+
+// ============================================================
+// 💰 SYSTÈME D'ABONNEMENT (LeekPay)
+// ============================================================
+
+const DEFAULT_SUBSCRIPTION_SETTINGS = {
+    enabled: false,
+    apiKey: '',
+    amount: 5000,
+    currency: 'XOF',
+    durationDays: 30,
+    description: 'Abonnement PayOol Bot',
+    trialEnabled: false,
+    trialDurationDays: 0
+};
+
+let subscriptionSettings = { ...DEFAULT_SUBSCRIPTION_SETTINGS };
+let subscriptions = {};
+
+function loadSubscriptionSettings() {
+    try {
+        if (fs.existsSync(SUBSCRIPTION_SETTINGS_FILE)) {
+            subscriptionSettings = { ...DEFAULT_SUBSCRIPTION_SETTINGS, ...JSON.parse(fs.readFileSync(SUBSCRIPTION_SETTINGS_FILE, 'utf8')) };
+        }
+    } catch (e) {
+        console.error('Erreur chargement paramètres abonnement:', e);
+    }
+}
+
+function saveSubscriptionSettings() {
+    try {
+        if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+        fs.writeFileSync(SUBSCRIPTION_SETTINGS_FILE, JSON.stringify(subscriptionSettings, null, 2));
+    } catch (e) {
+        console.error('Erreur sauvegarde paramètres abonnement:', e);
+    }
+}
+
+function loadSubscriptions() {
+    try {
+        if (fs.existsSync(SUBSCRIPTIONS_FILE)) {
+            subscriptions = JSON.parse(fs.readFileSync(SUBSCRIPTIONS_FILE, 'utf8'));
+        }
+    } catch (e) {
+        console.error('Erreur chargement abonnements:', e);
+    }
+}
+
+function saveSubscriptions() {
+    try {
+        if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+        fs.writeFileSync(SUBSCRIPTIONS_FILE, JSON.stringify(subscriptions, null, 2));
+    } catch (e) {
+        console.error('Erreur sauvegarde abonnements:', e);
+    }
+}
+
+function getUserSubscription(username) {
+    return subscriptions[username] || null;
+}
+
+function isSubscriptionActive(username) {
+    if (!subscriptionSettings.enabled) return true;
+    
+    const sub = subscriptions[username];
+    if (!sub) return false;
+    
+    if (sub.status === 'active' && sub.expiresAt > Date.now()) return true;
+    
+    if (sub.status === 'active' && sub.expiresAt <= Date.now()) {
+        sub.status = 'expired';
+        saveSubscriptions();
+    }
+    
+    return false;
+}
+
+function activateSubscription(username, paymentId, amount, currency) {
+    const now = Date.now();
+    const durationMs = subscriptionSettings.durationDays * 24 * 60 * 60 * 1000;
+    
+    const existing = subscriptions[username];
+    let expiresAt;
+    
+    if (existing && existing.status === 'active' && existing.expiresAt > now) {
+        expiresAt = existing.expiresAt + durationMs;
+    } else {
+        expiresAt = now + durationMs;
+    }
+    
+    subscriptions[username] = {
+        status: 'active',
+        paymentId,
+        amount,
+        currency,
+        activatedAt: now,
+        expiresAt,
+        history: [
+            ...(existing?.history || []),
+            { paymentId, amount, currency, date: now }
+        ]
+    };
+    
+    saveSubscriptions();
+    addLog(`[SUB] Abonnement activé pour ${username} (paiement: ${paymentId}, expire: ${new Date(expiresAt).toLocaleDateString()})`);
+    return subscriptions[username];
+}
+
+loadSubscriptionSettings();
+loadSubscriptions();
 
 // ============================================================
 // 📢 GESTIONNAIRE D'ANNONCES
@@ -2613,6 +2725,11 @@ class SessionManager {
     canUserStartSession(username) {
         const user = authManager.users[username];
         if (!user) return { allowed: false, reason: 'Utilisateur non trouvé' };
+        
+        if (subscriptionSettings.enabled && !user.isAdmin && !isSubscriptionActive(username)) {
+            return { allowed: false, reason: 'SUBSCRIPTION_REQUIRED', requireSubscription: true };
+        }
+        
         return { allowed: true, user };
     }
 
@@ -4563,6 +4680,161 @@ app.delete('/api/suggestions/:id', requireAuth, (req, res) => {
     }
 });
 
+// ============ API ABONNEMENTS ============
+
+// Obtenir les paramètres d'abonnement publics (clé API, montant, etc.)
+app.get('/api/subscription/settings', (req, res) => {
+    res.json({
+        success: true,
+        enabled: subscriptionSettings.enabled,
+        amount: subscriptionSettings.amount,
+        currency: subscriptionSettings.currency,
+        durationDays: subscriptionSettings.durationDays,
+        description: subscriptionSettings.description,
+        apiKey: subscriptionSettings.apiKey
+    });
+});
+
+// Obtenir le statut d'abonnement de l'utilisateur connecté
+app.get('/api/subscription/status', requireAuth, (req, res) => {
+    const username = req.user.username;
+    const sub = getUserSubscription(username);
+    const active = isSubscriptionActive(username);
+    
+    res.json({
+        success: true,
+        enabled: subscriptionSettings.enabled,
+        subscription: sub ? {
+            status: active ? 'active' : (sub.status || 'expired'),
+            expiresAt: sub.expiresAt,
+            activatedAt: sub.activatedAt,
+            daysRemaining: active ? Math.ceil((sub.expiresAt - Date.now()) / (24 * 60 * 60 * 1000)) : 0
+        } : null,
+        isActive: active,
+        isAdmin: req.user.isAdmin
+    });
+});
+
+// Confirmer un paiement réussi et activer l'abonnement
+app.post('/api/subscription/confirm', requireAuth, (req, res) => {
+    const { paymentId, amount, currency } = req.body;
+    const username = req.user.username;
+    
+    if (!paymentId) {
+        return res.status(400).json({ success: false, message: 'ID de paiement requis' });
+    }
+    
+    if (!subscriptionSettings.enabled) {
+        return res.json({ success: true, message: 'Abonnement non requis' });
+    }
+    
+    const sub = activateSubscription(username, paymentId, amount || subscriptionSettings.amount, currency || subscriptionSettings.currency);
+    
+    res.json({
+        success: true,
+        message: 'Abonnement activé avec succès',
+        subscription: {
+            status: sub.status,
+            expiresAt: sub.expiresAt,
+            daysRemaining: Math.ceil((sub.expiresAt - Date.now()) / (24 * 60 * 60 * 1000))
+        }
+    });
+});
+
+// Admin: obtenir les paramètres complets d'abonnement
+app.get('/api/admin/subscription/settings', requireAdmin, (req, res) => {
+    res.json({
+        success: true,
+        settings: subscriptionSettings
+    });
+});
+
+// Admin: modifier les paramètres d'abonnement
+app.post('/api/admin/subscription/settings', requireAdmin, (req, res) => {
+    const { enabled, apiKey, amount, currency, durationDays, description, trialEnabled, trialDurationDays } = req.body;
+    
+    if (enabled !== undefined) subscriptionSettings.enabled = !!enabled;
+    if (apiKey !== undefined) subscriptionSettings.apiKey = apiKey;
+    if (amount !== undefined) subscriptionSettings.amount = parseInt(amount) || 5000;
+    if (currency !== undefined) subscriptionSettings.currency = currency;
+    if (durationDays !== undefined) subscriptionSettings.durationDays = parseInt(durationDays) || 30;
+    if (description !== undefined) subscriptionSettings.description = description;
+    if (trialEnabled !== undefined) subscriptionSettings.trialEnabled = !!trialEnabled;
+    if (trialDurationDays !== undefined) subscriptionSettings.trialDurationDays = parseInt(trialDurationDays) || 0;
+    
+    saveSubscriptionSettings();
+    addLog(`[SUB] Paramètres d'abonnement mis à jour par ${req.user.username}`);
+    
+    res.json({ success: true, settings: subscriptionSettings });
+});
+
+// Admin: lister tous les abonnements
+app.get('/api/admin/subscriptions', requireAdmin, (req, res) => {
+    const allSubs = Object.entries(subscriptions).map(([username, sub]) => ({
+        username,
+        ...sub,
+        isActive: isSubscriptionActive(username),
+        daysRemaining: sub.expiresAt > Date.now() ? Math.ceil((sub.expiresAt - Date.now()) / (24 * 60 * 60 * 1000)) : 0
+    }));
+    
+    res.json({ success: true, subscriptions: allSubs });
+});
+
+// Admin: activer/prolonger manuellement un abonnement
+app.post('/api/admin/subscriptions/:username', requireAdmin, (req, res) => {
+    const { username } = req.params;
+    const { durationDays } = req.body;
+    
+    const user = authManager.users[username];
+    if (!user) {
+        return res.status(404).json({ success: false, message: 'Utilisateur non trouvé' });
+    }
+    
+    const days = parseInt(durationDays) || subscriptionSettings.durationDays;
+    const now = Date.now();
+    const durationMs = days * 24 * 60 * 60 * 1000;
+    const existing = subscriptions[username];
+    let expiresAt;
+    
+    if (existing && existing.status === 'active' && existing.expiresAt > now) {
+        expiresAt = existing.expiresAt + durationMs;
+    } else {
+        expiresAt = now + durationMs;
+    }
+    
+    subscriptions[username] = {
+        status: 'active',
+        paymentId: 'admin_manual',
+        amount: 0,
+        currency: subscriptionSettings.currency,
+        activatedAt: now,
+        expiresAt,
+        history: [
+            ...(existing?.history || []),
+            { paymentId: 'admin_manual', amount: 0, currency: subscriptionSettings.currency, date: now, grantedBy: req.user.username }
+        ]
+    };
+    
+    saveSubscriptions();
+    addLog(`[SUB] Abonnement accordé manuellement à ${username} par ${req.user.username} (${days} jours)`);
+    
+    res.json({ success: true, message: `Abonnement activé pour ${days} jours` });
+});
+
+// Admin: révoquer un abonnement
+app.delete('/api/admin/subscriptions/:username', requireAdmin, (req, res) => {
+    const { username } = req.params;
+    
+    if (subscriptions[username]) {
+        subscriptions[username].status = 'revoked';
+        subscriptions[username].expiresAt = Date.now();
+        saveSubscriptions();
+        addLog(`[SUB] Abonnement révoqué pour ${username} par ${req.user.username}`);
+    }
+    
+    res.json({ success: true, message: 'Abonnement révoqué' });
+});
+
 // ============ API SESSIONS (protégées) ============
 
 app.get('/api/sessions', requireAuth, (req, res) => {
@@ -4588,7 +4860,7 @@ app.post('/api/sessions', requireAuth, (req, res) => {
         // Vérifier que l'utilisateur existe toujours
         const check = sessionManager.canUserStartSession(username);
         if (!check.allowed) {
-            return res.status(403).json({ success: false, message: check.reason });
+            return res.status(403).json({ success: false, message: check.reason, requireSubscription: check.requireSubscription || false });
         }
         
         const sessionData = sessionManager.createSession(null, name || 'New Session', username);
@@ -4639,6 +4911,11 @@ app.post('/api/sessions/:id/start', requireAuth, (req, res) => {
     
     if (!isOwner && !isAdmin) {
         return res.status(403).json({ success: false, message: 'Vous n\'êtes pas autorisé à démarrer cette session' });
+    }
+    
+    // Vérifier l'abonnement pour les utilisateurs non-admin
+    if (!isAdmin && subscriptionSettings.enabled && !isSubscriptionActive(req.user.username)) {
+        return res.status(403).json({ success: false, message: 'SUBSCRIPTION_REQUIRED', requireSubscription: true });
     }
     
     const success = sessionManager.startSession(sessionId);

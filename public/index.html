@@ -1763,7 +1763,52 @@
             background:var(--border);
             margin:4px 0;
         }
+        /* ═══════════════════════════════════════
+           SUBSCRIPTION MODAL
+           ═══════════════════════════════════════ */
+        .sub-modal{
+            position:fixed;inset:0;
+            background:rgba(0,0,0,0.85);
+            backdrop-filter:blur(8px);
+            display:flex;align-items:center;justify-content:center;z-index:9999;
+            animation:qrFadeIn 0.3s ease;
+        }
+        .sub-modal-content{
+            background:var(--bg-card);
+            border:1px solid var(--border);
+            border-radius:var(--radius-xl);
+            padding:32px;max-width:440px;width:90%;
+            text-align:center;position:relative;
+        }
+        .sub-modal-icon{
+            width:64px;height:64px;margin:0 auto 16px;
+            background:linear-gradient(135deg,var(--primary),#00b85c);
+            border-radius:50%;display:flex;align-items:center;justify-content:center;
+            font-size:1.8rem;color:white;
+        }
+        .sub-modal-title{font-size:1.3rem;font-weight:700;margin-bottom:8px;}
+        .sub-modal-desc{color:var(--text-secondary);font-size:0.9rem;margin-bottom:20px;line-height:1.5;}
+        .sub-price{font-size:2rem;font-weight:800;color:var(--primary);margin-bottom:4px;}
+        .sub-duration{font-size:0.85rem;color:var(--text-muted);margin-bottom:20px;}
+        .sub-pay-btn{
+            width:100%;padding:14px;border:none;border-radius:var(--radius-lg);
+            background:linear-gradient(135deg,var(--primary),#00b85c);
+            color:white;font-size:1rem;font-weight:700;cursor:pointer;
+            transition:all 0.2s;
+        }
+        .sub-pay-btn:hover{transform:translateY(-1px);box-shadow:0 4px 16px rgba(0,210,106,0.4);}
+        .sub-pay-btn:disabled{opacity:0.6;cursor:not-allowed;transform:none;box-shadow:none;}
+        .sub-status-bar{
+            display:flex;align-items:center;gap:8px;
+            padding:8px 14px;border-radius:var(--radius-md);
+            font-size:0.8rem;margin-bottom:8px;
+        }
+        .sub-status-bar.active{background:rgba(0,210,106,0.1);color:var(--primary);}
+        .sub-status-bar.expired{background:rgba(245,158,11,0.1);color:#f59e0b;}
+        .sub-status-bar.none{background:rgba(161,161,170,0.1);color:var(--text-muted);}
     </style>
+    <!-- LeekPay SDK -->
+    <script src="https://api.leekpay.com/js/v1/leekpay.js"></script>
 </head>
 <body>
     <!-- Ambient Background -->
@@ -1839,6 +1884,24 @@
         </div>
     </div>
 
+    <!-- Subscription Payment Modal -->
+    <div class="sub-modal" id="sub-modal" style="display:none" onclick="closeSubModal()">
+        <div class="sub-modal-content" onclick="event.stopPropagation()">
+            <button class="qr-close-btn" onclick="closeSubModal()">&times;</button>
+            <div class="sub-modal-icon"><i class="fas fa-crown"></i></div>
+            <div class="sub-modal-title">Abonnement requis</div>
+            <div class="sub-modal-desc">Pour créer et gérer vos sessions WhatsApp, un abonnement actif est nécessaire.</div>
+            <div class="sub-price" id="sub-modal-price">5 000 XOF</div>
+            <div class="sub-duration" id="sub-modal-duration">pour 30 jours</div>
+            <button class="sub-pay-btn" id="sub-pay-btn" onclick="initiatePayment()">
+                <i class="fas fa-lock"></i> Payer maintenant
+            </button>
+            <div style="margin-top:12px;font-size:0.75rem;color:var(--text-muted)">
+                <i class="fas fa-shield-alt"></i> Paiement sécurisé via LeekPay
+            </div>
+        </div>
+    </div>
+
     <!-- Mobile Header -->
     <div class="mobile-header">
         <div class="mobile-brand">
@@ -1870,6 +1933,7 @@
                     <div id="sessions-list" class="sessions-sidebar-list">
                         <!-- Sessions will be loaded here -->
                     </div>
+                    <div id="sub-status-sidebar" style="display:none"></div>
                     <button class="btn btn-primary btn-sm" style="width:100%;margin-top:8px" onclick="showNewSessionModal()">
                         + Nouvelle session
                     </button>
@@ -3052,12 +3116,14 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         loadUserExceptions();
         loadSessions();
         updateUserMenu();
+        loadSubscriptionStatus();
 
         setInterval(checkStatus, 5000);
         setInterval(refreshLogs, 10000);
         setInterval(loadStats, 30000);
         setInterval(loadActivityChart, 60000);
         setInterval(loadSessions, 10000);
+        setInterval(loadSubscriptionStatus, 60000);
         
         // Charger le chart d'activité au démarrage
         loadActivityChart();
@@ -4438,7 +4504,165 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         }
     }
     
+    // === SUBSCRIPTION SYSTEM ===
+    let subSettings = null;
+    let subStatus = null;
+    let pendingSessionName = null;
+    
+    async function loadSubscriptionStatus() {
+        try {
+            const [settingsRes, statusRes] = await Promise.all([
+                fetch('/api/subscription/settings'),
+                authFetch('/api/subscription/status')
+            ]);
+            subSettings = await settingsRes.json();
+            subStatus = await statusRes.json();
+            updateSubSidebar();
+        } catch (e) {
+            console.error('Erreur chargement abonnement:', e);
+        }
+    }
+    
+    function updateSubSidebar() {
+        const el = document.getElementById('sub-status-sidebar');
+        if (!el) return;
+        
+        if (!subSettings || !subSettings.enabled || (subStatus && subStatus.isAdmin)) {
+            el.style.display = 'none';
+            return;
+        }
+        
+        el.style.display = 'block';
+        
+        if (subStatus && subStatus.isActive) {
+            const days = subStatus.subscription ? subStatus.subscription.daysRemaining : 0;
+            el.innerHTML = `<div class="sub-status-bar active"><i class="fas fa-check-circle"></i> Abonnement actif (${days}j)</div>`;
+        } else if (subStatus && subStatus.subscription && subStatus.subscription.status === 'expired') {
+            el.innerHTML = `<div class="sub-status-bar expired"><i class="fas fa-exclamation-triangle"></i> Abonnement expiré</div>`;
+        } else {
+            el.innerHTML = `<div class="sub-status-bar none"><i class="fas fa-info-circle"></i> Aucun abonnement</div>`;
+        }
+    }
+    
+    function formatCurrency(amount, currency) {
+        return new Intl.NumberFormat('fr-FR').format(amount) + ' ' + currency;
+    }
+    
+    function showSubModal() {
+        if (!subSettings) return;
+        document.getElementById('sub-modal-price').textContent = formatCurrency(subSettings.amount, subSettings.currency);
+        document.getElementById('sub-modal-duration').textContent = `pour ${subSettings.durationDays} jours`;
+        document.getElementById('sub-modal').style.display = 'flex';
+    }
+    
+    function closeSubModal() {
+        document.getElementById('sub-modal').style.display = 'none';
+        pendingSessionName = null;
+    }
+    
+    function initiatePayment() {
+        if (!subSettings || !subSettings.apiKey) {
+            showToast('Système de paiement non configuré', 'error');
+            return;
+        }
+        
+        const btn = document.getElementById('sub-pay-btn');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Traitement...';
+        
+        try {
+            LeekPay.pay({
+                key: subSettings.apiKey,
+                amount: subSettings.amount,
+                currency: subSettings.currency,
+                description: subSettings.description || 'Abonnement PayOol Bot',
+                onSuccess: function(response) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-lock"></i> Payer maintenant';
+                    confirmPayment(response);
+                },
+                onCancel: function() {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-lock"></i> Payer maintenant';
+                    showToast('Paiement annulé', 'warning');
+                },
+                onError: function(error) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-lock"></i> Payer maintenant';
+                    showToast('Erreur de paiement: ' + (error.message || 'Réessayez'), 'error');
+                }
+            });
+        } catch (e) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-lock"></i> Payer maintenant';
+            showToast('Erreur initialisation paiement', 'error');
+        }
+    }
+    
+    async function confirmPayment(response) {
+        try {
+            const res = await authFetch('/api/subscription/confirm', {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                body: JSON.stringify({
+                    paymentId: response.transaction_id || response.id || ('lp_' + Date.now()),
+                    amount: subSettings.amount,
+                    currency: subSettings.currency
+                })
+            });
+            const data = await res.json();
+            
+            if (data.success) {
+                showToast('Abonnement activé avec succès !', 'success');
+                closeSubModal();
+                await loadSubscriptionStatus();
+                
+                // If there was a pending session creation, proceed
+                if (pendingSessionName !== null) {
+                    await createSessionAfterPayment(pendingSessionName);
+                    pendingSessionName = null;
+                }
+            } else {
+                showToast(data.message || 'Erreur confirmation', 'error');
+            }
+        } catch (e) {
+            showToast('Erreur confirmation paiement', 'error');
+        }
+    }
+    
+    async function createSessionAfterPayment(name) {
+        try {
+            const res = await authFetch('/api/sessions', {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                body: JSON.stringify({ name: name || 'Nouvelle session' })
+            });
+            const result = await res.json();
+            
+            if (result.success) {
+                showToast('Session créée! Génération du QR code...', 'success');
+                loadSessions();
+                if (result.session && result.session.id) {
+                    pollForQR(result.session.id);
+                }
+            } else {
+                showToast(result.message || 'Erreur', 'error');
+            }
+        } catch (e) {
+            showToast('Erreur création session', 'error');
+        }
+    }
+    
     async function showNewSessionModal() {
+        // Check subscription status if system is enabled
+        if (subSettings && subSettings.enabled && subStatus && !subStatus.isAdmin && !subStatus.isActive) {
+            const name = prompt('Nom de la nouvelle session (optionnel):', '');
+            if (name === null) return;
+            pendingSessionName = name;
+            showSubModal();
+            return;
+        }
+        
         const name = prompt('Nom de la nouvelle session (optionnel):', '');
         if (name === null) return; // Cancelled
         
@@ -4453,12 +4677,18 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             if (result.success) {
                 showToast('Session créée! Génération du QR code...', 'success');
                 loadSessions();
-                // Afficher automatiquement le QR code de la nouvelle session
                 if (result.session && result.session.id) {
                     pollForQR(result.session.id);
                 }
             } else {
-                showToast(result.message || 'Erreur', 'error');
+                // Backend might also return subscription required
+                if (result.message === 'SUBSCRIPTION_REQUIRED' || result.requireSubscription) {
+                    pendingSessionName = name;
+                    await loadSubscriptionStatus();
+                    showSubModal();
+                } else {
+                    showToast(result.message || 'Erreur', 'error');
+                }
             }
         } catch (e) {
             showToast('Erreur création session', 'error');

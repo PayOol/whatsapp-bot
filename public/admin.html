@@ -349,6 +349,37 @@
             transform: translateX(24px);
         }
 
+        /* Subscription Form */
+        .form-group { margin-bottom: 16px; }
+        .form-label { display: block; font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 6px; font-weight: 500; }
+        .form-input, .form-select {
+            width: 100%;
+            padding: 10px 14px;
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .form-input:focus, .form-select:focus { border-color: var(--primary); }
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .form-hint { font-size: 0.7rem; color: var(--text-secondary); margin-top: 4px; }
+        .sub-user-row {
+            display: flex;
+            align-items: center;
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border);
+            gap: 12px;
+        }
+        .sub-user-row:last-child { border-bottom: none; }
+        .sub-badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px; font-size: 0.7rem; font-weight: 600; }
+        .sub-badge.active { background: rgba(34,197,94,0.2); color: var(--success); }
+        .sub-badge.expired { background: rgba(245,158,11,0.2); color: var(--warning); }
+        .sub-badge.revoked { background: rgba(239,68,68,0.2); color: var(--danger); }
+        .sub-badge.none { background: rgba(161,161,170,0.2); color: var(--text-secondary); }
+
         /* Notification Bell */
         .notification-bell {
             position: relative;
@@ -827,6 +858,74 @@
             </div>
             <div class="card-body" id="logs-container" style="max-height:400px;overflow-y:auto;font-family:monospace;font-size:0.8rem;background:#1a1a2e;padding:10px;border-radius:8px">
                 <div class="loading"><div class="spinner"></div></div>
+            </div>
+        </div>
+        <!-- Abonnements -->
+        <div class="cards-grid" style="margin-top:20px">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">
+                        <span class="card-title-icon" style="background:rgba(34,197,94,0.2);color:var(--success)"><i class="fas fa-credit-card"></i></span>
+                        Paramètres Abonnement (LeekPay)
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="sub-enabled-toggle" onchange="toggleSubscription(this.checked)">
+                        <span class="toggle-track"></span>
+                        <span class="toggle-thumb"></span>
+                    </label>
+                </div>
+                <div class="card-body">
+                    <div id="sub-status-banner" style="padding:10px 14px;border-radius:8px;margin-bottom:16px;font-size:0.85rem;display:flex;align-items:center;gap:8px"></div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Clé API LeekPay (publique)</label>
+                        <input type="text" class="form-input" id="sub-api-key" placeholder="pk_live_votre_cle_publique">
+                        <div class="form-hint">Clé publique fournie par LeekPay</div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Montant</label>
+                            <input type="number" class="form-input" id="sub-amount" placeholder="5000" min="1">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Devise</label>
+                            <select class="form-select" id="sub-currency">
+                                <option value="XOF">XOF (Franc CFA)</option>
+                                <option value="EUR">EUR (Euro)</option>
+                                <option value="USD">USD (Dollar)</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Durée (jours)</label>
+                            <input type="number" class="form-input" id="sub-duration" placeholder="30" min="1">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Description paiement</label>
+                            <input type="text" class="form-input" id="sub-description" placeholder="Abonnement PayOol Bot">
+                        </div>
+                    </div>
+                    
+                    <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="saveSubscriptionSettings()">
+                        <i class="fas fa-save"></i> Enregistrer les paramètres
+                    </button>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">
+                        <span class="card-title-icon" style="background:rgba(245,158,11,0.2);color:var(--warning)"><i class="fas fa-users-cog"></i></span>
+                        Abonnements utilisateurs
+                    </div>
+                    <button class="btn btn-sm" onclick="loadSubscriptions()"><i class="fas fa-sync"></i></button>
+                </div>
+                <div class="card-body" id="subscriptions-list" style="max-height:400px;overflow-y:auto">
+                    <div class="loading"><div class="spinner"></div></div>
+                </div>
             </div>
         </div>
     </div>
@@ -1335,9 +1434,205 @@
             });
         }
         
+        // === ABONNEMENTS ===
+        function loadSubscriptionSettings() {
+            fetch('/api/admin/subscription/settings', { credentials: 'same-origin' })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    var s = data.settings;
+                    document.getElementById('sub-enabled-toggle').checked = s.enabled;
+                    document.getElementById('sub-api-key').value = s.apiKey || '';
+                    document.getElementById('sub-amount').value = s.amount || 5000;
+                    document.getElementById('sub-currency').value = s.currency || 'XOF';
+                    document.getElementById('sub-duration').value = s.durationDays || 30;
+                    document.getElementById('sub-description').value = s.description || '';
+                    updateSubBanner(s.enabled);
+                }
+            });
+        }
+        
+        function updateSubBanner(enabled) {
+            var banner = document.getElementById('sub-status-banner');
+            if (enabled) {
+                banner.style.background = 'rgba(34,197,94,0.1)';
+                banner.style.border = '1px solid rgba(34,197,94,0.3)';
+                banner.innerHTML = '<i class="fas fa-check-circle" style="color:var(--success)"></i> <span style="color:var(--success)">Système d\'abonnement <strong>activé</strong> — Les utilisateurs doivent payer avant de créer une session.</span>';
+            } else {
+                banner.style.background = 'rgba(161,161,170,0.1)';
+                banner.style.border = '1px solid rgba(161,161,170,0.3)';
+                banner.innerHTML = '<i class="fas fa-info-circle" style="color:var(--text-secondary)"></i> <span style="color:var(--text-secondary)">Système d\'abonnement <strong>désactivé</strong> — Tous les utilisateurs peuvent créer des sessions librement.</span>';
+            }
+        }
+        
+        function toggleSubscription(enabled) {
+            fetch('/api/admin/subscription/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({ enabled: enabled })
+            })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    showToast(enabled ? 'Abonnement activé' : 'Abonnement désactivé', 'success');
+                    updateSubBanner(enabled);
+                } else {
+                    showToast(data.message || 'Erreur', 'error');
+                    document.getElementById('sub-enabled-toggle').checked = !enabled;
+                }
+            })
+            .catch(function(e) {
+                showToast('Erreur', 'error');
+                document.getElementById('sub-enabled-toggle').checked = !enabled;
+            });
+        }
+        
+        function saveSubscriptionSettings() {
+            var settings = {
+                apiKey: document.getElementById('sub-api-key').value.trim(),
+                amount: parseInt(document.getElementById('sub-amount').value) || 5000,
+                currency: document.getElementById('sub-currency').value,
+                durationDays: parseInt(document.getElementById('sub-duration').value) || 30,
+                description: document.getElementById('sub-description').value.trim()
+            };
+            
+            if (!settings.apiKey) {
+                showToast('Veuillez entrer la clé API LeekPay', 'error');
+                return;
+            }
+            
+            fetch('/api/admin/subscription/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify(settings)
+            })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    showToast('Paramètres d\'abonnement enregistrés', 'success');
+                } else {
+                    showToast(data.message || 'Erreur', 'error');
+                }
+            })
+            .catch(function(e) {
+                showToast('Erreur sauvegarde', 'error');
+            });
+        }
+        
+        function loadSubscriptions() {
+            fetch('/api/admin/subscriptions', { credentials: 'same-origin' })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                if (!data.success) return;
+                var subs = data.subscriptions || [];
+                var container = document.getElementById('subscriptions-list');
+                
+                // Also load all users to show those without subscriptions
+                fetch('/api/auth/users', { credentials: 'same-origin' })
+                .then(function(res) { return res.json(); })
+                .then(function(userData) {
+                    var users = (userData.users || []);
+                    var subMap = {};
+                    for (var i = 0; i < subs.length; i++) { subMap[subs[i].username] = subs[i]; }
+                    
+                    if (users.length === 0) {
+                        container.innerHTML = '<div class="empty-state"><p>Aucun utilisateur</p></div>';
+                        return;
+                    }
+                    
+                    var html = '';
+                    for (var j = 0; j < users.length; j++) {
+                        var user = users[j];
+                        var sub = subMap[user.username];
+                        var statusClass = 'none';
+                        var statusText = 'Aucun';
+                        var expiryText = '';
+                        
+                        if (sub) {
+                            if (sub.isActive) {
+                                statusClass = 'active';
+                                statusText = 'Actif';
+                                expiryText = sub.daysRemaining + 'j restants';
+                            } else if (sub.status === 'revoked') {
+                                statusClass = 'revoked';
+                                statusText = 'Révoqué';
+                            } else {
+                                statusClass = 'expired';
+                                statusText = 'Expiré';
+                            }
+                        }
+                        
+                        html += '<div class="sub-user-row">' +
+                            '<div class="user-item-avatar" style="width:32px;height:32px;font-size:0.8rem">' + user.username.charAt(0).toUpperCase() + '</div>' +
+                            '<div style="flex:1;min-width:0">' +
+                            '<div style="font-weight:500;font-size:0.9rem">' + escapeHtml(user.username) + '</div>' +
+                            '<div style="font-size:0.75rem;color:var(--text-secondary)">' + expiryText + '</div>' +
+                            '</div>' +
+                            '<span class="sub-badge ' + statusClass + '">' + statusText + '</span>' +
+                            '<div style="display:flex;gap:4px">' +
+                            '<button class="btn btn-sm" style="padding:4px 8px;font-size:0.7rem" onclick="grantSubscription(\'' + escapeHtml(user.username) + '\')" title="Accorder/Prolonger"><i class="fas fa-plus"></i></button>' +
+                            (sub && sub.isActive ? '<button class="btn btn-danger btn-sm" style="padding:4px 8px;font-size:0.7rem" onclick="revokeSubscription(\'' + escapeHtml(user.username) + '\')" title="Révoquer"><i class="fas fa-ban"></i></button>' : '') +
+                            '</div>' +
+                            '</div>';
+                    }
+                    container.innerHTML = html;
+                });
+            })
+            .catch(function(e) {
+                document.getElementById('subscriptions-list').innerHTML = '<div class="empty-state"><p>Erreur chargement</p></div>';
+            });
+        }
+        
+        function grantSubscription(username) {
+            var days = prompt('Nombre de jours à accorder:', '30');
+            if (days === null) return;
+            days = parseInt(days);
+            if (!days || days < 1) { showToast('Nombre de jours invalide', 'error'); return; }
+            
+            fetch('/api/admin/subscriptions/' + encodeURIComponent(username), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({ durationDays: days })
+            })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    showToast(data.message, 'success');
+                    loadSubscriptions();
+                } else {
+                    showToast(data.message || 'Erreur', 'error');
+                }
+            })
+            .catch(function(e) { showToast('Erreur', 'error'); });
+        }
+        
+        function revokeSubscription(username) {
+            if (!confirm('Révoquer l\'abonnement de ' + username + ' ?')) return;
+            
+            fetch('/api/admin/subscriptions/' + encodeURIComponent(username), {
+                method: 'DELETE',
+                credentials: 'same-origin'
+            })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    showToast('Abonnement révoqué', 'success');
+                    loadSubscriptions();
+                } else {
+                    showToast(data.message || 'Erreur', 'error');
+                }
+            })
+            .catch(function(e) { showToast('Erreur', 'error'); });
+        }
+        
         checkAuth();
         loadBetaStatus();
         loadSuggestions();
+        loadSubscriptionSettings();
+        loadSubscriptions();
     </script>
 </body>
 </html>
