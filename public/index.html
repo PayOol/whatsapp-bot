@@ -3892,12 +3892,14 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
     
     let currentEditingMenu = null;
     let availableGroups = [];
+    let menusData = {};
     
     async function loadMenus() {
         try {
             const res = await authFetch(getApiUrlWithAuth('/api/menus'));
             const data = await res.json();
             const menus = data.menus || data;
+            menusData = menus;
             const container = document.getElementById('menus-list');
             
             const menuArray = Object.values(menus);
@@ -3942,8 +3944,8 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         const modal = document.getElementById('menu-editor-modal');
         const form = document.getElementById('menu-form');
         
-        if (menuId && interactiveMenus[menuId]) {
-            const menu = interactiveMenus[menuId];
+        if (menuId && menusData[menuId]) {
+            const menu = menusData[menuId];
             document.getElementById('menu-title').value = menu.title || '';
             document.getElementById('menu-id').value = menu.id;
             document.getElementById('menu-trigger').value = menu.trigger || '';
@@ -4171,6 +4173,13 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
     }
     
     async function editMenu(menuId) {
+        try {
+            const res = await authFetch(getApiUrlWithAuth(`/api/menus/${menuId}`));
+            const data = await res.json();
+            if (data.menu) {
+                menusData[menuId] = data.menu;
+            }
+        } catch (e) {}
         showMenuEditor(menuId);
     }
     
@@ -4214,17 +4223,8 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         currentEditingMenu = null;
     }
     
-    let interactiveMenus = {};
-    
     async function loadMenusData() {
-        try {
-            const res = await authFetch(getApiUrlWithAuth('/api/menus'));
-            const data = await res.json();
-            interactiveMenus = data.menus || data;
-            loadMenus();
-        } catch (e) {
-            console.error('Erreur chargement menus:', e);
-        }
+        await loadMenus();
     }
     
     // ============================================================

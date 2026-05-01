@@ -1896,9 +1896,10 @@ function saveMenus() {
     }
 }
 
-function createMenu(config) {
+function createMenu(config, sessionData = null) {
     const menuId = config.id || `menu_${Date.now()}`;
-    interactiveMenus[menuId] = {
+    const menus = sessionData ? sessionData.interactiveMenus : interactiveMenus;
+    menus[menuId] = {
         id: menuId,
         title: config.title || 'Menu',
         description: config.description || '',
@@ -1909,8 +1910,8 @@ function createMenu(config) {
         groupId: config.groupId || null,
         enabled: config.enabled !== false
     };
-    saveMenus();
-    return interactiveMenus[menuId];
+    if (sessionData) sessionData.saveMenus(); else saveMenus();
+    return menus[menuId];
 }
 
 function generateButtons(buttons) {
