@@ -3415,7 +3415,8 @@ async function handleMessage(client, message, sessionId) {
         const botP = participants.find(p => p.id._serialized === botId);
         if (!botP || !botP.isAdmin) return;
 
-        const senderP = participants.find(p => p.id._serialized === senderId);
+        const senderNumber = senderId.split('@')[0];
+        const senderP = participants.find(p => p.id._serialized === senderId || p.id._serialized?.split('@')[0] === senderNumber);
 
         // ✅ Suppression automatique des notifications de statut (status mentions)
         // Quand un utilisateur identifie un groupe dans son statut WhatsApp, une notification est envoyée dans le groupe
