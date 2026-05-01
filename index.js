@@ -1974,7 +1974,8 @@ async function sendInteractiveMenu(chat, menuId, sessionData = null) {
 
             let optionIndex = 0;
             const allRows = [];
-            menu.listSections.forEach(section => {
+            menu.listSections.forEach((section, si) => {
+                if (si > 0) menuText += `\n`;
                 menuText += `📁 *${section.title}*\n`;
                 section.rows.forEach(row => {
                     optionIndex++;
