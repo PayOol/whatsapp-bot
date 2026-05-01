@@ -3596,11 +3596,6 @@ async function handleMessage(client, message, sessionId) {
         const authorNumber = authorContact?.number || authorId.split('@')[0];
         const authorCusId = authorContact?.id?._serialized;
         
-        // Debug: comprendre les formats d'ID
-        const adminParticipants = participants.filter(p => p.isAdmin || p.isSuperAdmin);
-        sessionData.addLog(`[DEBUG-ADMIN] authorId=${authorId} | authorNumber=${authorNumber} | authorCusId=${authorCusId} | senderP=${senderP ? 'trouvé (admin=' + (senderP.isAdmin || senderP.isSuperAdmin) + ')' : 'NON TROUVÉ'}`);
-        sessionData.addLog(`[DEBUG-ADMIN] Admins du groupe: ${adminParticipants.map(p => p.id._serialized).join(', ')}`);
-        
         // Vérifier admin par toutes les méthodes possibles
         if (senderP?.isAdmin || senderP?.isSuperAdmin) return;
         
