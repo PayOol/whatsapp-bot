@@ -3592,22 +3592,27 @@ async function handleMessage(client, message, sessionId) {
         if (authorId.includes('@g.us')) return;
         
         // ✅ Autoriser directement les admins du groupe (détection dynamique)
-        if (senderP?.isAdmin || senderP?.isSuperAdmin) return;
-        
-        // Récupérer le vrai numéro de téléphone via le contact (car authorId peut être un @lid)
         const authorContact = await message.getContact();
         const authorNumber = authorContact?.number || authorId.split('@')[0];
+        const authorCusId = authorContact?.id?._serialized;
         
-        // ✅ Re-vérifier admin par numéro de téléphone (cas LID où senderP n'est pas trouvé)
-        if (!senderP && authorNumber) {
-            const adminCheck = participants.find(p => {
-                const pNum = p.id.user || p.id._serialized?.split('@')[0];
-                return pNum === authorNumber || p.id._serialized === `${authorNumber}@c.us`;
-            });
-            if (adminCheck?.isAdmin || adminCheck?.isSuperAdmin) {
-                sessionData.addLog(`[ADMIN] ${authorNumber} est admin (résolu via contact), lien ignoré`);
-                return;
-            }
+        // Debug: comprendre les formats d'ID
+        const adminParticipants = participants.filter(p => p.isAdmin || p.isSuperAdmin);
+        sessionData.addLog(`[DEBUG-ADMIN] authorId=${authorId} | authorNumber=${authorNumber} | authorCusId=${authorCusId} | senderP=${senderP ? 'trouvé (admin=' + (senderP.isAdmin || senderP.isSuperAdmin) + ')' : 'NON TROUVÉ'}`);
+        sessionData.addLog(`[DEBUG-ADMIN] Admins du groupe: ${adminParticipants.map(p => p.id._serialized).join(', ')}`);
+        
+        // Vérifier admin par toutes les méthodes possibles
+        if (senderP?.isAdmin || senderP?.isSuperAdmin) return;
+        
+        const isAdmin = participants.some(p => {
+            if (!(p.isAdmin || p.isSuperAdmin)) return false;
+            const pId = p.id._serialized;
+            const pNum = p.id.user || pId?.split('@')[0];
+            return pId === authorId || pId === authorCusId || pNum === authorNumber;
+        });
+        if (isAdmin) {
+            sessionData.addLog(`[ADMIN] ${authorNumber} est admin, lien ignoré`);
+            return;
         }
         
         // Vérifier les autres exceptions (utilisateurs whitelisted)
