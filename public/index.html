@@ -4570,12 +4570,18 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                     <div style="font-size:48px;margin-bottom:16px">🔒</div>
                     <h2 style="margin:0 0 8px;color:var(--text-primary)">Abonnement requis</h2>
                     <p style="color:var(--text-secondary);margin:0 0 20px;line-height:1.5">Votre abonnement a expiré ou n'est pas actif. Renouvelez pour accéder à toutes les fonctionnalités du bot.</p>
-                    <p style="font-size:24px;font-weight:700;color:var(--primary);margin:0 0 20px">${subSettings ? formatCurrency(subSettings.amount, subSettings.currency) : ''}<span style="font-size:14px;font-weight:400;color:var(--text-secondary)"> / ${subSettings ? subSettings.durationDays : 30} jours</span></p>
-                    <button onclick="showSubModal()" style="background:var(--primary);color:#fff;border:none;padding:14px 32px;border-radius:10px;font-size:16px;font-weight:600;cursor:pointer;width:100%"><i class="fas fa-lock" style="margin-right:8px"></i>Payer maintenant</button>
+                    <p id="sub-overlay-price" style="font-size:24px;font-weight:700;color:var(--primary);margin:0 0 20px"></p>
+                    <button onclick="initiatePayment()" id="sub-overlay-btn" style="background:var(--primary);color:#fff;border:none;padding:14px 32px;border-radius:10px;font-size:16px;font-weight:600;cursor:pointer;width:100%"><i class="fas fa-lock" style="margin-right:8px"></i>Payer maintenant</button>
+                    <p style="color:var(--text-muted);font-size:0.75rem;margin-top:12px"><i class="fas fa-shield-alt"></i> Paiement sécurisé via LeekPay</p>
                 </div>`;
                 document.body.appendChild(overlay);
             }
             overlay.style.display = 'flex';
+            // Mettre à jour le prix
+            var priceEl = document.getElementById('sub-overlay-price');
+            if (priceEl && subSettings) {
+                priceEl.innerHTML = formatCurrency(subSettings.amount, subSettings.currency) + '<span style="font-size:14px;font-weight:400;color:var(--text-secondary)"> / ' + (subSettings.durationDays || 30) + ' jours</span>';
+            }
             // Griser les liens de navigation
             document.querySelectorAll('.nav-link:not([data-page="dashboard"])').forEach(function(link) {
                 link.style.opacity = '0.4';
@@ -4612,9 +4618,24 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             return;
         }
         
-        const btn = document.getElementById('sub-pay-btn');
-        btn.disabled = true;
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Traitement...';
+        if (typeof LeekPay === 'undefined') {
+            showToast('SDK de paiement non chargé. Rechargez la page.', 'error');
+            return;
+        }
+        
+        // Utiliser le bouton de la modale OU de l'overlay
+        const btn = document.getElementById('sub-pay-btn') || document.getElementById('sub-overlay-btn');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Traitement...';
+        }
+        
+        function resetBtn() {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-lock" style="margin-right:8px"></i>Payer maintenant';
+            }
+        }
         
         try {
             LeekPay.pay({
@@ -4623,25 +4644,22 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                 currency: subSettings.currency,
                 description: subSettings.description || 'Abonnement PayOol Bot',
                 onSuccess: function(response) {
-                    btn.disabled = false;
-                    btn.innerHTML = '<i class="fas fa-lock"></i> Payer maintenant';
+                    resetBtn();
                     confirmPayment(response);
                 },
                 onCancel: function() {
-                    btn.disabled = false;
-                    btn.innerHTML = '<i class="fas fa-lock"></i> Payer maintenant';
+                    resetBtn();
                     showToast('Paiement annulé', 'warning');
                 },
                 onError: function(error) {
-                    btn.disabled = false;
-                    btn.innerHTML = '<i class="fas fa-lock"></i> Payer maintenant';
+                    resetBtn();
                     showToast('Erreur de paiement: ' + (error.message || 'Réessayez'), 'error');
                 }
             });
         } catch (e) {
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fas fa-lock"></i> Payer maintenant';
-            showToast('Erreur initialisation paiement', 'error');
+            resetBtn();
+            showToast('Erreur paiement: ' + e.message, 'error');
+            console.error('LeekPay error:', e);
         }
     }
     
