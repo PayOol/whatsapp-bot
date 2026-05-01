@@ -687,7 +687,9 @@ const DEFAULT_SUBSCRIPTION_SETTINGS = {
     durationDays: 30,
     description: 'Abonnement PayOol Bot',
     trialEnabled: false,
-    trialDurationDays: 0
+    trialDurationDays: 0,
+    siteUrl: '',
+    detectedSiteUrl: ''
 };
 
 let subscriptionSettings = { ...DEFAULT_SUBSCRIPTION_SETTINGS };
@@ -829,12 +831,14 @@ async function notifyUnsubscribedUsers() {
         const botNumber = client.info.wid._serialized;
         
         const price = new Intl.NumberFormat('fr-FR').format(subscriptionSettings.amount);
+        const baseUrl = subscriptionSettings.siteUrl || subscriptionSettings.detectedSiteUrl || '';
+        const dashboardUrl = baseUrl ? baseUrl.replace(/\/$/, '') + '/dashboard' : '';
         const message = `🔔 *Rappel — PayOol™ Bot*\n\n` +
             `Bonjour ! Votre abonnement a expiré.\n\n` +
             `Pour continuer à bénéficier de toutes les fonctionnalités du bot (modération, anti-spam, menus interactifs, etc.), veuillez renouveler votre abonnement.\n\n` +
             `💰 *Tarif :* ${price} ${subscriptionSettings.currency}\n` +
             `📅 *Durée :* ${subscriptionSettings.durationDays} jours\n\n` +
-            `Rendez-vous sur votre tableau de bord pour effectuer le paiement.\n\n` +
+            (dashboardUrl ? `👉 *Payer maintenant :* ${dashboardUrl}\n\n` : '') +
             `⚠️ Sans abonnement actif, vous ne pourrez plus créer ni redémarrer de sessions.\n\n` +
             `Merci de votre confiance ! 🙏`;
         
@@ -4150,6 +4154,17 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
+
+// Auto-détection de l'URL du site
+app.use((req, res, next) => {
+    if (!subscriptionSettings.detectedSiteUrl && req.headers.host) {
+        const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+        subscriptionSettings.detectedSiteUrl = `${protocol}://${req.headers.host}`;
+        saveSubscriptionSettings();
+    }
+    next();
+});
+
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
 // Helper pour obtenir l'URL de base
@@ -4833,6 +4848,7 @@ app.post('/api/admin/subscription/settings', requireAdmin, (req, res) => {
     if (description !== undefined) subscriptionSettings.description = description;
     if (trialEnabled !== undefined) subscriptionSettings.trialEnabled = !!trialEnabled;
     if (trialDurationDays !== undefined) subscriptionSettings.trialDurationDays = parseInt(trialDurationDays) || 0;
+    if (req.body.siteUrl !== undefined) subscriptionSettings.siteUrl = req.body.siteUrl;
     
     saveSubscriptionSettings();
     addLog(`[SUB] Paramètres d'abonnement mis à jour par ${req.user.username}`);

@@ -909,6 +909,12 @@
                         </div>
                     </div>
                     
+                    <div class="form-group">
+                        <label class="form-label">URL du site</label>
+                        <input type="url" class="form-input" id="sub-site-url" placeholder="https://votre-domaine.com">
+                        <div class="form-hint">Utilisé dans le lien de paiement envoyé par WhatsApp</div>
+                    </div>
+                    
                     <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="saveSubscriptionSettings()">
                         <i class="fas fa-save"></i> Enregistrer les paramètres
                     </button>
@@ -1453,6 +1459,7 @@
                     document.getElementById('sub-currency').value = s.currency || 'XOF';
                     document.getElementById('sub-duration').value = s.durationDays || 30;
                     document.getElementById('sub-description').value = s.description || '';
+                    document.getElementById('sub-site-url').value = s.siteUrl || '';
                     updateSubBanner(s.enabled);
                 }
             });
@@ -1500,7 +1507,8 @@
                 amount: parseInt(document.getElementById('sub-amount').value) || 5000,
                 currency: document.getElementById('sub-currency').value,
                 durationDays: parseInt(document.getElementById('sub-duration').value) || 30,
-                description: document.getElementById('sub-description').value.trim()
+                description: document.getElementById('sub-description').value.trim(),
+                siteUrl: document.getElementById('sub-site-url').value.trim()
             };
             
             if (!settings.apiKey) {
