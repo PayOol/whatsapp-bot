@@ -1632,9 +1632,7 @@
             .then(function(res) { return res.json(); })
             .then(function(data) {
                 if (data.success) {
-                    var msg = 'Notifications: ' + data.sent + ' envoyées';
-                    if (data.disconnected) msg += ', ' + data.disconnected + ' déconnectées';
-                    msg += ', ' + data.skipped + ' ignorées, ' + data.errors + ' erreurs';
+                    var msg = data.notified + ' notifiés, ' + data.warned + ' avertis, ' + data.disconnected + ' déconnectés';
                     showToast(msg, 'success');
                 } else {
                     showToast(data.message || 'Erreur', 'error');
