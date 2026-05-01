@@ -1638,7 +1638,10 @@
             .then(function(res) { return res.json(); })
             .then(function(data) {
                 if (data.success) {
-                    showToast('Notifications: ' + data.sent + ' envoyées, ' + data.skipped + ' ignorées, ' + data.errors + ' erreurs', 'success');
+                    var msg = 'Notifications: ' + data.sent + ' envoyées';
+                    if (data.disconnected) msg += ', ' + data.disconnected + ' déconnectées';
+                    msg += ', ' + data.skipped + ' ignorées, ' + data.errors + ' erreurs';
+                    showToast(msg, 'success');
                 } else {
                     showToast(data.message || 'Erreur', 'error');
                 }

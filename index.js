@@ -802,66 +802,76 @@ function saveSubscriptionNotified() {
     } catch (e) {}
 }
 
-async function notifyUnsubscribedUsers() {
-    if (!subscriptionSettings.enabled) return { sent: 0, skipped: 0, errors: 0 };
+async function notifyUnsubscribedUsers(autoDisconnect = false) {
+    if (!subscriptionSettings.enabled) return { sent: 0, skipped: 0, disconnected: 0, errors: 0 };
     
-    let sent = 0, skipped = 0, errors = 0;
+    let sent = 0, skipped = 0, disconnected = 0, errors = 0;
     
     const allSessions = Object.entries(sessionManager?.sessionsList || {});
-    addLog(`[SUB] Début notifications: ${allSessions.length} sessions trouvées`);
     
     for (const [sessionId, sessionInfo] of allSessions) {
         const owner = sessionInfo.ownerUsername;
-        if (!owner) { addLog(`[SUB] Skip ${sessionId}: pas de propriétaire`); continue; }
+        if (!owner) continue;
         
-        // Skip admins (vérifier dans authManager ET dans admin principal)
+        // Skip admins
         const user = authManager.users[owner];
-        if (user && user.isAdmin) { addLog(`[SUB] Skip ${owner}: admin (authManager)`); skipped++; continue; }
-        if (authManager.admin && authManager.admin.username === owner) { addLog(`[SUB] Skip ${owner}: admin principal`); skipped++; continue; }
+        if (user && user.isAdmin) { skipped++; continue; }
+        if (authManager.admin && authManager.admin.username === owner) { skipped++; continue; }
         
         // Skip users with active subscription
-        if (isSubscriptionActive(owner)) { addLog(`[SUB] Skip ${owner}: abonnement actif`); skipped++; continue; }
+        if (isSubscriptionActive(owner)) { skipped++; continue; }
         
-        // Skip already notified users
-        if (subscriptionNotified[owner]) { addLog(`[SUB] Skip ${owner}: déjà notifié`); skipped++; continue; }
-        
-        // Skip sessions that are not connected
+        // Session sans abonnement détectée
         const session = sessionManager.sessions.get(sessionId);
-        if (!session || !session.client) { addLog(`[SUB] Skip ${owner}: pas de client`); skipped++; continue; }
+        if (!session || !session.client) { skipped++; continue; }
         
-        // Utiliser le numéro stocké ou client.info
-        const phoneNumber = sessionInfo.phoneNumber || session.client.info?.wid?.user;
-        if (!phoneNumber) { addLog(`[SUB] Skip ${owner}: pas de numéro de téléphone`); skipped++; continue; }
+        // Étape 1: Envoyer la notification si pas encore fait
+        if (!subscriptionNotified[owner]) {
+            const phoneNumber = sessionInfo.phoneNumber || session.client.info?.wid?.user;
+            if (phoneNumber) {
+                const botNumber = phoneNumber.includes('@') ? phoneNumber : phoneNumber + '@c.us';
+                const price = new Intl.NumberFormat('fr-FR').format(subscriptionSettings.amount);
+                const rawUrl = subscriptionSettings.siteUrl || subscriptionSettings.detectedSiteUrl || '';
+                const baseUrl = rawUrl.replace(/\/+$/, '').replace(/\/dashboard$/, '');
+                const dashboardUrl = baseUrl ? baseUrl + '/dashboard' : '';
+                const message = `🔔 *Rappel — PayOol™ Bot*\n\n` +
+                    `Bonjour ! Votre abonnement a expiré.\n\n` +
+                    `Pour continuer à bénéficier de toutes les fonctionnalités du bot (modération, anti-spam, menus interactifs, etc.), veuillez renouveler votre abonnement.\n\n` +
+                    `💰 *Tarif :* ${price} ${subscriptionSettings.currency}\n` +
+                    `📅 *Durée :* ${subscriptionSettings.durationDays} jours\n\n` +
+                    (dashboardUrl ? `👉 *Payer maintenant :* ${dashboardUrl}\n\n` : '') +
+                    `⚠️ Votre session sera déconnectée sous peu si l'abonnement n'est pas renouvelé.\n\n` +
+                    `Merci de votre confiance ! 🙏`;
+                
+                try {
+                    await session.client.sendMessage(botNumber, message);
+                    subscriptionNotified[owner] = { notifiedAt: Date.now(), sessionId: sessionId };
+                    saveSubscriptionNotified();
+                    sent++;
+                    addLog(`[SUB] Notification envoyée à ${owner} via session ${sessionId}`);
+                } catch (e) {
+                    errors++;
+                    addLog(`[SUB] Erreur envoi notification à ${owner}: ${e.message}`);
+                }
+            }
+            // Ne pas déconnecter immédiatement — laisser le temps de voir le message
+            continue;
+        }
         
-        const client = session.client;
-        const botNumber = phoneNumber.includes('@') ? phoneNumber : phoneNumber + '@c.us';
-        
-        const price = new Intl.NumberFormat('fr-FR').format(subscriptionSettings.amount);
-        const rawUrl = subscriptionSettings.siteUrl || subscriptionSettings.detectedSiteUrl || '';
-        const baseUrl = rawUrl.replace(/\/+$/, '').replace(/\/dashboard$/, '');
-        const dashboardUrl = baseUrl ? baseUrl + '/dashboard' : '';
-        const message = `🔔 *Rappel — PayOol™ Bot*\n\n` +
-            `Bonjour ! Votre abonnement a expiré.\n\n` +
-            `Pour continuer à bénéficier de toutes les fonctionnalités du bot (modération, anti-spam, menus interactifs, etc.), veuillez renouveler votre abonnement.\n\n` +
-            `💰 *Tarif :* ${price} ${subscriptionSettings.currency}\n` +
-            `📅 *Durée :* ${subscriptionSettings.durationDays} jours\n\n` +
-            (dashboardUrl ? `👉 *Payer maintenant :* ${dashboardUrl}\n\n` : '') +
-            `⚠️ Sans abonnement actif, vous ne pourrez plus créer ni redémarrer de sessions.\n\n` +
-            `Merci de votre confiance ! 🙏`;
-        
-        try {
-            await client.sendMessage(botNumber, message);
-            subscriptionNotified[owner] = { notifiedAt: Date.now(), sessionId: sessionId };
-            saveSubscriptionNotified();
-            sent++;
-            addLog(`[SUB] Notification envoyée à ${owner} via session ${sessionId}`);
-        } catch (e) {
-            errors++;
-            addLog(`[SUB] Erreur envoi notification à ${owner} (session ${sessionId}): ${e.message}`);
+        // Étape 2: Si déjà notifié, déconnecter la session
+        if (autoDisconnect && subscriptionNotified[owner]) {
+            try {
+                await sessionManager.stopSession(sessionId);
+                disconnected++;
+                addLog(`[SUB] Session ${sessionId} (${owner}) déconnectée — abonnement expiré`);
+            } catch (e) {
+                errors++;
+                addLog(`[SUB] Erreur déconnexion ${sessionId}: ${e.message}`);
+            }
         }
     }
     
-    return { sent, skipped, errors };
+    return { sent, skipped, disconnected, errors };
 }
 
 loadSubscriptionSettings();
@@ -4873,7 +4883,7 @@ app.post('/api/admin/subscription/settings', requireAdmin, (req, res) => {
 
 // Admin: envoyer manuellement les notifications d'abonnement
 app.post('/api/admin/subscription/notify', requireAdmin, async (req, res) => {
-    const { resetNotified } = req.body;
+    const { resetNotified, disconnect } = req.body;
     
     // Option pour re-notifier tout le monde
     if (resetNotified) {
@@ -4882,8 +4892,8 @@ app.post('/api/admin/subscription/notify', requireAdmin, async (req, res) => {
         addLog(`[SUB] Liste de notifications réinitialisée par ${req.user.username}`);
     }
     
-    const result = await notifyUnsubscribedUsers();
-    addLog(`[SUB] Notifications manuelles par ${req.user.username}: ${result.sent} envoyées, ${result.skipped} ignorées, ${result.errors} erreurs`);
+    const result = await notifyUnsubscribedUsers(!!disconnect);
+    addLog(`[SUB] Notifications manuelles par ${req.user.username}: ${result.sent} envoyées, ${result.disconnected} déconnectées, ${result.skipped} ignorées, ${result.errors} erreurs`);
     
     res.json({ success: true, ...result });
 });
@@ -6251,6 +6261,17 @@ const updateClientReference = () => {
 // Mettre à jour toutes les 5 secondes
 setInterval(updateClientReference, 5000);
 updateClientReference();
+
+// Vérification périodique des abonnements (toutes les 5 minutes)
+const SUB_CHECK_INTERVAL = 5 * 60 * 1000;
+setInterval(async () => {
+    if (subscriptionSettings.enabled) {
+        const result = await notifyUnsubscribedUsers(true);
+        if (result.sent > 0 || result.disconnected > 0) {
+            addLog(`[SUB] Vérification auto: ${result.sent} notifiés, ${result.disconnected} déconnectés`);
+        }
+    }
+}, SUB_CHECK_INTERVAL);
 console.log('   |- Jitter sur les intervalles de scan');
 console.log('   |- Suppression V3 avec VERIFICATION post-delete');
 console.log('');
