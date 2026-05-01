@@ -983,77 +983,111 @@
 
         /* WhatsApp Preview Styles */
         .wa-preview-container{
-            background:linear-gradient(135deg,#0b141a,#0d1f26);
+            background-color:#0b141a;
+            background-image:url("data:image/svg+xml,%3Csvg width='80' height='80' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff' fill-opacity='0.03'%3E%3Cpath d='M0 0h40v40H0zm40 40h40v40H40z'/%3E%3C/g%3E%3C/svg%3E");
             border-radius:var(--radius-lg);
-            padding:20px;
+            padding:24px 16px;
             position:relative;
-            direction:rtl;
+            overflow:hidden;
         }
         .wa-preview-bubble{
             background:#005c4b;
-            border-radius:0 12px 12px 12px;
-            padding:8px 12px 12px;
-            max-width:85%;
-            display:inline-block;
-            direction:ltr;
-            box-shadow:0 1px 2px rgba(0,0,0,0.2);
+            border-radius:0 8px 8px 8px;
+            max-width:88%;
+            margin-left:auto;
+            position:relative;
+            box-shadow:0 1px 1px rgba(0,0,0,0.13);
+            overflow:hidden;
+        }
+        .wa-preview-bubble::before{
+            content:'';
+            position:absolute;
+            top:0;right:100%;
+            width:8px;height:13px;
+            background:#005c4b;
+            clip-path:polygon(100% 0,100% 100%,0 0);
         }
         .wa-preview-header{
             display:flex;
             justify-content:space-between;
-            align-items:center;
-            margin-bottom:4px;
-            padding-bottom:4px;
+            align-items:baseline;
+            padding:6px 12px 0;
         }
         .wa-preview-title{
-            color:#00a88e;
-            font-size:0.85rem;
-            font-weight:600;
+            color:#53bdeb;
+            font-size:0.8125rem;
+            font-weight:500;
         }
         .wa-preview-time{
-            color:rgba(255,255,255,0.5);
-            font-size:0.7rem;
+            color:rgba(255,255,255,0.45);
+            font-size:0.6875rem;
+            margin-left:8px;
+            white-space:nowrap;
         }
         .wa-preview-text{
-            color:#ffffff;
-            font-size:0.9rem;
-            line-height:1.45;
+            color:#e9edef;
+            font-size:0.875rem;
+            line-height:1.4;
             white-space:pre-wrap;
             word-wrap:break-word;
+            padding:4px 12px 8px;
         }
-        .wa-preview-text .wa-bold{font-weight:700;color:#ffffff}
-        .wa-preview-text .wa-italic{font-style:italic;color:#ffffff}
-        .wa-preview-text .wa-strike{text-decoration:line-through;color:#ffffff}
-        .wa-preview-text .wa-mono{font-family:monospace;background:rgba(0,0,0,0.3);padding:2px 6px;border-radius:4px;color:#ffffff}
-        .wa-preview-tail{
-            position:absolute;
-            right:0;
-            top:20px;
-            width:0;
-            height:0;
-            border-style:solid;
-            border-width:0 10px 10px 0;
-            border-color:transparent #005c4b transparent transparent;
+        .wa-preview-meta{
+            display:flex;
+            justify-content:flex-end;
+            align-items:center;
+            gap:3px;
+            padding:0 8px 5px;
+            margin-top:-4px;
         }
+        .wa-preview-meta-time{
+            font-size:0.6875rem;
+            color:rgba(255,255,255,0.45);
+        }
+        .wa-preview-meta-checks{
+            color:rgba(83,189,235,0.85);
+            font-size:0.6rem;
+        }
+        .wa-preview-img{
+            width:100%;
+            display:block;
+            max-height:260px;
+            object-fit:cover;
+        }
+        .wa-preview-text .wa-bold{font-weight:700}
+        .wa-preview-text .wa-italic{font-style:italic}
+        .wa-preview-text .wa-strike{text-decoration:line-through}
+        .wa-preview-text .wa-mono{font-family:'SF Mono',SFMono-Regular,Consolas,monospace;background:rgba(0,0,0,0.25);padding:1px 5px;border-radius:3px;font-size:0.825rem}
+        .wa-preview-tail{display:none}
         [data-theme="light"] .wa-preview-container{
-            background:linear-gradient(135deg,#e5ddd5,#d4cfc6);
+            background-color:#efeae2;
+            background-image:url("data:image/svg+xml,%3Csvg width='80' height='80' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23000000' fill-opacity='0.03'%3E%3Cpath d='M0 0h40v40H0zm40 40h40v40H40z'/%3E%3C/g%3E%3C/svg%3E");
         }
         [data-theme="light"] .wa-preview-bubble{
-            background:#dcf8c6;
+            background:#d9fdd3;
+        }
+        [data-theme="light"] .wa-preview-bubble::before{
+            background:#d9fdd3;
         }
         [data-theme="light"] .wa-preview-title{
-            color:#075e54;
+            color:#1fa855;
+        }
+        [data-theme="light"] .wa-preview-time{
+            color:rgba(0,0,0,0.4);
         }
         [data-theme="light"] .wa-preview-text{
             color:#111b21;
         }
+        [data-theme="light"] .wa-preview-meta-time{
+            color:rgba(0,0,0,0.4);
+        }
+        [data-theme="light"] .wa-preview-meta-checks{
+            color:rgba(83,189,235,0.9);
+        }
         [data-theme="light"] .wa-preview-text .wa-bold{color:#111b21}
         [data-theme="light"] .wa-preview-text .wa-italic{color:#111b21}
         [data-theme="light"] .wa-preview-text .wa-strike{color:#111b21}
-        [data-theme="light"] .wa-preview-text .wa-mono{color:#111b21;background:rgba(0,0,0,0.1)}
-        [data-theme="light"] .wa-preview-tail{
-            border-color:transparent #dcf8c6 transparent transparent;
-        }
+        [data-theme="light"] .wa-preview-text .wa-mono{color:#111b21;background:rgba(0,0,0,0.07)}
 
         /* ═══════════════════════════════════════
            QR MODAL
@@ -2622,13 +2656,16 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                                 <div class="wa-preview-bubble">
                                     <div class="wa-preview-header">
                                         <span class="wa-preview-title" id="announcement-preview-title">Annonce</span>
-                                        <span class="wa-preview-time">maintenant</span>
                                     </div>
+                                    <div id="announcement-preview-image"></div>
                                     <div class="wa-preview-text" id="announcement-preview-text">
                                         <span style="color:rgba(255,255,255,0.5)">Votre message apparaîtra ici...</span>
                                     </div>
+                                    <div class="wa-preview-meta">
+                                        <span class="wa-preview-meta-time" id="announcement-preview-meta-time">00:00</span>
+                                        <span class="wa-preview-meta-checks"><i class="fas fa-check-double"></i></span>
+                                    </div>
                                 </div>
-                                <div class="wa-preview-tail"></div>
                             </div>
                         </div>
                     </div>
@@ -4568,22 +4605,29 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         const linkPreview = document.getElementById('announcement-link-preview').checked;
         const previewTitle = document.getElementById('announcement-preview-title');
         const previewText = document.getElementById('announcement-preview-text');
+        const previewImage = document.getElementById('announcement-preview-image');
+        const previewMetaTime = document.getElementById('announcement-preview-meta-time');
         
         previewTitle.textContent = title;
+        
+        // Live time
+        const now = new Date();
+        previewMetaTime.textContent = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+        
+        // Image
+        if (announcementImageData) {
+            previewImage.innerHTML = `<img class="wa-preview-img" src="${announcementImageData}">`;
+        } else {
+            previewImage.innerHTML = '';
+        }
         
         if (!content.trim() && !announcementImageData) {
             previewText.innerHTML = '<span style="color:rgba(255,255,255,0.5)">Votre message apparaîtra ici...</span>';
             return;
         }
         
-        // Image en haut de la prévisualisation
-        let html = '';
-        if (announcementImageData) {
-            html += `<div style="margin:-12px -12px 8px -12px"><img src="${announcementImageData}" style="width:100%;border-radius:8px 8px 0 0;display:block;max-height:200px;object-fit:cover"></div>`;
-        }
-        
         // Convertir le formatage WhatsApp en HTML pour la prévisualisation
-        html += escapeHtml(content);
+        let html = escapeHtml(content);
         
         // Monospace (doit être traité en premier car il contient d'autres caractères)
         html = html.replace(/```([^`]+)```/g, '<span class="wa-mono">$1</span>');
