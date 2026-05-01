@@ -1937,7 +1937,7 @@ function generateList(sections) {
     };
 }
 
-async function sendInteractiveMenu(chat, menuId, sessionData = null) {
+async function sendInteractiveMenu(chat, menuId, sessionData = null, quotedMsg = null) {
     const menus = sessionData ? sessionData.interactiveMenus : interactiveMenus;
     const sessions = sessionData ? sessionData.menuSessions : menuSessions;
     const menu = menus[menuId];
@@ -1985,15 +1985,17 @@ async function sendInteractiveMenu(chat, menuId, sessionData = null) {
             if (sessionData) sessionData.saveMenus(); else saveMenus();
         }
 
+        const sendOpts = quotedMsg ? { quotedMessageId: quotedMsg.id._serialized } : {};
+
         if (menu.image) {
             const base64Data = menu.image.replace(/^data:image\/\w+;base64,/, '');
             const mimeMatch = menu.image.match(/^data:(image\/\w+);base64,/);
             const mimetype = mimeMatch ? mimeMatch[1] : 'image/jpeg';
             const media = new MessageMedia(mimetype, base64Data, 'menu.jpg');
-            const sent = await sendMessageHumanized(chat, media, { caption: menuText });
+            const sent = await sendMessageHumanized(chat, media, { caption: menuText, ...sendOpts });
             return sent;
         } else {
-            const sent = await sendMessageHumanized(chat, menuText, {});
+            const sent = await sendMessageHumanized(chat, menuText, sendOpts);
             return sent;
         }
     } catch (error) {
@@ -3398,7 +3400,7 @@ async function handleMessage(client, message, sessionId) {
             });
             if (matched) {
                 sessionData.addLog(`Menu declenche: ${menuId} par ${senderId} (mot-cle: ${matched})`);
-                await sendInteractiveMenu(chat, menuId, sessionData);
+                await sendInteractiveMenu(chat, menuId, sessionData, message);
                 return;
             }
         }
