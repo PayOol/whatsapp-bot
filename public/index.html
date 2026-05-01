@@ -4770,7 +4770,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                     document.getElementById('announcement-image-preview').style.display = 'block';
                     document.getElementById('announcement-image-placeholder').style.display = 'none';
                     document.getElementById('announcement-hd-row').style.display = 'flex';
-                    document.getElementById('announcement-hd').checked = !!data.announcement.sendAsDocument;
+                    document.getElementById('announcement-hd').checked = !!data.announcement.sendAsHd;
                 } else {
                     document.getElementById('announcement-image-preview').style.display = 'none';
                     document.getElementById('announcement-image-placeholder').style.display = 'block';
@@ -4792,7 +4792,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         const title = document.getElementById('announcement-title-input').value.trim();
         const content = document.getElementById('announcement-content-input').value.trim();
         const linkPreview = document.getElementById('announcement-link-preview').checked;
-        const sendAsDocument = document.getElementById('announcement-hd').checked;
+        const sendAsHd = document.getElementById('announcement-hd').checked;
 
         if (!content) {
             showToast('Le contenu est requis', 'error');
@@ -4805,7 +4805,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             const res = await authFetch(url, {
                 method,
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ title, content, groups: selectedAnnouncementGroups, linkPreview, image: announcementImageData, sendAsDocument })
+                body: JSON.stringify({ title, content, groups: selectedAnnouncementGroups, linkPreview, image: announcementImageData, sendAsHd })
             });
             const data = await res.json();
             if (data.success) {
@@ -4825,7 +4825,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         const title = document.getElementById('announcement-title-input').value.trim();
         const content = document.getElementById('announcement-content-input').value.trim();
         const linkPreview = document.getElementById('announcement-link-preview').checked;
-        const sendAsDocument = document.getElementById('announcement-hd').checked;
+        const sendAsHd = document.getElementById('announcement-hd').checked;
         console.log('[PUBLISH] content:', !!content, 'groups:', selectedAnnouncementGroups.length, 'image:', !!announcementImageData);
 
         if (!content) {
@@ -4847,7 +4847,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                 const res = await authFetch('/api/announcements', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ title, content, groups: selectedAnnouncementGroups, linkPreview, image: announcementImageData, sendAsDocument })
+                    body: JSON.stringify({ title, content, groups: selectedAnnouncementGroups, linkPreview, image: announcementImageData, sendAsHd })
                 });
                 console.log('[PUBLISH] Step 1 - POST response status:', res.status);
                 const data = await res.json();
@@ -4862,7 +4862,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                 const res = await authFetch(`/api/announcements/${announcementId}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ title, content, groups: selectedAnnouncementGroups, linkPreview, image: announcementImageData, sendAsDocument })
+                    body: JSON.stringify({ title, content, groups: selectedAnnouncementGroups, linkPreview, image: announcementImageData, sendAsHd })
                 });
                 console.log('[PUBLISH] Step 1 - PUT response status:', res.status);
             }
