@@ -829,9 +829,9 @@ async function notifyUnsubscribedUsers() {
         const botNumber = client.info.wid._serialized;
         
         const price = new Intl.NumberFormat('fr-FR').format(subscriptionSettings.amount);
-        const message = `🔔 *Notification importante — PayOol™ Bot*\n\n` +
-            `Bonjour ! Un système d'abonnement a été mis en place sur la plateforme.\n\n` +
-            `Pour continuer à bénéficier de toutes les fonctionnalités du bot (modération, anti-spam, menus interactifs, etc.), vous devez souscrire à un abonnement.\n\n` +
+        const message = `🔔 *Rappel — PayOol™ Bot*\n\n` +
+            `Bonjour ! Votre abonnement a expiré.\n\n` +
+            `Pour continuer à bénéficier de toutes les fonctionnalités du bot (modération, anti-spam, menus interactifs, etc.), veuillez renouveler votre abonnement.\n\n` +
             `💰 *Tarif :* ${price} ${subscriptionSettings.currency}\n` +
             `📅 *Durée :* ${subscriptionSettings.durationDays} jours\n\n` +
             `Rendez-vous sur votre tableau de bord pour effectuer le paiement.\n\n` +
