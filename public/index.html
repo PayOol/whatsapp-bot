@@ -3964,13 +3964,34 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         }
         
         modal.classList.add('active');
+        _lastMenuType = document.getElementById('menu-type').value;
         updateMenuTypeUI();
     }
     
+    let _lastMenuType = null;
+
     function updateMenuTypeUI() {
         const type = document.getElementById('menu-type').value;
         document.getElementById('buttons-config').style.display = type === 'buttons' ? 'block' : 'none';
         document.getElementById('list-config').style.display = type === 'list' ? 'block' : 'none';
+
+        if (_lastMenuType && _lastMenuType !== type) {
+            if (_lastMenuType === 'buttons' && type === 'list') {
+                const buttons = getButtonsFromForm();
+                const sections = getSectionsFromForm();
+                if (buttons.length > 0 && sections.length === 0) {
+                    renderMenuSections([{ title: 'Options', rows: buttons.map(b => ({ id: b.id, title: b.text, response: b.response })) }]);
+                }
+            } else if (_lastMenuType === 'list' && type === 'buttons') {
+                const sections = getSectionsFromForm();
+                const buttons = getButtonsFromForm();
+                if (sections.length > 0 && buttons.length === 0) {
+                    const allRows = sections.flatMap(s => s.rows || []);
+                    renderMenuButtons(allRows.map(r => ({ id: r.id, text: r.title, response: r.response })));
+                }
+            }
+        }
+        _lastMenuType = type;
     }
     
     function renderMenuButtons(buttons) {
@@ -4153,8 +4174,8 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             type: document.getElementById('menu-type').value,
             description: document.getElementById('menu-description').value,
             enabled: document.getElementById('menu-enabled').checked,
-            buttons: document.getElementById('menu-type').value === 'buttons' ? getButtonsFromForm() : [],
-            listSections: document.getElementById('menu-type').value === 'list' ? getSectionsFromForm() : []
+            buttons: getButtonsFromForm(),
+            listSections: getSectionsFromForm()
         };
         
         if (!menuData.title) {
