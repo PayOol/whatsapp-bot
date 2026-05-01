@@ -3384,13 +3384,14 @@ async function handleMessage(client, message, sessionId) {
             if (menu.groupId && chat.id._serialized !== menu.groupId) continue;
 
             const triggers = menu.trigger.split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
-            const messageWords = triggerText.replace(/[^\w\sàâäéèêëïîôùûüç'-]/gi, '').split(/\s+/).filter(Boolean);
+            const messageWords = triggerText.replace(/[^\w\sàâäéèêëïîôùûüç'-]/gi, '').split(/\s+/).filter(w => w.length > 1);
             const matched = triggers.find(t => {
-                if (triggerText.includes(t)) return true;
+                if (triggerText.includes(t) || t.includes(triggerText)) return true;
                 const triggerWords = t.split(/\s+/).filter(w => w.length > 2);
-                if (triggerWords.length <= 2) return false;
+                if (triggerWords.length === 0) return false;
                 const found = triggerWords.filter(w => messageWords.some(mw => mw.includes(w) || w.includes(mw)));
-                return found.length >= Math.ceil(triggerWords.length * 0.5);
+                const msgFound = messageWords.filter(mw => triggerWords.some(w => mw.includes(w) || w.includes(mw)));
+                return found.length >= 2 || msgFound.length >= Math.ceil(messageWords.length * 0.6);
             });
             sessionData.addLog(`[DEBUG-MENU] Triggers: [${triggers.join(', ')}] | MsgWords: [${messageWords.join(', ')}] | Match: ${matched || 'AUCUN'}`);
             if (matched) {
