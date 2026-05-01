@@ -3366,6 +3366,9 @@ async function handleMessage(client, message, sessionId) {
                         await sendMessageHumanized(chat, `[OK] Vous avez selectionne: ${selectedItem.text || selectedItem.title}`, {}, messageText.length, sessionData);
                     }
                     return;
+                } else if (items.length > 0) {
+                    await sendMessageHumanized(chat, `⚠️ Option invalide. Veuillez choisir un numéro entre *1* et *${items.length}*.`, {}, messageText.length, sessionData);
+                    return;
                 }
             }
         }
