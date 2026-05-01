@@ -3375,13 +3375,17 @@ async function handleMessage(client, message, sessionId) {
 
         // ✅ Vérifier si le message déclenche un menu
         const triggerText = message.body.trim().toLowerCase();
+        const menuCount = Object.keys(sessionData.interactiveMenus || {}).length;
+        sessionData.addLog(`[DEBUG-MENU] Message: "${triggerText}" | Menus charges: ${menuCount} | Chat: ${chat.id._serialized}`);
         for (const menuId in sessionData.interactiveMenus) {
             const menu = sessionData.interactiveMenus[menuId];
+            sessionData.addLog(`[DEBUG-MENU] Check menu ${menuId}: enabled=${menu.enabled}, trigger="${menu.trigger}", groupId=${menu.groupId || 'aucun'}`);
             if (!menu.enabled || !menu.trigger) continue;
             if (menu.groupId && chat.id._serialized !== menu.groupId) continue;
 
             const triggers = menu.trigger.split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
             const matched = triggers.find(t => triggerText.includes(t));
+            sessionData.addLog(`[DEBUG-MENU] Triggers: [${triggers.join(', ')}] | Match: ${matched || 'AUCUN'}`);
             if (matched) {
                 sessionData.addLog(`Menu declenche: ${menuId} par ${senderId} (mot-cle: ${matched})`);
                 await sendInteractiveMenu(chat, menuId, sessionData);
