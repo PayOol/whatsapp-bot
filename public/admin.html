@@ -918,11 +918,8 @@
                     <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="saveSubscriptionSettings()">
                         <i class="fas fa-save"></i> Enregistrer les paramètres
                     </button>
-                    <button class="btn btn-secondary" style="width:100%;margin-top:8px" onclick="notifyUsers(false)">
+                    <button class="btn btn-secondary" style="width:100%;margin-top:8px" onclick="notifyUsers()">
                         <i class="fas fa-bell"></i> Notifier les utilisateurs sans abonnement
-                    </button>
-                    <button class="btn btn-sm" style="width:100%;margin-top:4px;font-size:0.75rem;color:var(--text-secondary)" onclick="notifyUsers(true)">
-                        <i class="fas fa-redo"></i> Re-notifier tout le monde
                     </button>
                 </div>
             </div>
@@ -1623,17 +1620,14 @@
             .catch(function(e) { showToast('Erreur', 'error'); });
         }
         
-        function notifyUsers(resetNotified) {
-            var msg = resetNotified 
-                ? 'Re-notifier TOUS les utilisateurs sans abonnement ? (même ceux déjà notifiés)' 
-                : 'Envoyer une notification WhatsApp aux utilisateurs sans abonnement ?';
-            if (!confirm(msg)) return;
+        function notifyUsers() {
+            if (!confirm('Envoyer une notification WhatsApp aux utilisateurs sans abonnement ?')) return;
             
             fetch('/api/admin/subscription/notify', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'same-origin',
-                body: JSON.stringify({ resetNotified: resetNotified })
+                body: JSON.stringify({})
             })
             .then(function(res) { return res.json(); })
             .then(function(data) {

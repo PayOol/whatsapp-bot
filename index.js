@@ -784,23 +784,6 @@ function activateSubscription(username, paymentId, amount, currency) {
     return subscriptions[username];
 }
 
-const SUBSCRIPTION_NOTIFIED_FILE = path.join(DATA_DIR, 'subscription_notified.json');
-let subscriptionNotified = {};
-
-function loadSubscriptionNotified() {
-    try {
-        if (fs.existsSync(SUBSCRIPTION_NOTIFIED_FILE)) {
-            subscriptionNotified = JSON.parse(fs.readFileSync(SUBSCRIPTION_NOTIFIED_FILE, 'utf8'));
-        }
-    } catch (e) { subscriptionNotified = {}; }
-}
-
-function saveSubscriptionNotified() {
-    try {
-        if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-        fs.writeFileSync(SUBSCRIPTION_NOTIFIED_FILE, JSON.stringify(subscriptionNotified, null, 2));
-    } catch (e) {}
-}
 
 async function notifyUnsubscribedUsers(autoDisconnect = false) {
     if (!subscriptionSettings.enabled) return { sent: 0, skipped: 0, disconnected: 0, errors: 0 };
@@ -825,41 +808,35 @@ async function notifyUnsubscribedUsers(autoDisconnect = false) {
         const session = sessionManager.sessions.get(sessionId);
         if (!session || !session.client) { skipped++; continue; }
         
-        // Étape 1: Envoyer la notification si pas encore fait
-        if (!subscriptionNotified[owner]) {
-            const phoneNumber = sessionInfo.phoneNumber || session.client.info?.wid?.user;
-            if (phoneNumber) {
-                const botNumber = phoneNumber.includes('@') ? phoneNumber : phoneNumber + '@c.us';
-                const price = new Intl.NumberFormat('fr-FR').format(subscriptionSettings.amount);
-                const rawUrl = subscriptionSettings.siteUrl || subscriptionSettings.detectedSiteUrl || '';
-                const baseUrl = rawUrl.replace(/\/+$/, '').replace(/\/dashboard$/, '');
-                const dashboardUrl = baseUrl ? baseUrl + '/dashboard' : '';
-                const message = `🔔 *Rappel — PayOol™ Bot*\n\n` +
-                    `Bonjour ! Votre abonnement a expiré.\n\n` +
-                    `Pour continuer à bénéficier de toutes les fonctionnalités du bot (modération, anti-spam, menus interactifs, etc.), veuillez renouveler votre abonnement.\n\n` +
-                    `💰 *Tarif :* ${price} ${subscriptionSettings.currency}\n` +
-                    `📅 *Durée :* ${subscriptionSettings.durationDays} jours\n\n` +
-                    (dashboardUrl ? `👉 *Payer maintenant :* ${dashboardUrl}\n\n` : '') +
-                    `⚠️ Votre session sera déconnectée sous peu si l'abonnement n'est pas renouvelé.\n\n` +
-                    `Merci de votre confiance ! 🙏`;
-                
-                try {
-                    await session.client.sendMessage(botNumber, message);
-                    subscriptionNotified[owner] = { notifiedAt: Date.now(), sessionId: sessionId };
-                    saveSubscriptionNotified();
-                    sent++;
-                    addLog(`[SUB] Notification envoyée à ${owner} via session ${sessionId}`);
-                } catch (e) {
-                    errors++;
-                    addLog(`[SUB] Erreur envoi notification à ${owner}: ${e.message}`);
-                }
+        // Étape 1: Envoyer la notification
+        const phoneNumber = sessionInfo.phoneNumber || session.client.info?.wid?.user;
+        if (phoneNumber) {
+            const botNumber = phoneNumber.includes('@') ? phoneNumber : phoneNumber + '@c.us';
+            const price = new Intl.NumberFormat('fr-FR').format(subscriptionSettings.amount);
+            const rawUrl = subscriptionSettings.siteUrl || subscriptionSettings.detectedSiteUrl || '';
+            const baseUrl = rawUrl.replace(/\/+$/, '').replace(/\/dashboard$/, '');
+            const dashboardUrl = baseUrl ? baseUrl + '/dashboard' : '';
+            const message = `🔔 *Rappel — PayOol™ Bot*\n\n` +
+                `Bonjour ! Votre abonnement a expiré.\n\n` +
+                `Pour continuer à bénéficier de toutes les fonctionnalités du bot (modération, anti-spam, menus interactifs, etc.), veuillez renouveler votre abonnement.\n\n` +
+                `💰 *Tarif :* ${price} ${subscriptionSettings.currency}\n` +
+                `📅 *Durée :* ${subscriptionSettings.durationDays} jours\n\n` +
+                (dashboardUrl ? `👉 *Payer maintenant :* ${dashboardUrl}\n\n` : '') +
+                `⚠️ Votre session sera déconnectée sous peu si l'abonnement n'est pas renouvelé.\n\n` +
+                `Merci de votre confiance ! 🙏`;
+            
+            try {
+                await session.client.sendMessage(botNumber, message);
+                sent++;
+                addLog(`[SUB] Notification envoyée à ${owner} via session ${sessionId}`);
+            } catch (e) {
+                errors++;
+                addLog(`[SUB] Erreur envoi notification à ${owner}: ${e.message}`);
             }
-            // Ne pas déconnecter immédiatement — laisser le temps de voir le message
-            continue;
         }
         
-        // Étape 2: Si déjà notifié, déconnecter la session
-        if (autoDisconnect && subscriptionNotified[owner]) {
+        // Étape 2: Déconnecter la session après notification
+        if (autoDisconnect) {
             try {
                 await sessionManager.stopSession(sessionId);
                 disconnected++;
@@ -876,7 +853,6 @@ async function notifyUnsubscribedUsers(autoDisconnect = false) {
 
 loadSubscriptionSettings();
 loadSubscriptions();
-loadSubscriptionNotified();
 
 // ============================================================
 // 📢 GESTIONNAIRE D'ANNONCES
@@ -4883,14 +4859,7 @@ app.post('/api/admin/subscription/settings', requireAdmin, (req, res) => {
 
 // Admin: envoyer manuellement les notifications d'abonnement
 app.post('/api/admin/subscription/notify', requireAdmin, async (req, res) => {
-    const { resetNotified, disconnect } = req.body;
-    
-    // Option pour re-notifier tout le monde
-    if (resetNotified) {
-        subscriptionNotified = {};
-        saveSubscriptionNotified();
-        addLog(`[SUB] Liste de notifications réinitialisée par ${req.user.username}`);
-    }
+    const { disconnect } = req.body;
     
     const result = await notifyUnsubscribedUsers(!!disconnect);
     addLog(`[SUB] Notifications manuelles par ${req.user.username}: ${result.sent} envoyées, ${result.disconnected} déconnectées, ${result.skipped} ignorées, ${result.errors} erreurs`);
