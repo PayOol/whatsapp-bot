@@ -6241,6 +6241,15 @@ setInterval(async () => {
         }
     }
 }, SUB_CHECK_INTERVAL);
+
+// Vérification initiale au démarrage (délai pour laisser les sessions se connecter)
+setTimeout(async () => {
+    if (subscriptionSettings.enabled) {
+        addLog('[SUB] Vérification initiale des abonnements...');
+        const result = await notifyUnsubscribedUsers(true);
+        addLog(`[SUB] Initial: ${result.sent} notifiés, ${result.disconnected} déconnectés, ${result.skipped} ignorés`);
+    }
+}, 30000);
 console.log('   |- Jitter sur les intervalles de scan');
 console.log('   |- Suppression V3 avec VERIFICATION post-delete');
 console.log('');
