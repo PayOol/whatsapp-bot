@@ -787,11 +787,13 @@ function activateSubscription(username, paymentId, amount, currency) {
 
 // Suivi des étapes de notification par session: 0=rien, 1=notifié, 2=averti, 3=déconnecté
 const subWarningState = {};
+// Suivi des rappels d'expiration envoyés (éviter de spammer)
+const expiryReminderSent = {};
 
 async function checkSubscriptions() {
-    if (!subscriptionSettings.enabled) return { notified: 0, warned: 0, disconnected: 0, skipped: 0, errors: 0 };
+    if (!subscriptionSettings.enabled) return { notified: 0, warned: 0, disconnected: 0, skipped: 0, errors: 0, reminders: 0 };
     
-    let notified = 0, warned = 0, disconnected = 0, skipped = 0, errors = 0;
+    let notified = 0, warned = 0, disconnected = 0, skipped = 0, errors = 0, reminders = 0;
     
     const allSessions = Object.entries(sessionManager?.sessionsList || {});
     
@@ -804,9 +806,40 @@ async function checkSubscriptions() {
         if (user && user.isAdmin) { skipped++; continue; }
         if (authManager.admin && authManager.admin.username === owner) { skipped++; continue; }
         
-        // Si l'utilisateur a payé entre-temps, reset son état
+        // Si l'utilisateur a un abonnement actif, vérifier si bientôt expiré
         if (isSubscriptionActive(owner)) {
             if (subWarningState[sessionId]) delete subWarningState[sessionId];
+            
+            const sub = getUserSubscription(owner);
+            if (sub && sub.expiresAt) {
+                const daysLeft = Math.ceil((sub.expiresAt - Date.now()) / (24 * 60 * 60 * 1000));
+                if (daysLeft <= 5 && daysLeft > 0 && !expiryReminderSent[sessionId]) {
+                    const session = sessionManager.sessions.get(sessionId);
+                    const phoneNumber = sessionInfo.phoneNumber || (session && session.client && session.client.info?.wid?.user);
+                    if (session && session.client && phoneNumber) {
+                        const botNumber = phoneNumber.includes('@') ? phoneNumber : phoneNumber + '@c.us';
+                        const pushName = sessionInfo.pushName || owner;
+                        const price = new Intl.NumberFormat('fr-FR').format(subscriptionSettings.amount);
+                        const rawUrl = subscriptionSettings.siteUrl || subscriptionSettings.detectedSiteUrl || '';
+                        const baseUrl = rawUrl.replace(/\/+$/, '').replace(/\/dashboard$/, '');
+                        const dashboardUrl = baseUrl ? baseUrl + '/dashboard' : '';
+                        const message = `⏰ *Rappel d'expiration — PayOol™ Bot*\n\n` +
+                            `Bonjour @${pushName} ! Votre abonnement expire dans *${daysLeft} jour${daysLeft > 1 ? 's' : ''}*.\n\n` +
+                            `Renouvelez dès maintenant pour éviter toute interruption de service.\n\n` +
+                            `💰 *Tarif :* ${price} ${subscriptionSettings.currency}\n` +
+                            `📅 *Durée :* ${subscriptionSettings.durationDays} jours\n\n` +
+                            (dashboardUrl ? `👉 *Renouveler :* ${dashboardUrl}\n\n` : '') +
+                            `Merci de votre fidélité ! 🙏`;
+                        try {
+                            await session.client.sendMessage(botNumber, message);
+                            expiryReminderSent[sessionId] = Date.now();
+                            reminders++;
+                            addLog(`[SUB] Rappel expiration envoyé à ${owner} (${daysLeft}j restants)`);
+                        } catch (e) { errors++; addLog(`[SUB] Erreur rappel expiration ${owner}: ${e.message}`); }
+                    }
+                }
+            }
+            
             skipped++;
             continue;
         }
@@ -875,7 +908,7 @@ async function checkSubscriptions() {
         }
     }
     
-    return { notified, warned, disconnected, skipped, errors };
+    return { notified, warned, disconnected, skipped, errors, reminders };
 }
 
 loadSubscriptionSettings();
