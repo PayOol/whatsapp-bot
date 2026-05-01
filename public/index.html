@@ -3017,7 +3017,17 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
     /* ═══════════════════════════════════════
        NAVIGATION
        ═══════════════════════════════════════ */
+    function isSubBlocked() {
+        return subSettings && subSettings.enabled && subStatus && !subStatus.isAdmin && !subStatus.isActive;
+    }
+    
     function navigateTo(page, el) {
+        // Bloquer l'accès aux pages si pas d'abonnement (sauf dashboard et feedback)
+        if (isSubBlocked() && page !== 'dashboard' && page !== 'feedback') {
+            showSubModal();
+            return;
+        }
+        
         document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
         document.querySelectorAll('.nav-link').forEach(n => n.classList.remove('active'));
 
@@ -4529,6 +4539,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         
         if (!subSettings || !subSettings.enabled || (subStatus && subStatus.isAdmin)) {
             el.style.display = 'none';
+            applySubBlock(false);
             return;
         }
         
@@ -4537,10 +4548,45 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         if (subStatus && subStatus.isActive) {
             const days = subStatus.subscription ? subStatus.subscription.daysRemaining : 0;
             el.innerHTML = `<div class="sub-status-bar active"><i class="fas fa-check-circle"></i> Abonnement actif (${days}j)</div>`;
+            applySubBlock(false);
         } else if (subStatus && subStatus.subscription && subStatus.subscription.status === 'expired') {
-            el.innerHTML = `<div class="sub-status-bar expired"><i class="fas fa-exclamation-triangle"></i> Abonnement expiré</div>`;
+            el.innerHTML = `<div class="sub-status-bar expired" style="cursor:pointer" onclick="showSubModal()"><i class="fas fa-exclamation-triangle"></i> Abonnement expiré — Cliquez pour payer</div>`;
+            applySubBlock(true);
         } else {
-            el.innerHTML = `<div class="sub-status-bar none"><i class="fas fa-info-circle"></i> Aucun abonnement</div>`;
+            el.innerHTML = `<div class="sub-status-bar none" style="cursor:pointer" onclick="showSubModal()"><i class="fas fa-info-circle"></i> Aucun abonnement — Cliquez pour souscrire</div>`;
+            applySubBlock(true);
+        }
+    }
+    
+    function applySubBlock(blocked) {
+        // Overlay sur le dashboard
+        let overlay = document.getElementById('sub-block-overlay');
+        if (blocked) {
+            if (!overlay) {
+                overlay = document.createElement('div');
+                overlay.id = 'sub-block-overlay';
+                overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:9998;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)';
+                overlay.innerHTML = `<div style="background:var(--bg-card);border-radius:16px;padding:40px;max-width:450px;width:90%;text-align:center;border:1px solid var(--border)">
+                    <div style="font-size:48px;margin-bottom:16px">🔒</div>
+                    <h2 style="margin:0 0 8px;color:var(--text-primary)">Abonnement requis</h2>
+                    <p style="color:var(--text-secondary);margin:0 0 20px;line-height:1.5">Votre abonnement a expiré ou n'est pas actif. Renouvelez pour accéder à toutes les fonctionnalités du bot.</p>
+                    <p style="font-size:24px;font-weight:700;color:var(--primary);margin:0 0 20px">${subSettings ? formatCurrency(subSettings.amount, subSettings.currency) : ''}<span style="font-size:14px;font-weight:400;color:var(--text-secondary)"> / ${subSettings ? subSettings.durationDays : 30} jours</span></p>
+                    <button onclick="showSubModal()" style="background:var(--primary);color:#fff;border:none;padding:14px 32px;border-radius:10px;font-size:16px;font-weight:600;cursor:pointer;width:100%"><i class="fas fa-lock" style="margin-right:8px"></i>Payer maintenant</button>
+                </div>`;
+                document.body.appendChild(overlay);
+            }
+            overlay.style.display = 'flex';
+            // Griser les liens de navigation
+            document.querySelectorAll('.nav-link:not([data-page="dashboard"])').forEach(function(link) {
+                link.style.opacity = '0.4';
+                link.style.pointerEvents = 'none';
+            });
+        } else {
+            if (overlay) overlay.style.display = 'none';
+            document.querySelectorAll('.nav-link').forEach(function(link) {
+                link.style.opacity = '';
+                link.style.pointerEvents = '';
+            });
         }
     }
     
@@ -4615,6 +4661,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             if (data.success) {
                 showToast('Abonnement activé avec succès !', 'success');
                 closeSubModal();
+                applySubBlock(false);
                 await loadSubscriptionStatus();
                 
                 // If there was a pending session creation, proceed
