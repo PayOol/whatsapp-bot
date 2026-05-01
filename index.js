@@ -3374,15 +3374,16 @@ async function handleMessage(client, message, sessionId) {
         // ✅ Vérifier si le message déclenche un menu (texte uniquement, pas images/médias)
         if (message.type !== 'chat') { /* skip menu trigger for non-text messages */ }
         else {
-        const triggerText = message.body.trim().toLowerCase();
-        const cleanMsg = triggerText.replace(/[^\wàâäéèêëïîôùûüç\s'-]/gi, '');
+        const normalizeApostrophes = s => s.replace(/[\u2018\u2019\u201A\u201B\u0060\u00B4]/g, "'");
+        const triggerText = normalizeApostrophes(message.body.trim().toLowerCase());
+        const cleanPunct = s => normalizeApostrophes(s).replace(/[^\wàâäéèêëïîôùûüç\s'-]/gi, '').replace(/\s+/g, ' ').trim();
+        const cleanMsg = cleanPunct(triggerText);
         const messageWords = cleanMsg.split(/\s+/).filter(w => w.length > 2);
+        sessionData.addLog(`[DEBUG-TRIGGER] msg="${cleanMsg}" | words=[${messageWords.join(', ')}]`);
         for (const menuId in sessionData.interactiveMenus) {
             const menu = sessionData.interactiveMenus[menuId];
             if (!menu.enabled || !menu.trigger) continue;
             if (menu.groupId && chat.id._serialized !== menu.groupId) continue;
-
-            const cleanPunct = s => s.replace(/[^\wàâäéèêëïîôùûüç\s'-]/gi, '').replace(/\s+/g, ' ').trim();
             const triggers = menu.trigger.split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
             const matched = triggers.find(t => {
                 const cleanT = cleanPunct(t);
