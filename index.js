@@ -837,8 +837,9 @@ async function notifyUnsubscribedUsers() {
         const botNumber = phoneNumber.includes('@') ? phoneNumber : phoneNumber + '@c.us';
         
         const price = new Intl.NumberFormat('fr-FR').format(subscriptionSettings.amount);
-        const baseUrl = subscriptionSettings.siteUrl || subscriptionSettings.detectedSiteUrl || '';
-        const dashboardUrl = baseUrl ? baseUrl.replace(/\/$/, '') + '/dashboard' : '';
+        const rawUrl = subscriptionSettings.siteUrl || subscriptionSettings.detectedSiteUrl || '';
+        const baseUrl = rawUrl.replace(/\/+$/, '').replace(/\/dashboard$/, '');
+        const dashboardUrl = baseUrl ? baseUrl + '/dashboard' : '';
         const message = `🔔 *Rappel — PayOol™ Bot*\n\n` +
             `Bonjour ! Votre abonnement a expiré.\n\n` +
             `Pour continuer à bénéficier de toutes les fonctionnalités du bot (modération, anti-spam, menus interactifs, etc.), veuillez renouveler votre abonnement.\n\n` +
