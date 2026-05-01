@@ -3382,17 +3382,20 @@ async function handleMessage(client, message, sessionId) {
             if (!menu.enabled || !menu.trigger) continue;
             if (menu.groupId && chat.id._serialized !== menu.groupId) continue;
 
+            const cleanPunct = s => s.replace(/[^\wàâäéèêëïîôùûüç\s'-]/gi, '').replace(/\s+/g, ' ').trim();
             const triggers = menu.trigger.split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
             const matched = triggers.find(t => {
-                // 1. Match exact : le message EST le trigger ou le contient tel quel
-                if (triggerText === t) return true;
-                if (triggerText.includes(t) && t.length >= 4) return true;
-                // 2. Trigger court (1-2 mots) : doit être trouvé comme mot entier dans le message
-                const tWords = t.split(/\s+/).filter(w => w.length > 2);
+                const cleanT = cleanPunct(t);
+                // 1. Match exact (sans ponctuation) : le message EST le trigger ou le contient
+                if (cleanMsg === cleanT) return true;
+                if (cleanMsg.includes(cleanT) && cleanT.length >= 4) return true;
+                if (cleanT.includes(cleanMsg) && cleanMsg.length >= 4) return true;
+                // 2. Trigger court (1-2 mots) : chaque mot doit être trouvé dans le message
+                const tWords = cleanT.split(/\s+/).filter(w => w.length > 2);
                 if (tWords.length <= 2) {
                     return tWords.every(tw => messageWords.some(mw => mw === tw));
                 }
-                // 3. Trigger long (phrase) : au moins 3 mots-clés significatifs en commun (mot entier)
+                // 3. Trigger long (phrase) : au moins 3 mots-clés significatifs en commun
                 const keyWords = tWords.filter(w => w.length > 3);
                 if (keyWords.length === 0) return false;
                 const found = keyWords.filter(kw => messageWords.some(mw => mw === kw));
