@@ -2553,6 +2553,20 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                                     <p class="form-hint">Formats: JPG, PNG, GIF, WebP — Max 5 Mo</p>
                                 </div>
                                 
+                                <div class="setting-row" id="announcement-hd-row" style="border:none;padding:0 0 16px 0;display:none">
+                                    <div class="setting-info">
+                                        <div class="setting-icon"><i class="fas fa-expand"></i></div>
+                                        <div class="setting-text">
+                                            <h4>Qualité HD</h4>
+                                            <p>Envoyer l'image en qualité originale (sans compression WhatsApp)</p>
+                                        </div>
+                                    </div>
+                                    <label class="toggle">
+                                        <input type="checkbox" id="announcement-hd" onchange="updateAnnouncementPreview()">
+                                        <span class="toggle-track"></span>
+                                    </label>
+                                </div>
+                                
                                 <div class="form-group">
                                     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
                                         <label class="form-label" style="margin:0">Groupes cibles</label>
@@ -4704,6 +4718,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             document.getElementById('announcement-image-thumb').src = announcementImageData;
             document.getElementById('announcement-image-preview').style.display = 'block';
             document.getElementById('announcement-image-placeholder').style.display = 'none';
+            document.getElementById('announcement-hd-row').style.display = 'flex';
             updateAnnouncementPreview();
         };
         reader.readAsDataURL(file);
@@ -4714,6 +4729,8 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         document.getElementById('announcement-image-input').value = '';
         document.getElementById('announcement-image-preview').style.display = 'none';
         document.getElementById('announcement-image-placeholder').style.display = 'block';
+        document.getElementById('announcement-hd-row').style.display = 'none';
+        document.getElementById('announcement-hd').checked = false;
         updateAnnouncementPreview();
     }
 
@@ -4728,6 +4745,8 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         document.getElementById('announcement-image-input').value = '';
         document.getElementById('announcement-image-preview').style.display = 'none';
         document.getElementById('announcement-image-placeholder').style.display = 'block';
+        document.getElementById('announcement-hd-row').style.display = 'none';
+        document.getElementById('announcement-hd').checked = false;
         document.getElementById('announcement-form-title').textContent = 'Nouvelle annonce';
         document.getElementById('btn-reset-announcement').style.display = 'none';
         renderAnnouncementGroupsList();
@@ -4750,9 +4769,12 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                     document.getElementById('announcement-image-thumb').src = announcementImageData;
                     document.getElementById('announcement-image-preview').style.display = 'block';
                     document.getElementById('announcement-image-placeholder').style.display = 'none';
+                    document.getElementById('announcement-hd-row').style.display = 'flex';
+                    document.getElementById('announcement-hd').checked = !!data.announcement.sendAsDocument;
                 } else {
                     document.getElementById('announcement-image-preview').style.display = 'none';
                     document.getElementById('announcement-image-placeholder').style.display = 'block';
+                    document.getElementById('announcement-hd-row').style.display = 'none';
                 }
                 document.getElementById('announcement-form-title').textContent = 'Modifier l\'annonce';
                 document.getElementById('btn-reset-announcement').style.display = 'inline-flex';
@@ -4770,6 +4792,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         const title = document.getElementById('announcement-title-input').value.trim();
         const content = document.getElementById('announcement-content-input').value.trim();
         const linkPreview = document.getElementById('announcement-link-preview').checked;
+        const sendAsDocument = document.getElementById('announcement-hd').checked;
 
         if (!content) {
             showToast('Le contenu est requis', 'error');
@@ -4782,7 +4805,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             const res = await authFetch(url, {
                 method,
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ title, content, groups: selectedAnnouncementGroups, linkPreview, image: announcementImageData })
+                body: JSON.stringify({ title, content, groups: selectedAnnouncementGroups, linkPreview, image: announcementImageData, sendAsDocument })
             });
             const data = await res.json();
             if (data.success) {
@@ -4802,6 +4825,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         const title = document.getElementById('announcement-title-input').value.trim();
         const content = document.getElementById('announcement-content-input').value.trim();
         const linkPreview = document.getElementById('announcement-link-preview').checked;
+        const sendAsDocument = document.getElementById('announcement-hd').checked;
         console.log('[PUBLISH] content:', !!content, 'groups:', selectedAnnouncementGroups.length, 'image:', !!announcementImageData);
 
         if (!content) {
@@ -4823,7 +4847,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                 const res = await authFetch('/api/announcements', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ title, content, groups: selectedAnnouncementGroups, linkPreview, image: announcementImageData })
+                    body: JSON.stringify({ title, content, groups: selectedAnnouncementGroups, linkPreview, image: announcementImageData, sendAsDocument })
                 });
                 console.log('[PUBLISH] Step 1 - POST response status:', res.status);
                 const data = await res.json();
@@ -4838,7 +4862,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                 const res = await authFetch(`/api/announcements/${announcementId}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ title, content, groups: selectedAnnouncementGroups, linkPreview, image: announcementImageData })
+                    body: JSON.stringify({ title, content, groups: selectedAnnouncementGroups, linkPreview, image: announcementImageData, sendAsDocument })
                 });
                 console.log('[PUBLISH] Step 1 - PUT response status:', res.status);
             }
