@@ -3369,7 +3369,9 @@ async function handleMessage(client, message, sessionId) {
             }
         }
 
-        // ✅ Vérifier si le message déclenche un menu
+        // ✅ Vérifier si le message déclenche un menu (texte uniquement, pas images/médias)
+        if (message.type !== 'chat') { /* skip menu trigger for non-text messages */ }
+        else {
         const triggerText = message.body.trim().toLowerCase();
         const menuCount = Object.keys(sessionData.interactiveMenus || {}).length;
         sessionData.addLog(`[DEBUG-MENU] Message: "${triggerText}" | Menus charges: ${menuCount} | Chat: ${chat.id._serialized}`);
@@ -3395,6 +3397,7 @@ async function handleMessage(client, message, sessionId) {
                 await sendInteractiveMenu(chat, menuId, sessionData);
                 return;
             }
+        }
         }
 
         // ✅ Seul le traitement des groupes continue
