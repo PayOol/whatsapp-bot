@@ -807,9 +807,9 @@ async function notifyUnsubscribedUsers() {
     
     let sent = 0, skipped = 0, errors = 0;
     
-    const allSessions = Object.values(sessionManager?.sessionsList || {});
+    const allSessions = Object.entries(sessionManager?.sessionsList || {});
     
-    for (const sessionInfo of allSessions) {
+    for (const [sessionId, sessionInfo] of allSessions) {
         const owner = sessionInfo.ownerUsername;
         if (!owner) continue;
         
@@ -825,7 +825,7 @@ async function notifyUnsubscribedUsers() {
         if (subscriptionNotified[owner]) { skipped++; continue; }
         
         // Skip sessions that are not connected
-        const session = sessionManager.sessions.get(sessionInfo.id);
+        const session = sessionManager.sessions.get(sessionId);
         if (!session || !session.client || !session.client.info) { skipped++; continue; }
         
         const client = session.client;
@@ -845,13 +845,13 @@ async function notifyUnsubscribedUsers() {
         
         try {
             await client.sendMessage(botNumber, message);
-            subscriptionNotified[owner] = { notifiedAt: Date.now(), sessionId: sessionInfo.id };
+            subscriptionNotified[owner] = { notifiedAt: Date.now(), sessionId: sessionId };
             saveSubscriptionNotified();
             sent++;
-            addLog(`[SUB] Notification envoyée à ${owner} via session ${sessionInfo.id}`);
+            addLog(`[SUB] Notification envoyée à ${owner} via session ${sessionId}`);
         } catch (e) {
             errors++;
-            addLog(`[SUB] Erreur envoi notification à ${owner}: ${e.message}`);
+            addLog(`[SUB] Erreur envoi notification à ${owner} (session ${sessionId}): ${e.message}`);
         }
     }
     
