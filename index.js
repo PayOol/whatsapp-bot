@@ -3076,7 +3076,7 @@ async function scanOldMessages(chat, limit = 100, sessionId = null) {
             else markAsProcessed(msgId);
 
             const contact = await message.getContact();
-            const mention = `@${contact.pushname || contact.name || contact.shortName || contact.number || contact.id.user}`;
+            const mention = `@${contact.id.user}`;
             const currentWarnings = sessionData 
                 ? (sessionData.warnings[chat.id._serialized]?.[authorId]?.length || 0)
                 : getWarningCount(chat.id._serialized, authorId);
@@ -3581,7 +3581,7 @@ async function handleMessage(client, message, sessionId) {
         try { await chat.sendSeen(); } catch (e) {}
 
         const contact = await message.getContact();
-        const mention = `@${contact.pushname || contact.name || contact.shortName || contact.number || contact.id.user}`;
+        const mention = `@${contact.id.user}`;
         const warningCount = sessionData.addWarning(chat.id._serialized, authorId);
         const remaining = sessionData.config.MAX_WARNINGS - warningCount;
         sessionData.stats.totalWarnings++;
@@ -3681,8 +3681,7 @@ async function handleGroupJoin(client, notification, sessionId) {
             HumanBehavior.gaussianRandom(5000, 3000)
         );
 
-        const displayName = contact.pushname || contact.name || contact.shortName || contact.number || contact.id.user;
-        const mention = `@${displayName}`;
+        const mention = `@${contact.id.user}`;
 
         const isExcluded = sessionData.isGroupExcluded(chat);
 
