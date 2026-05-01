@@ -3009,13 +3009,12 @@ class SessionManager {
     startSession(sessionId) {
         const session = this.sessions.get(sessionId);
         if (session && session.client) {
-            // Vérifier si le propriétaire existe toujours
+            // Vérifier si le propriétaire existe toujours (mais pas l'abonnement ici — vérifié côté API)
             const ownerUsername = session.data.ownerUsername;
             if (ownerUsername) {
-                const check = this.canUserStartSession(ownerUsername);
-                if (!check.allowed) {
-                    addLog(`[BLOCK] [${sessionId}] Session bloquée: ${check.reason}`);
-                    return false;
+                const user = authManager.users[ownerUsername];
+                if (user === undefined && ownerUsername !== authManager.admin?.username) {
+                    // Propriétaire supprimé — ne pas bloquer, juste loguer
                 }
             }
             session.client.initialize();
