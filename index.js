@@ -247,7 +247,7 @@ async function sendMessageHumanized(chat, text, options = {}, triggerMessageLeng
             await chat.sendStateTyping();
         } catch (e) {}
 
-        const typingTime = HumanBehavior.typingDuration(text.length);
+        const typingTime = HumanBehavior.typingDuration(typeof text === 'string' ? text.length : (options.caption?.length || 20));
         await HumanBehavior.naturalDelay(typingTime);
 
         try {
@@ -714,6 +714,7 @@ class AnnouncementsManager {
             rawContent: data.rawContent || data.content,
             groups: data.groups || [],
             linkPreview: data.linkPreview !== false,
+            image: data.image || null,
             status: 'draft', // draft, scheduled, publishing, published, failed
             createdAt: Date.now(),
             scheduledAt: data.scheduledAt || null,
@@ -754,6 +755,7 @@ class AnnouncementsManager {
         if (data.rawContent !== undefined) announcement.rawContent = data.rawContent;
         if (data.groups !== undefined) announcement.groups = data.groups;
         if (data.linkPreview !== undefined) announcement.linkPreview = data.linkPreview;
+        if (data.image !== undefined) announcement.image = data.image;
         if (data.scheduledAt !== undefined) announcement.scheduledAt = data.scheduledAt;
         
         this.save();
@@ -878,12 +880,31 @@ async function publishAnnouncement(sessionId, announcement) {
             }
             
             // Envoyer le message avec comportement humanisé
-            const options = {};
-            if (!linkPreview) {
-                options.linkPreview = false;
+            if (announcement.image) {
+                // Envoyer comme image avec caption
+                try {
+                    const base64Data = announcement.image.replace(/^data:image\/\w+;base64,/, '');
+                    const mimeMatch = announcement.image.match(/^data:(image\/\w+);base64,/);
+                    const mimetype = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+                    const media = new MessageMedia(mimetype, base64Data, 'announcement.jpg');
+                    const mediaOptions = { caption: content };
+                    if (!linkPreview) mediaOptions.linkPreview = false;
+                    await sendMessageHumanized(chat, media, mediaOptions, 0, sessionData);
+                } catch (imgErr) {
+                    // Fallback: envoyer le texte seul si l'image échoue
+                    if (sessionData) sessionData.addLog(`[ANNONCE] Erreur image pour ${chat.name}: ${imgErr.message}, envoi texte seul`);
+                    else addLog(`[ANNONCE] Erreur image pour ${chat.name}: ${imgErr.message}, envoi texte seul`);
+                    const options = {};
+                    if (!linkPreview) options.linkPreview = false;
+                    await sendMessageHumanized(chat, content, options, 0, sessionData);
+                }
+            } else {
+                const options = {};
+                if (!linkPreview) {
+                    options.linkPreview = false;
+                }
+                await sendMessageHumanized(chat, content, options, 0, sessionData);
             }
-            
-            await sendMessageHumanized(chat, content, options, 0, sessionData);
             
             publishedGroups.push(groupId);
             if (sessionData) sessionData.addLog(`[ANNONCE] Publié dans: ${chat.name}`);
@@ -3879,7 +3900,7 @@ async function handleCall(client, call, sessionId) {
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
@@ -5434,7 +5455,7 @@ app.get('/api/announcements/:id', requireAuth, (req, res) => {
 // Créer une annonce
 app.post('/api/announcements', requireAuth, (req, res) => {
     try {
-        const { title, content, rawContent, groups, linkPreview, scheduledAt } = req.body;
+        const { title, content, rawContent, groups, linkPreview, image, scheduledAt } = req.body;
         
         if (!content || content.trim().length === 0) {
             return res.status(400).json({ success: false, message: 'Le contenu est requis' });
@@ -5446,6 +5467,7 @@ app.post('/api/announcements', requireAuth, (req, res) => {
             rawContent,
             groups: groups || [],
             linkPreview,
+            image: image || null,
             scheduledAt
         });
         
@@ -5650,7 +5672,8 @@ app.post('/api/announcements/:id/duplicate', requireAuth, (req, res) => {
             content: original.content,
             rawContent: original.rawContent,
             groups: original.groups,
-            linkPreview: original.linkPreview
+            linkPreview: original.linkPreview,
+            image: original.image
         });
         
         res.json({ success: true, announcement: duplicate });

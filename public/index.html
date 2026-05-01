@@ -2536,6 +2536,24 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                                 </div>
                                 
                                 <div class="form-group">
+                                    <label class="form-label">Image (optionnel)</label>
+                                    <div id="announcement-image-zone" style="border:2px dashed var(--border);border-radius:var(--radius-md);padding:20px;text-align:center;cursor:pointer;transition:border-color 0.2s;position:relative" onclick="document.getElementById('announcement-image-input').click()" ondragover="event.preventDefault();this.style.borderColor='var(--primary)'" ondragleave="this.style.borderColor='var(--border)'" ondrop="event.preventDefault();this.style.borderColor='var(--border)';handleAnnouncementImageDrop(event)">
+                                        <input type="file" id="announcement-image-input" accept="image/*" style="display:none" onchange="handleAnnouncementImage(this)">
+                                        <div id="announcement-image-placeholder">
+                                            <i class="fas fa-cloud-upload-alt" style="font-size:1.5rem;color:var(--text-muted);margin-bottom:8px;display:block"></i>
+                                            <span style="color:var(--text-muted);font-size:0.85rem">Cliquez ou glissez une image ici</span>
+                                        </div>
+                                        <div id="announcement-image-preview" style="display:none;position:relative">
+                                            <img id="announcement-image-thumb" style="max-width:100%;max-height:200px;border-radius:8px;object-fit:contain">
+                                            <button type="button" class="btn btn-ghost btn-xs" onclick="event.stopPropagation();removeAnnouncementImage()" style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,0.7);border-radius:50%;width:28px;height:28px;padding:0;display:flex;align-items:center;justify-content:center">
+                                                <i class="fas fa-times" style="color:white;font-size:0.75rem"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <p class="form-hint">Formats: JPG, PNG, GIF, WebP — Max 5 Mo</p>
+                                </div>
+                                
+                                <div class="form-group">
                                     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
                                         <label class="form-label" style="margin:0">Groupes cibles</label>
                                         <div style="display:flex;gap:8px;align-items:center">
@@ -4419,6 +4437,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
     let announcementsData = [];
     let announcementGroups = [];
     let selectedAnnouncementGroups = [];
+    let announcementImageData = null;
     let editingAnnouncementId = null;
 
     async function loadAnnouncements() {
@@ -4446,6 +4465,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                         <span>${a.groups?.length || 0} groupe(s)</span>
                         <span>•</span>
                         <span>${new Date(a.createdAt).toLocaleDateString()}</span>
+                        ${a.image ? '<span class="tag tag-neutral"><i class="fas fa-image"></i></span>' : ''}
                         <span class="tag tag-${a.status === 'published' ? 'success' : a.status === 'draft' ? 'neutral' : 'warning'}">${getAnnouncementStatusLabel(a.status)}</span>
                     </div>
                 </div>
@@ -4537,13 +4557,19 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         
         previewTitle.textContent = title;
         
-        if (!content.trim()) {
+        if (!content.trim() && !announcementImageData) {
             previewText.innerHTML = '<span style="color:rgba(255,255,255,0.5)">Votre message apparaîtra ici...</span>';
             return;
         }
         
+        // Image en haut de la prévisualisation
+        let html = '';
+        if (announcementImageData) {
+            html += `<div style="margin:-12px -12px 8px -12px"><img src="${announcementImageData}" style="width:100%;border-radius:8px 8px 0 0;display:block;max-height:200px;object-fit:cover"></div>`;
+        }
+        
         // Convertir le formatage WhatsApp en HTML pour la prévisualisation
-        let html = escapeHtml(content);
+        html += escapeHtml(content);
         
         // Monospace (doit être traité en premier car il contient d'autres caractères)
         html = html.replace(/```([^`]+)```/g, '<span class="wa-mono">$1</span>');
@@ -4652,13 +4678,56 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         }
     }
 
+    function handleAnnouncementImage(input) {
+        const file = input.files[0];
+        if (!file) return;
+        processAnnouncementImageFile(file);
+    }
+
+    function handleAnnouncementImageDrop(event) {
+        const file = event.dataTransfer.files[0];
+        if (file && file.type.startsWith('image/')) processAnnouncementImageFile(file);
+    }
+
+    function processAnnouncementImageFile(file) {
+        if (file.size > 5 * 1024 * 1024) {
+            showToast('Image trop lourde (max 5 Mo)', 'error');
+            return;
+        }
+        if (!file.type.startsWith('image/')) {
+            showToast('Format non supporté', 'error');
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            announcementImageData = e.target.result;
+            document.getElementById('announcement-image-thumb').src = announcementImageData;
+            document.getElementById('announcement-image-preview').style.display = 'block';
+            document.getElementById('announcement-image-placeholder').style.display = 'none';
+            updateAnnouncementPreview();
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function removeAnnouncementImage() {
+        announcementImageData = null;
+        document.getElementById('announcement-image-input').value = '';
+        document.getElementById('announcement-image-preview').style.display = 'none';
+        document.getElementById('announcement-image-placeholder').style.display = 'block';
+        updateAnnouncementPreview();
+    }
+
     function resetAnnouncementForm() {
         editingAnnouncementId = null;
         selectedAnnouncementGroups = [];
+        announcementImageData = null;
         document.getElementById('announcement-edit-id').value = '';
         document.getElementById('announcement-title-input').value = '';
         document.getElementById('announcement-content-input').value = '';
         document.getElementById('announcement-link-preview').checked = true;
+        document.getElementById('announcement-image-input').value = '';
+        document.getElementById('announcement-image-preview').style.display = 'none';
+        document.getElementById('announcement-image-placeholder').style.display = 'block';
         document.getElementById('announcement-form-title').textContent = 'Nouvelle annonce';
         document.getElementById('btn-reset-announcement').style.display = 'none';
         renderAnnouncementGroupsList();
@@ -4676,6 +4745,15 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                 document.getElementById('announcement-title-input').value = data.announcement.title || '';
                 document.getElementById('announcement-content-input').value = data.announcement.content || '';
                 document.getElementById('announcement-link-preview').checked = data.announcement.linkPreview !== false;
+                announcementImageData = data.announcement.image || null;
+                if (announcementImageData) {
+                    document.getElementById('announcement-image-thumb').src = announcementImageData;
+                    document.getElementById('announcement-image-preview').style.display = 'block';
+                    document.getElementById('announcement-image-placeholder').style.display = 'none';
+                } else {
+                    document.getElementById('announcement-image-preview').style.display = 'none';
+                    document.getElementById('announcement-image-placeholder').style.display = 'block';
+                }
                 document.getElementById('announcement-form-title').textContent = 'Modifier l\'annonce';
                 document.getElementById('btn-reset-announcement').style.display = 'inline-flex';
                 renderAnnouncementGroupsList();
@@ -4704,7 +4782,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             const res = await authFetch(url, {
                 method,
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ title, content, groups: selectedAnnouncementGroups, linkPreview })
+                body: JSON.stringify({ title, content, groups: selectedAnnouncementGroups, linkPreview, image: announcementImageData })
             });
             const data = await res.json();
             if (data.success) {
@@ -4742,7 +4820,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                 const res = await authFetch('/api/announcements', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ title, content, groups: selectedAnnouncementGroups, linkPreview })
+                    body: JSON.stringify({ title, content, groups: selectedAnnouncementGroups, linkPreview, image: announcementImageData })
                 });
                 const data = await res.json();
                 if (data.success) {
@@ -4755,7 +4833,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                 const res = await authFetch(`/api/announcements/${announcementId}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ title, content, groups: selectedAnnouncementGroups, linkPreview })
+                    body: JSON.stringify({ title, content, groups: selectedAnnouncementGroups, linkPreview, image: announcementImageData })
                 });
             }
 
