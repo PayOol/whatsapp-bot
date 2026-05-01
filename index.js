@@ -3591,12 +3591,24 @@ async function handleMessage(client, message, sessionId) {
         let authorId = message.author || message.from;
         if (authorId.includes('@g.us')) return;
         
-        // ✅ Autoriser directement les admins du groupe (détection dynamique via senderP)
+        // ✅ Autoriser directement les admins du groupe (détection dynamique)
         if (senderP?.isAdmin || senderP?.isSuperAdmin) return;
         
         // Récupérer le vrai numéro de téléphone via le contact (car authorId peut être un @lid)
         const authorContact = await message.getContact();
         const authorNumber = authorContact?.number || authorId.split('@')[0];
+        
+        // ✅ Re-vérifier admin par numéro de téléphone (cas LID où senderP n'est pas trouvé)
+        if (!senderP && authorNumber) {
+            const adminCheck = participants.find(p => {
+                const pNum = p.id.user || p.id._serialized?.split('@')[0];
+                return pNum === authorNumber || p.id._serialized === `${authorNumber}@c.us`;
+            });
+            if (adminCheck?.isAdmin || adminCheck?.isSuperAdmin) {
+                sessionData.addLog(`[ADMIN] ${authorNumber} est admin (résolu via contact), lien ignoré`);
+                return;
+            }
+        }
         
         // Vérifier les autres exceptions (utilisateurs whitelisted)
         if (sessionData.isUserExcluded(authorNumber, participants)) return;
