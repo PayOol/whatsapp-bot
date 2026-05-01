@@ -827,8 +827,9 @@ async function checkSubscriptions() {
         
         if (state === 0) {
             // Étape 1: Première notification
+            const pushName = sessionInfo.pushName || owner;
             const message = `🔔 *Rappel — PayOol™ Bot*\n\n` +
-                `Bonjour ! Votre abonnement a expiré.\n\n` +
+                `Bonjour @${pushName} ! Votre abonnement a expiré.\n\n` +
                 `Pour continuer à bénéficier de toutes les fonctionnalités du bot (modération, anti-spam, menus interactifs, etc.), veuillez renouveler votre abonnement.\n\n` +
                 `💰 *Tarif :* ${price} ${subscriptionSettings.currency}\n` +
                 `📅 *Durée :* ${subscriptionSettings.durationDays} jours\n\n` +
