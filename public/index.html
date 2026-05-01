@@ -1808,7 +1808,7 @@
         .sub-status-bar.none{background:rgba(161,161,170,0.1);color:var(--text-muted);}
     </style>
     <!-- LeekPay SDK -->
-    <script src="https://api.leekpay.com/js/v1/leekpay.js"></script>
+    <script src="https://leekpay.fr/js/leekpay.js"></script>
 </head>
 <body>
     <!-- Ambient Background -->
@@ -4638,22 +4638,18 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         }
         
         try {
-            LeekPay.pay({
-                key: subSettings.apiKey,
+            LeekPay.checkout({
+                apiKey: subSettings.apiKey,
                 amount: subSettings.amount,
                 currency: subSettings.currency,
                 description: subSettings.description || 'Abonnement PayOol Bot',
-                onSuccess: function(response) {
+                onSuccess: function(data) {
                     resetBtn();
-                    confirmPayment(response);
+                    confirmPayment(data);
                 },
                 onCancel: function() {
                     resetBtn();
                     showToast('Paiement annulé', 'warning');
-                },
-                onError: function(error) {
-                    resetBtn();
-                    showToast('Erreur de paiement: ' + (error.message || 'Réessayez'), 'error');
                 }
             });
         } catch (e) {
@@ -4669,7 +4665,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                 method: 'POST',
                 headers: getAuthHeaders(),
                 body: JSON.stringify({
-                    paymentId: response.transaction_id || response.id || ('lp_' + Date.now()),
+                    paymentId: response.payment_id || response.transaction_id || response.id || ('lp_' + Date.now()),
                     amount: subSettings.amount,
                     currency: subSettings.currency
                 })
