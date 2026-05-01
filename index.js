@@ -827,11 +827,14 @@ async function notifyUnsubscribedUsers() {
         
         // Skip sessions that are not connected
         const session = sessionManager.sessions.get(sessionId);
-        addLog(`[SUB] Session ${sessionId} owner=${owner} | sessions.has=${sessionManager.sessions.has(sessionId)} | client=${!!session?.client} | info=${!!session?.client?.info}`);
-        if (!session || !session.client || !session.client.info) { addLog(`[SUB] Skip ${owner}: session non connectée`); skipped++; continue; }
+        if (!session || !session.client) { addLog(`[SUB] Skip ${owner}: pas de client`); skipped++; continue; }
+        
+        // Utiliser le numéro stocké ou client.info
+        const phoneNumber = sessionInfo.phoneNumber || session.client.info?.wid?.user;
+        if (!phoneNumber) { addLog(`[SUB] Skip ${owner}: pas de numéro de téléphone`); skipped++; continue; }
         
         const client = session.client;
-        const botNumber = client.info.wid._serialized;
+        const botNumber = phoneNumber.includes('@') ? phoneNumber : phoneNumber + '@c.us';
         
         const price = new Intl.NumberFormat('fr-FR').format(subscriptionSettings.amount);
         const baseUrl = subscriptionSettings.siteUrl || subscriptionSettings.detectedSiteUrl || '';
