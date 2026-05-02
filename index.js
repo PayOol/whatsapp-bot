@@ -3637,6 +3637,75 @@ async function handleMessage(client, message, sessionId) {
             }
         }
 
+        // ✅ Réponse textuelle à un menu (l'utilisateur tape le texte de l'option au lieu du numéro)
+        if (!numberMatch && messageText.length >= 2) {
+            const normalizeText = s => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+            const inputNorm = normalizeText(messageText);
+
+            let latestSession = null;
+            for (const sessId in sessionData.menuSessions) {
+                const session = sessionData.menuSessions[sessId];
+                if (session.expiresAt < Date.now()) {
+                    delete sessionData.menuSessions[sessId];
+                    continue;
+                }
+                if (sessId.startsWith(chat.id._serialized)) {
+                    if (!latestSession || session.createdAt > latestSession.createdAt) {
+                        latestSession = session;
+                    }
+                }
+            }
+
+            if (latestSession) {
+                const items = latestSession.buttons || latestSession.rows || [];
+                let bestMatch = null;
+                let bestScore = 0;
+
+                for (let i = 0; i < items.length; i++) {
+                    const itemLabel = items[i].text || items[i].title || '';
+                    const itemNorm = normalizeText(itemLabel);
+                    if (!itemNorm) continue;
+
+                    // Match exact
+                    if (inputNorm === itemNorm) {
+                        bestMatch = i;
+                        bestScore = 100;
+                        break;
+                    }
+                    // L'un contient l'autre
+                    if (inputNorm.includes(itemNorm) || itemNorm.includes(inputNorm)) {
+                        const score = Math.min(inputNorm.length, itemNorm.length) / Math.max(inputNorm.length, itemNorm.length) * 90;
+                        if (score > bestScore) { bestScore = score; bestMatch = i; }
+                    }
+                    // Mots en commun (au moins 50% des mots de l'option)
+                    if (bestScore < 50) {
+                        const inputWords = inputNorm.split(/\s+/).filter(w => w.length > 2);
+                        const itemWords = itemNorm.split(/\s+/).filter(w => w.length > 2);
+                        if (itemWords.length > 0) {
+                            const matched = itemWords.filter(iw => inputWords.some(uw => uw === iw || uw.includes(iw) || iw.includes(uw)));
+                            const score = (matched.length / itemWords.length) * 70;
+                            if (score > bestScore) { bestScore = score; bestMatch = i; }
+                        }
+                    }
+                }
+
+                if (bestMatch !== null && bestScore >= 50) {
+                    const selectedItem = items[bestMatch];
+                    sessionData.addLog(`Menu reponse texte: "${messageText}" -> ${bestMatch + 1} (${selectedItem.text || selectedItem.title}) [score:${bestScore.toFixed(0)}] de ${senderId}`);
+
+                    const quoteOpts = { quotedMessageId: message.id._serialized };
+                    if (selectedItem.response) {
+                        await sendMessageHumanized(chat, selectedItem.response, quoteOpts, messageText.length, sessionData);
+                    } else if (selectedItem.nextMenu) {
+                        await sendInteractiveMenu(chat, selectedItem.nextMenu, sessionData, message);
+                    } else {
+                        await sendMessageHumanized(chat, `✅ Vous avez sélectionné: ${selectedItem.text || selectedItem.title}`, quoteOpts, messageText.length, sessionData);
+                    }
+                    return;
+                }
+            }
+        }
+
         // ✅ Vérifier si le message déclenche un menu (texte uniquement, pas images/médias)
         if (message.type !== 'chat') { /* skip menu trigger for non-text messages */ }
         else {
