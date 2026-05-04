@@ -3747,7 +3747,6 @@ async function handleMessage(client, message, sessionId) {
 
         // ✅ Seul le traitement des groupes continue
         if (!chat.isGroup) return;
-        if (sessionData.isGroupExcluded(chat)) return;
 
         const botId = client.info.wid._serialized;
         const participants = chat.participants || [];
@@ -3759,33 +3758,47 @@ async function handleMessage(client, message, sessionId) {
 
         // ✅ Suppression automatique des notifications de statut (status mentions)
         // Quand un utilisateur identifie un groupe dans son statut WhatsApp, une notification est envoyée dans le groupe
+        // NOTE: s'applique MÊME aux groupes exclus — c'est une fonctionnalité indépendante de la modération
         if (sessionData.config.DELETE_STATUS_MENTIONS) {
-            // Les messages de notification de statut ont un type spécifique
-            // Types possibles: 'status_mention', 'status', ou via le protocol message
-            const isStatusMention = message.type === 'status_mention' || 
+            const d = message._data || {};
+            // Détection d'un message qui cite un statut (status@broadcast)
+            const quotedFromStatus = (
+                d.quotedParticipant === 'status@broadcast' ||
+                d.quotedStanzaID && (d.quotedRemoteJid === 'status@broadcast' || (d.quotedMsg && d.quotedMsg.remoteJid === 'status@broadcast')) ||
+                (d.quotedMsg && (d.quotedMsg.from === 'status@broadcast' || d.quotedMsg.remoteJid === 'status@broadcast'))
+            );
+            const isStatusMention = quotedFromStatus ||
+                                    message.type === 'status_mention' ||
                                     message.type === 'status' ||
-                                    message.type === 'notification' ||
-                                    (message._data && message._data.type === 'status_mention') ||
-                                    (message._data && message._data.isStatusMention) ||
-                                    // Vérification via le body pour les messages système de statut
-                                    (message.body && message.body.includes('a ajouté ce groupe à son statut')) ||
-                                    (message.body && message.body.includes('mentioned this group in their status'));
-            
+                                    d.type === 'status_mention' ||
+                                    d.isStatusMention === true ||
+                                    (message.body && (
+                                        message.body.includes('a ajouté ce groupe à son statut') ||
+                                        message.body.includes('Ce groupe a été mentionné') ||
+                                        message.body.includes('mentioned this group in their status') ||
+                                        message.body.includes('This group was mentioned')
+                                    ));
+
             if (isStatusMention) {
                 const msgId = message.id._serialized || message.id.id;
                 if (!sessionData.isAlreadyProcessed(msgId)) {
                     sessionData.markAsProcessed(msgId);
-                    sessionData.addLog(`[STATUS] Notification de statut détectée de ${senderId} dans ${chat.name}`);
-                    
+                    sessionData.addLog(`[STATUS] Notification de statut détectée de ${senderId} dans ${chat.name} (type=${message.type}, quoted=${d.quotedParticipant || d.quotedRemoteJid || 'none'})`);
+
                     const wasDeleted = await deleteMessageHumanized(message);
                     if (wasDeleted) {
                         sessionData.stats.totalDeleted++;
                         sessionData.addLog(`[STATUS] Notification de statut supprimée dans ${chat.name}`);
+                    } else {
+                        sessionData.addLog(`[STATUS] Échec suppression notification statut dans ${chat.name}`);
                     }
                 }
                 return; // Ne pas continuer le traitement normal
             }
         }
+
+        // Exclusion des groupes APRÈS le check status mention
+        if (sessionData.isGroupExcluded(chat)) return;
 
         // ✅ Commande !scan
         if (messageText === '!scan') {
