@@ -824,7 +824,9 @@ async function checkSubscriptions() {
                 if (daysLeft <= 5 && daysLeft > 0 && !expiryReminderSent[sessionId]) {
                     const session = sessionManager.sessions.get(sessionId);
                     const phoneNumber = sessionInfo.phoneNumber || (session && session.client && session.client.info?.wid?.user);
-                    if (session && session.client && phoneNumber) {
+                    // Garde : session doit être prête (ready event émis + WWebJS injecté)
+                    const isReady = session && session.client && session.client.pupPage && session.data?.status === 'connected' && session.client.info;
+                    if (isReady && phoneNumber) {
                         const botNumber = phoneNumber.includes('@') ? phoneNumber : phoneNumber + '@c.us';
                         const pushName = sessionInfo.pushName || owner;
                         const price = new Intl.NumberFormat('fr-FR').format(subscriptionSettings.amount);
@@ -854,7 +856,13 @@ async function checkSubscriptions() {
         
         const session = sessionManager.sessions.get(sessionId);
         if (!session || !session.client) { skipped++; continue; }
-        
+
+        // Garde : ne tenter l'envoi que si la session est réellement prête
+        // (WWebJS injecté, ready émis) — évite "undefined.getChat" au démarrage
+        if (!session.client.pupPage || !session.client.info || session.data?.status !== 'connected') {
+            skipped++; continue;
+        }
+
         const phoneNumber = sessionInfo.phoneNumber || session.client.info?.wid?.user;
         if (!phoneNumber) { skipped++; continue; }
         const botNumber = phoneNumber.includes('@') ? phoneNumber : phoneNumber + '@c.us';
