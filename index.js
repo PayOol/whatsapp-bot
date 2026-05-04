@@ -286,6 +286,14 @@ async function deleteMessageHumanized(message) {
 
         const msgId = message.id._serialized;
 
+        // ⚠️ Multi-session : récupérer le client de la session du message
+        // (la variable globale `client` peut être null ou pointer vers une autre session)
+        const msgClient = message.client || client;
+        if (!msgClient || !msgClient.pupPage) {
+            addLog(`[X] deleteMessageHumanized: client/pupPage indisponible pour ${msgId}`);
+            return false;
+        }
+
         // ──────────────────────────────────────────────
         // DIAGNOSTIC (une seule fois au 1er appel)
         // Trouve les VRAIES méthodes de suppression
@@ -293,7 +301,7 @@ async function deleteMessageHumanized(message) {
         if (!global.__deleteMethodsDiag) {
             global.__deleteMethodsDiag = true;
             try {
-                const diag = await client.pupPage.evaluate(() => {
+                const diag = await msgClient.pupPage.evaluate(() => {
                     const result = { store: {}, chat: [], msg: [], wwebjs: [] };
 
                     for (const key of Object.keys(window.Store || {})) {
@@ -369,7 +377,7 @@ async function deleteMessageHumanized(message) {
         // Helper : vérifier si le message est réellement supprimé
         const isMessageRevoked = async () => {
             try {
-                const status = await client.pupPage.evaluate((id) => {
+                const status = await msgClient.pupPage.evaluate((id) => {
                     const m = window.Store.Msg.get(id);
                     if (!m) return 'GONE';
                     if (m.isRevoked) return 'REVOKED';
@@ -408,7 +416,7 @@ async function deleteMessageHumanized(message) {
         try {
             addLog(`T2: evaluate multi-methodes...`);
 
-            const result = await client.pupPage.evaluate(async (id) => {
+            const result = await msgClient.pupPage.evaluate(async (id) => {
                 const msg = window.Store.Msg.get(id);
                 if (!msg) return { status: 'MSG_NOT_FOUND' };
 
@@ -571,7 +579,7 @@ async function deleteMessageHumanized(message) {
         try {
             addLog(`T4: protocole brut...`);
 
-            const result4 = await client.pupPage.evaluate(async (id) => {
+            const result4 = await msgClient.pupPage.evaluate(async (id) => {
                 const msg = window.Store.Msg.get(id);
                 if (!msg) return { methods: [], revoked: false, err: 'MSG_NOT_FOUND' };
 
@@ -2911,8 +2919,8 @@ class SessionManager {
             authStrategy: new LocalAuth({ dataPath: authPath }),
             puppeteer: {
                 headless: true,
-                timeout: 120000,
-                protocolTimeout: 120000,
+                timeout: 180000,
+                protocolTimeout: 600000,
                 args: [
                     '--no-sandbox',
                     '--disable-setuid-sandbox',
@@ -2991,7 +2999,9 @@ class SessionManager {
             startPresenceManager(sessionId);
             const sessionData = getSessionData(sessionId);
             if (sessionData.config.AUTO_SCAN_ENABLED) {
-                const startupDelay = HumanBehavior.gaussianRandom(15000, 8000);
+                // Délai plus généreux pour laisser WhatsApp Web finir la synchro initiale des chats
+                // (sinon getChats() peut dépasser protocolTimeout sur les gros comptes)
+                const startupDelay = HumanBehavior.gaussianRandom(45000, 15000);
                 addLog(`[TIMER] [${sessionId}] Premier scan dans ${Math.round(startupDelay / 1000)}s...`);
                 await new Promise(r => setTimeout(r, startupDelay));
                 try {
