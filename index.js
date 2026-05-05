@@ -3062,11 +3062,20 @@ class SessionManager {
                 // (sinon getChats() peut dépasser protocolTimeout sur les gros comptes)
                 const startupDelay = HumanBehavior.gaussianRandom(45000, 15000);
                 addLog(`[TIMER] [${sessionId}] Premier scan dans ${Math.round(startupDelay / 1000)}s...`);
+                // Capture référence client pour pouvoir détecter un restart pendant l'attente
+                const scheduledFor = client;
                 await new Promise(r => setTimeout(r, startupDelay));
-                try {
-                    await scanAllGroups(sessionId);
-                } catch (scanError) {
-                    addLog(`[X] [${sessionId}] Erreur scan initial: ${scanError.message}`);
+                // Si la session a été arrêtée/redémarrée pendant l'attente, le client en mémoire
+                // sera différent de celui qui a programmé ce scan → on abandonne silencieusement
+                const currentSession = this.sessions.get(sessionId);
+                if (!currentSession || currentSession.client !== scheduledFor) {
+                    addLog(`[TIMER] [${sessionId}] Scan initial annulé (session redémarrée)`);
+                } else {
+                    try {
+                        await scanAllGroups(sessionId);
+                    } catch (scanError) {
+                        addLog(`[X] [${sessionId}] Erreur scan initial: ${scanError.message}`);
+                    }
                 }
             }
             scheduleNextScan(sessionId);
