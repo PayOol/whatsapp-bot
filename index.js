@@ -750,8 +750,10 @@ function saveSubscriptions() {
 
 const DEFAULT_WEB_VERSION_SETTINGS = {
     enabled: false,
-    version: '2.3000.1023020825',
-    remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1023020825.html'
+    // Version par défaut officiellement supportée par whatsapp-web.js 1.34.7
+    // (voir node_modules/whatsapp-web.js/src/util/Constants.js)
+    version: '2.3000.1017054665',
+    remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1017054665.html'
 };
 
 let webVersionSettings = { ...DEFAULT_WEB_VERSION_SETTINGS };
