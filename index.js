@@ -3121,21 +3121,41 @@ class SessionManager {
     }
 
     startSession(sessionId) {
-        const session = this.sessions.get(sessionId);
-        if (session && session.client) {
-            // Vérifier si le propriétaire existe toujours (mais pas l'abonnement ici — vérifié côté API)
-            const ownerUsername = session.data.ownerUsername;
-            if (ownerUsername) {
-                const user = authManager.users[ownerUsername];
-                if (user === undefined && ownerUsername !== authManager.admin?.username) {
-                    // Propriétaire supprimé — ne pas bloquer, juste loguer
-                }
-            }
+        let session = this.sessions.get(sessionId);
+
+        // Si la session n'existe pas en mémoire mais existe sur disque → la créer
+        if (!session && this.sessionsList[sessionId]) {
+            const client = this.initClient(sessionId);
+            if (!client) return false;
+            this.sessions.set(sessionId, { client, data: { ...this.sessionsList[sessionId] } });
+            session = this.sessions.get(sessionId);
+        }
+
+        if (!session) return false;
+
+        // Si le client a été détruit (après stopSession), il faut en créer un nouveau
+        // `pupBrowser` est null quand destroy() a été appelé avec succès
+        const isDestroyed = !session.client || !session.client.pupBrowser;
+        if (isDestroyed) {
+            addLog(`[START] [${sessionId}] Recréation du client (précédent détruit)`);
+            const newClient = this.initClient(sessionId);
+            if (!newClient) return false;
+            session.client = newClient;
+        }
+
+        try {
             session.client.initialize();
+            session.data.status = 'pending';
+            if (this.sessionsList[sessionId]) {
+                this.sessionsList[sessionId].status = 'pending';
+                this.saveSessionsList();
+            }
             addLog(`[START] [${sessionId}] Session demarree`);
             return true;
+        } catch (e) {
+            addLog(`[X] [${sessionId}] Erreur startSession: ${e.message}`);
+            return false;
         }
-        return false;
     }
 
     async stopSession(sessionId) {
