@@ -3052,6 +3052,26 @@ class SessionManager {
                 this.saveSessionsList();
             }
             addLog(`[OK] [${sessionId}] Bot connecte et pret!`);
+
+            // Diagnostic WA Web / WWebJS — aide à vérifier si l'épinglage a pris effet
+            try {
+                const diag = await client.pupPage.evaluate(() => {
+                    const w = window.WWebJS || {};
+                    const version = (window.Debug && window.Debug.VERSION) || (window.require && (() => {
+                        try { return window.require('WAWebCommonAppConstants').BUILD_ID || 'unknown'; } catch (e) { return 'unknown'; }
+                    })()) || 'unknown';
+                    return {
+                        waVersion: version,
+                        hasRejectCall: typeof w.rejectCall === 'function',
+                        hasSendRevokeMsgs: typeof w.sendRevokeMsgs === 'function',
+                        hasGetChat: typeof w.getChat === 'function',
+                        wwebjsKeys: Object.keys(w).length
+                    };
+                });
+                addLog(`[DIAG] [${sessionId}] WA=${diag.waVersion} WWebJS:${diag.wwebjsKeys}fn rejectCall=${diag.hasRejectCall} revoke=${diag.hasSendRevokeMsgs} getChat=${diag.hasGetChat}`);
+            } catch (e) {
+                addLog(`[DIAG] [${sessionId}] Échec diagnostic: ${e.message}`);
+            }
             
             // Toutes les sessions démarrent leurs processus
             restoreUnblockTimers(sessionId);
