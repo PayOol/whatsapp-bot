@@ -974,6 +974,39 @@
         .log-msg.error{color:var(--danger)}
         .log-msg.warning{color:var(--warning)}
 
+        .log-session-badge{
+            display:inline-flex;
+            align-items:center;
+            padding:2px 8px;
+            border-radius:10px;
+            font-size:0.68rem;
+            font-weight:600;
+            white-space:nowrap;
+            flex-shrink:0;
+            border:1px solid currentColor;
+            background:rgba(255,255,255,0.04);
+            cursor:pointer;
+            transition:all var(--transition-fast);
+            max-width:140px;
+            overflow:hidden;
+            text-overflow:ellipsis;
+        }
+        .log-session-badge:hover{
+            filter:brightness(1.3);
+            transform:translateY(-1px);
+        }
+        .logs-filter-select{
+            background:var(--bg-elevated);
+            color:var(--text-primary);
+            border:1px solid var(--border);
+            border-radius:6px;
+            padding:6px 10px;
+            font-size:0.8rem;
+            margin-right:8px;
+            cursor:pointer;
+        }
+        .logs-filter-select:focus{outline:none;border-color:var(--primary)}
+
         .log-empty{
             padding:40px 20px;
             text-align:center;
@@ -2146,9 +2179,14 @@
                                 <span class="card-title-icon"><i class="fas fa-history"></i></span>
                                 Derniers événements
                             </h3>
-                            <button class="btn btn-ghost btn-sm" onclick="refreshLogs()">
-                                Rafraîchir
-                            </button>
+                            <div style="display:flex;align-items:center;gap:4px">
+                                <select class="logs-filter-select" id="logs-filter" onchange="onLogsFilterChange(this.value)">
+                                    <option value="all">Toutes les sessions</option>
+                                </select>
+                                <button class="btn btn-ghost btn-sm" onclick="refreshLogs()">
+                                    Rafraîchir
+                                </button>
+                            </div>
                         </div>
                         <div class="card-body" style="padding:0">
                             <div class="logs-box" id="logs-container" style="max-height:500px">
@@ -3385,39 +3423,114 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         return result;
     }
 
+    let currentLogsFilter = 'all';
+    let lastLogsData = [];
+
+    function onLogsFilterChange(value) {
+        currentLogsFilter = value;
+        renderLogs(lastLogsData);
+    }
+
+    function sessionBadgeColor(id) {
+        // Hash deterministic → HSL
+        let h = 0;
+        for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) & 0xffffffff;
+        const hue = Math.abs(h) % 360;
+        return `hsl(${hue}, 70%, 65%)`;
+    }
+
+    function sessionDisplayName(id) {
+        // Si c'est un ID de session technique, essayer de retrouver un nom court
+        const s = (typeof allSessions !== 'undefined' ? allSessions : []).find(x => x.id === id);
+        if (s && s.name) return s.name;
+        if (s && s.phoneNumber) return s.phoneNumber;
+        // ID type session_xxx_yyy → tronquer
+        if (/^session_[a-z0-9_]+$/i.test(id)) {
+            const parts = id.split('_');
+            return 'S-' + (parts[parts.length - 1] || '').slice(0, 6);
+        }
+        return id;
+    }
+
+    function parseLog(log) {
+        // Format: "[time] [identifier] message"
+        const m = log.match(/^\[([^\]]+)\]\s+\[([^\]]+)\]\s+(.+)$/);
+        if (m) return { time: m[1], sessionId: m[2], msg: m[3] };
+        // Fallback: "[time] message" (pas d'identifiant)
+        const m2 = log.match(/^\[([^\]]+)\]\s+(.+)$/);
+        if (m2) return { time: m2[1], sessionId: null, msg: m2[2] };
+        return { time: '', sessionId: null, msg: log };
+    }
+
+    function renderLogs(logs) {
+        const c1 = document.getElementById('logs-container');
+        const filterSel = document.getElementById('logs-filter');
+
+        if (!logs.length) {
+            c1.innerHTML = `<div class="log-empty"><div class="log-empty-icon"><i class="fas fa-clipboard-list"></i></div><p>Aucun événement enregistré</p></div>`;
+            if (filterSel) filterSel.innerHTML = '<option value="all">Toutes les sessions</option>';
+            return;
+        }
+
+        // Parser tous les logs
+        const parsed = logs.map(parseLog);
+
+        // Construire la liste des sessions présentes
+        const sessionSet = new Set();
+        parsed.forEach(p => { if (p.sessionId) sessionSet.add(p.sessionId); });
+        const sessionIds = Array.from(sessionSet).sort();
+
+        // Mettre à jour le dropdown (préserver la sélection)
+        if (filterSel) {
+            const prev = currentLogsFilter;
+            const options = ['<option value="all">Toutes les sessions</option>']
+                .concat(sessionIds.map(id => `<option value="${escapeHtml(id)}">${escapeHtml(sessionDisplayName(id))}</option>`));
+            filterSel.innerHTML = options.join('');
+            // Si la session filtrée n'existe plus, revenir à "all"
+            if (prev !== 'all' && !sessionIds.includes(prev)) {
+                currentLogsFilter = 'all';
+            }
+            filterSel.value = currentLogsFilter;
+        }
+
+        // Filtrer
+        const filtered = currentLogsFilter === 'all'
+            ? parsed
+            : parsed.filter(p => p.sessionId === currentLogsFilter);
+
+        if (!filtered.length) {
+            c1.innerHTML = `<div class="log-empty"><div class="log-empty-icon"><i class="fas fa-filter"></i></div><p>Aucun événement pour cette session</p></div>`;
+            return;
+        }
+
+        const html = filtered.map(p => {
+            const msg = p.msg;
+            let cls = '';
+            if (msg.includes('[X]') || msg.toLowerCase().includes('supprim') || msg.toLowerCase().includes('banni') || msg.toLowerCase().includes('erreur')) cls = 'error';
+            else if (msg.includes('[!]') || msg.toLowerCase().includes('avertissement')) cls = 'warning';
+            else if (msg.includes('[OK]') || msg.toLowerCase().includes('bienvenue') || msg.toLowerCase().includes('connect')) cls = 'success';
+
+            const badge = p.sessionId
+                ? `<span class="log-session-badge" style="color:${sessionBadgeColor(p.sessionId)}" title="Filtrer sur ${escapeHtml(p.sessionId)}" onclick="onLogsFilterChange('${escapeHtml(p.sessionId)}');document.getElementById('logs-filter').value='${escapeHtml(p.sessionId)}'">${escapeHtml(sessionDisplayName(p.sessionId))}</span>`
+                : '';
+
+            return `<div class="log-row">
+                <span class="log-time">${escapeHtml(p.time)}</span>
+                ${badge}
+                <span class="log-msg ${cls}">${formatLogIcon(escapeHtml(msg))}</span>
+            </div>`;
+        }).join('');
+
+        c1.innerHTML = html;
+    }
+
     async function refreshLogs() {
         try {
             const res = await authFetch(getApiUrlWithAuth('/api/logs'));
             const data = await res.json();
             const logs = data.logs || data;
-
-            const c1 = document.getElementById('logs-container');
-
-            if (!logs.length) {
-                const empty = `<div class="log-empty"><div class="log-empty-icon"><i class="fas fa-clipboard-list"></i></div><p>Aucun événement enregistré</p></div>`;
-                c1.innerHTML = empty;
-                return;
-            }
-
-            const html = logs.map(log => {
-                // Le format est: [date/heure] message
-                // On doit séparer la date du message sans couper les tags
-                const match = log.match(/^\[([^\]]+)\] (.+)$/);
-                const time = match ? match[1] : '';
-                const msg = match ? match[2] : log;
-
-                let cls = '';
-                if (msg.includes('[X]') || msg.toLowerCase().includes('supprim') || msg.toLowerCase().includes('banni') || msg.toLowerCase().includes('erreur')) cls = 'error';
-                else if (msg.includes('[!]') || msg.toLowerCase().includes('avertissement')) cls = 'warning';
-                else if (msg.includes('[OK]') || msg.toLowerCase().includes('bienvenue') || msg.toLowerCase().includes('connect')) cls = 'success';
-
-                return `<div class="log-row">
-                    <span class="log-time">${escapeHtml(time)}</span>
-                    <span class="log-msg ${cls}">${formatLogIcon(escapeHtml(msg))}</span>
-                </div>`;
-            }).join('');
-
-            c1.innerHTML = html;
+            lastLogsData = Array.isArray(logs) ? logs : [];
+            renderLogs(lastLogsData);
         } catch (e) {
             console.error('Logs error:', e);
         }
