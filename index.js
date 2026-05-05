@@ -680,7 +680,6 @@ const SUGGESTIONS_FILE = path.join(DATA_DIR, 'suggestions.json');
 const ANNOUNCEMENTS_FILE = path.join(DATA_DIR, 'announcements.json');
 const SUBSCRIPTION_SETTINGS_FILE = path.join(DATA_DIR, 'subscription_settings.json');
 const SUBSCRIPTIONS_FILE = path.join(DATA_DIR, 'subscriptions.json');
-const WEB_VERSION_SETTINGS_FILE = path.join(DATA_DIR, 'webversion_settings.json');
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 const TOKEN_EXPIRY_HOURS = 24;
 
@@ -741,43 +740,6 @@ function saveSubscriptions() {
         console.error('Erreur sauvegarde abonnements:', e);
     }
 }
-
-// ============================================================
-// 📌 ÉPINGLAGE VERSION WhatsApp Web
-// Workaround quand wwebjs est cassé par une nouvelle version WA Web
-// (Store vide, delete/revoke/callReject silencieusement ignorés)
-// ============================================================
-
-const DEFAULT_WEB_VERSION_SETTINGS = {
-    enabled: false,
-    // Version par défaut officiellement supportée par whatsapp-web.js 1.34.7
-    // (voir node_modules/whatsapp-web.js/src/util/Constants.js)
-    version: '2.3000.1017054665',
-    remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1017054665.html'
-};
-
-let webVersionSettings = { ...DEFAULT_WEB_VERSION_SETTINGS };
-
-function loadWebVersionSettings() {
-    try {
-        if (fs.existsSync(WEB_VERSION_SETTINGS_FILE)) {
-            webVersionSettings = { ...DEFAULT_WEB_VERSION_SETTINGS, ...JSON.parse(fs.readFileSync(WEB_VERSION_SETTINGS_FILE, 'utf8')) };
-        }
-    } catch (e) {
-        console.error('Erreur chargement paramètres webVersion:', e);
-    }
-}
-
-function saveWebVersionSettings() {
-    try {
-        if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-        fs.writeFileSync(WEB_VERSION_SETTINGS_FILE, JSON.stringify(webVersionSettings, null, 2));
-    } catch (e) {
-        console.error('Erreur sauvegarde paramètres webVersion:', e);
-    }
-}
-
-loadWebVersionSettings();
 
 function getUserSubscription(username) {
     return subscriptions[username] || null;
@@ -2961,7 +2923,7 @@ class SessionManager {
             cleanLockFiles(authPath);
         } catch (e) {}
 
-        const clientOpts = {
+        const client = new Client({
             authStrategy: new LocalAuth({ dataPath: authPath }),
             puppeteer: {
                 headless: true,
@@ -2977,20 +2939,7 @@ class SessionManager {
                     '--disable-gpu'
                 ]
             }
-        };
-
-        // Épinglage optionnel de la version WhatsApp Web (workaround wwebjs cassé)
-        // Configurable via /admin — ne prend effet qu'au prochain démarrage de session
-        if (webVersionSettings.enabled && webVersionSettings.version && webVersionSettings.remotePath) {
-            clientOpts.webVersion = webVersionSettings.version;
-            clientOpts.webVersionCache = {
-                type: 'remote',
-                remotePath: webVersionSettings.remotePath
-            };
-            addLog(`[${sessionId}] WA Web épinglé: ${webVersionSettings.version}`);
-        }
-
-        const client = new Client(clientOpts);
+        });
 
         this.setupClientEvents(client, sessionId);
         return client;
@@ -3052,26 +3001,6 @@ class SessionManager {
                 this.saveSessionsList();
             }
             addLog(`[OK] [${sessionId}] Bot connecte et pret!`);
-
-            // Diagnostic WA Web / WWebJS — aide à vérifier si l'épinglage a pris effet
-            try {
-                const diag = await client.pupPage.evaluate(() => {
-                    const w = window.WWebJS || {};
-                    const version = (window.Debug && window.Debug.VERSION) || (window.require && (() => {
-                        try { return window.require('WAWebCommonAppConstants').BUILD_ID || 'unknown'; } catch (e) { return 'unknown'; }
-                    })()) || 'unknown';
-                    return {
-                        waVersion: version,
-                        hasRejectCall: typeof w.rejectCall === 'function',
-                        hasSendRevokeMsgs: typeof w.sendRevokeMsgs === 'function',
-                        hasGetChat: typeof w.getChat === 'function',
-                        wwebjsKeys: Object.keys(w).length
-                    };
-                });
-                addLog(`[DIAG] [${sessionId}] WA=${diag.waVersion} WWebJS:${diag.wwebjsKeys}fn rejectCall=${diag.hasRejectCall} revoke=${diag.hasSendRevokeMsgs} getChat=${diag.hasGetChat}`);
-            } catch (e) {
-                addLog(`[DIAG] [${sessionId}] Échec diagnostic: ${e.message}`);
-            }
             
             // Toutes les sessions démarrent leurs processus
             restoreUnblockTimers(sessionId);
@@ -5077,27 +5006,6 @@ app.post('/api/subscription/confirm', requireAuth, (req, res) => {
             expiresAt: sub.expiresAt,
             daysRemaining: Math.ceil((sub.expiresAt - Date.now()) / (24 * 60 * 60 * 1000))
         }
-    });
-});
-
-// Admin: obtenir les paramètres d'épinglage WhatsApp Web
-app.get('/api/admin/webversion/settings', requireAdmin, (req, res) => {
-    res.json({ success: true, settings: webVersionSettings });
-});
-
-// Admin: modifier les paramètres d'épinglage WhatsApp Web
-// ⚠️ Les changements ne s'appliquent qu'au prochain redémarrage des sessions
-app.post('/api/admin/webversion/settings', requireAdmin, (req, res) => {
-    const { enabled, version, remotePath } = req.body;
-    if (enabled !== undefined) webVersionSettings.enabled = !!enabled;
-    if (version !== undefined) webVersionSettings.version = String(version).trim();
-    if (remotePath !== undefined) webVersionSettings.remotePath = String(remotePath).trim();
-    saveWebVersionSettings();
-    addLog(`[WEBVERSION] Paramètres mis à jour par ${req.user.username} — enabled=${webVersionSettings.enabled} version=${webVersionSettings.version}`);
-    res.json({
-        success: true,
-        settings: webVersionSettings,
-        message: 'Enregistré. Redémarre les sessions pour appliquer.'
     });
 });
 

@@ -938,47 +938,6 @@
             </div>
         </div>
 
-        <!-- Épinglage WhatsApp Web -->
-        <div class="cards-grid" style="margin-top:20px">
-            <div class="card" style="grid-column: 1 / -1">
-                <div class="card-header">
-                    <div class="card-title">
-                        <span class="card-title-icon" style="background:rgba(59,130,246,0.2);color:#3b82f6"><i class="fas fa-thumbtack"></i></span>
-                        Épinglage version WhatsApp Web
-                    </div>
-                    <label class="toggle-switch">
-                        <input type="checkbox" id="webver-enabled-toggle" onchange="toggleWebVersion(this.checked)">
-                        <span class="toggle-track"></span>
-                        <span class="toggle-thumb"></span>
-                    </label>
-                </div>
-                <div class="card-body">
-                    <div style="padding:10px 14px;border-radius:8px;margin-bottom:16px;font-size:0.85rem;background:rgba(245,158,11,0.1);color:var(--warning);display:flex;gap:8px;align-items:flex-start">
-                        <i class="fas fa-exclamation-triangle" style="margin-top:3px"></i>
-                        <div>
-                            <strong>Workaround avancé.</strong> À activer uniquement si la suppression des messages, le rejet des appels ou d'autres APIs ne fonctionnent plus (WhatsApp Web a cassé wwebjs). 
-                            <strong>Les changements s'appliquent au prochain redémarrage des sessions.</strong> Idéalement, teste d'abord sur une session personnelle avant de déployer.
-                        </div>
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">Version WhatsApp Web à épingler</label>
-                        <input type="text" class="form-input" id="webver-version" placeholder="2.3000.1017054665">
-                        <div class="form-hint">Numéro de version (format 2.XXXX.XXXXXXXXXX). Doit correspondre à une version disponible sur wppconnect-team/wa-version.</div>
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">URL du HTML de cette version</label>
-                        <input type="text" class="form-input" id="webver-remote" placeholder="https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1017054665.html">
-                        <div class="form-hint">URL directe du fichier HTML sur GitHub. Change le nom de version dans l'URL pour correspondre au champ ci-dessus.</div>
-                    </div>
-
-                    <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="saveWebVersionSettings()">
-                        <i class="fas fa-save"></i> Enregistrer
-                    </button>
-                </div>
-            </div>
-        </div>
     </div>
     
     <div class="toast-container" id="toast-container"></div>
@@ -1702,68 +1661,11 @@
             .catch(function(e) { showToast('Erreur', 'error'); });
         }
         
-        // === ÉPINGLAGE WA WEB ===
-        function loadWebVersionSettings() {
-            fetch('/api/admin/webversion/settings', { credentials: 'same-origin' })
-            .then(function(res) { return res.json(); })
-            .then(function(data) {
-                if (!data.success) return;
-                var s = data.settings || {};
-                document.getElementById('webver-enabled-toggle').checked = !!s.enabled;
-                document.getElementById('webver-version').value = s.version || '';
-                document.getElementById('webver-remote').value = s.remotePath || '';
-            })
-            .catch(function(e) { console.error('loadWebVersionSettings', e); });
-        }
-
-        function toggleWebVersion(enabled) {
-            fetch('/api/admin/webversion/settings', {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ enabled: enabled })
-            })
-            .then(function(res) { return res.json(); })
-            .then(function(data) {
-                if (data.success) {
-                    showToast(enabled ? 'Épinglage activé — redémarre les sessions' : 'Épinglage désactivé — redémarre les sessions', 'success');
-                } else {
-                    showToast(data.message || 'Erreur', 'error');
-                }
-            })
-            .catch(function() { showToast('Erreur', 'error'); });
-        }
-
-        function saveWebVersionSettings() {
-            var version = document.getElementById('webver-version').value.trim();
-            var remotePath = document.getElementById('webver-remote').value.trim();
-            if (!version || !remotePath) {
-                showToast('Version et URL requises', 'error');
-                return;
-            }
-            fetch('/api/admin/webversion/settings', {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ version: version, remotePath: remotePath })
-            })
-            .then(function(res) { return res.json(); })
-            .then(function(data) {
-                if (data.success) {
-                    showToast('Enregistré — redémarre les sessions pour appliquer', 'success');
-                } else {
-                    showToast(data.message || 'Erreur', 'error');
-                }
-            })
-            .catch(function() { showToast('Erreur', 'error'); });
-        }
-
         checkAuth();
         loadBetaStatus();
         loadSuggestions();
         loadSubscriptionSettings();
         loadSubscriptions();
-        loadWebVersionSettings();
     </script>
 </body>
 </html>
