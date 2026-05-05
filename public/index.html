@@ -4442,6 +4442,9 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                             session.status === 'qr' ?
                             `<button class="session-action-btn" onclick="event.stopPropagation();showSessionQR('${session.id}')" title="QR Code"><i class="fas fa-qrcode"></i></button>` : ''
                         }
+                        ${session.status !== 'stopped' ?
+                            `<button class="session-action-btn" onclick="event.stopPropagation();restartSession('${session.id}')" title="Redémarrer"><i class="fas fa-sync-alt"></i></button>` : ''
+                        }
                         <button class="session-action-btn danger" onclick="event.stopPropagation();deleteSession('${session.id}')" title="Supprimer"><i class="fas fa-trash"></i></button>
                     </div>
                 </div>
@@ -4499,6 +4502,31 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         }
     }
     
+    async function restartSession(sessionId) {
+        if (!confirm('Redémarrer cette session ? La connexion sera interrompue quelques secondes.')) return;
+        try {
+            showToast('Redémarrage en cours...', 'info');
+            const stopRes = await authFetch(`/api/sessions/${sessionId}/stop`, { method: 'POST' });
+            const stopData = await stopRes.json();
+            if (!stopData.success) {
+                showToast(stopData.message || 'Erreur arrêt', 'error');
+                return;
+            }
+            // Laisser le temps au navigateur Puppeteer de se fermer proprement
+            await new Promise(r => setTimeout(r, 2500));
+            const startRes = await authFetch(`/api/sessions/${sessionId}/start`, { method: 'POST' });
+            const startData = await startRes.json();
+            if (startData.success) {
+                showToast('Session redémarrée', 'success');
+                loadSessions();
+            } else {
+                showToast(startData.message || 'Erreur démarrage', 'error');
+            }
+        } catch (e) {
+            showToast('Erreur redémarrage', 'error');
+        }
+    }
+
     async function startSession(sessionId) {
         try {
             const res = await authFetch(`/api/sessions/${sessionId}/start`, { method: 'POST' });
