@@ -2194,6 +2194,40 @@ function generateList(sections) {
     };
 }
 
+function getClientForSessionData(sessionData = null) {
+    if (sessionData?.sessionId) {
+        const managedSession = sessionManager.sessions.get(sessionData.sessionId);
+        if (managedSession?.client) return managedSession.client;
+    }
+    return sessionManager.getActiveClient() || client;
+}
+
+async function canUseInteractiveMenusInChat(chat, sessionData = null) {
+    if (!chat?.isGroup) return false;
+
+    const sessionClient = getClientForSessionData(sessionData);
+    const botWid = sessionClient?.info?.wid;
+    if (!botWid) return false;
+
+    let participants = chat.participants || [];
+    if ((!participants || participants.length === 0) && chat.id?._serialized) {
+        try {
+            const freshChat = await sessionClient.getChatById(chat.id._serialized);
+            participants = freshChat?.participants || [];
+        } catch (e) {}
+    }
+
+    const botId = botWid._serialized;
+    const botNumber = botWid.user || botId?.split('@')[0];
+    const botParticipant = participants.find(p => {
+        const participantId = p.id?._serialized;
+        const participantNumber = p.id?.user || participantId?.split('@')[0];
+        return participantId === botId || participantNumber === botNumber;
+    });
+
+    return !!(botParticipant?.isAdmin || botParticipant?.isSuperAdmin);
+}
+
 async function sendInteractiveMenu(chat, menuId, sessionData = null, quotedMsg = null) {
     const menus = sessionData ? sessionData.interactiveMenus : interactiveMenus;
     const sessions = sessionData ? sessionData.menuSessions : menuSessions;
@@ -2201,6 +2235,13 @@ async function sendInteractiveMenu(chat, menuId, sessionData = null, quotedMsg =
     if (!menu || !menu.enabled) return null;
 
     try {
+        if (!(await canUseInteractiveMenusInChat(chat, sessionData))) {
+            const logMessage = `[MENU] Envoi bloque: bot non admin dans ${chat?.name || chat?.id?._serialized || 'chat inconnu'}`;
+            if (sessionData) sessionData.addLog(logMessage);
+            else addLog(logMessage);
+            return null;
+        }
+
         await rateLimiter.waitUntilAllowed();
 
         const title = menu.title;
@@ -2266,6 +2307,8 @@ async function handleMenuResponse(message, responseId, sessionData = null) {
     const chat = await message.getChat();
     const senderId = message.author || message.from;
     const menus = sessionData ? sessionData.interactiveMenus : interactiveMenus;
+
+    if (!(await canUseInteractiveMenusInChat(chat, sessionData))) return null;
 
     for (const menuId in menus) {
         const menu = menus[menuId];
@@ -3626,9 +3669,10 @@ async function handleMessage(client, message, sessionId) {
         if (message.fromMe) return;
         const chat = await message.getChat();
         const senderId = message.author || message.from;
+        const menuAllowedInChat = await canUseInteractiveMenusInChat(chat, sessionData);
 
         // ✅ Réponse à un menu interactif (boutons natifs)
-        if (message.type === 'buttons_response' || message.type === 'list_response') {
+        if (menuAllowedInChat && (message.type === 'buttons_response' || message.type === 'list_response')) {
             const responseId = message.selectedButtonId || message.selectedRowId;
             if (responseId) {
                 sessionData.addLog(`Menu reponse: ${responseId} de ${senderId}`);
@@ -3640,7 +3684,7 @@ async function handleMessage(client, message, sessionId) {
         // ✅ Réponse numérotée à un menu textuel
         const messageText = message.body.trim();
         const numberMatch = messageText.match(/^(\d+)$/);
-        if (numberMatch) {
+        if (menuAllowedInChat && numberMatch) {
             const selectedNumber = parseInt(numberMatch[1]);
 
             let latestSession = null;
@@ -3685,7 +3729,7 @@ async function handleMessage(client, message, sessionId) {
         }
 
         // ✅ Réponse textuelle à un menu (l'utilisateur tape le texte de l'option au lieu du numéro)
-        if (!numberMatch && messageText.length >= 2) {
+        if (menuAllowedInChat && !numberMatch && messageText.length >= 2) {
             const normalizeText = s => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
             const inputNorm = normalizeText(messageText);
 
@@ -3754,6 +3798,7 @@ async function handleMessage(client, message, sessionId) {
         }
 
         // ✅ Vérifier si le message déclenche un menu (texte uniquement, pas images/médias)
+        if (menuAllowedInChat) {
         if (message.type !== 'chat') { /* skip menu trigger for non-text messages */ }
         else {
         const normalizeApostrophes = s => s.replace(/[\u2018\u2019\u201A\u201B\u0060\u00B4]/g, "'");
@@ -3790,6 +3835,8 @@ async function handleMessage(client, message, sessionId) {
                 return;
             }
         }
+        }
+
         }
 
         // ✅ Seul le traitement des groupes continue
@@ -6003,7 +6050,7 @@ app.post('/api/menus/:id/test', requireAuth, async (req, res) => {
             targetChat = chats.find(c => {
                 if (!c.isGroup) return false;
                 const bp = c.participants?.find(p => p.id._serialized === activeClient.info.wid._serialized);
-                return bp?.isAdmin;
+                return bp?.isAdmin || bp?.isSuperAdmin;
             });
         }
 
@@ -6011,7 +6058,18 @@ app.post('/api/menus/:id/test', requireAuth, async (req, res) => {
             return res.status(400).json({ success: false, message: 'Aucun groupe disponible' });
         }
 
-        await sendInteractiveMenu(targetChat, menuId, sessionData);
+        if (!(await canUseInteractiveMenusInChat(targetChat, sessionData))) {
+            return res.status(400).json({
+                success: false,
+                message: 'Le bot doit etre administrateur du groupe pour envoyer ce menu'
+            });
+        }
+
+        const sent = await sendInteractiveMenu(targetChat, menuId, sessionData);
+        if (!sent) {
+            return res.status(500).json({ success: false, message: 'Menu non envoye' });
+        }
+
         if (sessionData) sessionData.addLog(`[TEST] Menu teste: ${menuId} dans ${targetChat.name}`);
         else addLog(`[TEST] Menu teste: ${menuId} dans ${targetChat.name}`);
         res.json({ success: true, sessionId: sessionId || 'global', groupName: targetChat.name });
