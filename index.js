@@ -228,6 +228,25 @@ class RateLimiter {
 
 const rateLimiter = new RateLimiter();
 
+const ASSISTANCE_BOT_HEADER = "*Bot d'assistance*";
+
+function withAssistanceHeader(content) {
+    if (typeof content !== 'string') return content;
+    const trimmed = content.trimStart();
+    if (trimmed.startsWith(ASSISTANCE_BOT_HEADER) || trimmed.startsWith("Bot d'assistance")) {
+        return content;
+    }
+    return `${ASSISTANCE_BOT_HEADER}\n\n${content}`;
+}
+
+function withAssistanceHeaderOptions(options = {}) {
+    if (!options || typeof options.caption !== 'string') return options;
+    return {
+        ...options,
+        caption: withAssistanceHeader(options.caption)
+    };
+}
+
 // ============================================================
 // 📨 ENVOI DE MESSAGE HUMANISÉ
 // ============================================================
@@ -235,6 +254,8 @@ const rateLimiter = new RateLimiter();
 async function sendMessageHumanized(chat, text, options = {}, triggerMessageLength = 0, sessionData = null) {
     try {
         await rateLimiter.waitUntilAllowed();
+        const outgoingText = withAssistanceHeader(text);
+        const outgoingOptions = withAssistanceHeaderOptions(options);
 
         if (triggerMessageLength > 0) {
             const readDelay = HumanBehavior.readingDelay(triggerMessageLength);
@@ -247,7 +268,7 @@ async function sendMessageHumanized(chat, text, options = {}, triggerMessageLeng
             await chat.sendStateTyping();
         } catch (e) {}
 
-        const typingTime = HumanBehavior.typingDuration(typeof text === 'string' ? text.length : (options.caption?.length || 20));
+        const typingTime = HumanBehavior.typingDuration(typeof outgoingText === 'string' ? outgoingText.length : (outgoingOptions.caption?.length || 20));
         await HumanBehavior.naturalDelay(typingTime);
 
         try {
@@ -260,7 +281,7 @@ async function sendMessageHumanized(chat, text, options = {}, triggerMessageLeng
             );
         }
 
-        const sent = await chat.sendMessage(text, options);
+        const sent = await chat.sendMessage(outgoingText, outgoingOptions);
         rateLimiter.recordAction();
         return sent;
 
@@ -841,7 +862,7 @@ async function checkSubscriptions() {
                             (dashboardUrl ? `👉 *Renouveler :* ${dashboardUrl}\n\n` : '') +
                             `Merci de votre fidélité ! 🙏`;
                         try {
-                            await session.client.sendMessage(botNumber, message);
+                            await session.client.sendMessage(botNumber, withAssistanceHeader(message));
                             expiryReminderSent[sessionId] = Date.now();
                             reminders++;
                             addLog(`[SUB] Rappel expiration envoyé à ${owner} (${daysLeft}j restants)`);
@@ -885,7 +906,7 @@ async function checkSubscriptions() {
                 (dashboardUrl ? `👉 *Payer maintenant :* ${dashboardUrl}\n\n` : '') +
                 `Merci de votre confiance ! 🙏`;
             try {
-                await session.client.sendMessage(botNumber, message);
+                await session.client.sendMessage(botNumber, withAssistanceHeader(message));
                 subWarningState[sessionId] = 1;
                 notified++;
                 addLog(`[SUB] Notification envoyée à ${owner} (étape 1/3)`);
@@ -901,7 +922,7 @@ async function checkSubscriptions() {
                 (dashboardUrl ? `👉 *Payer maintenant :* ${dashboardUrl}\n\n` : '') +
                 `⏳ Il vous reste *5 minutes*.`;
             try {
-                await session.client.sendMessage(botNumber, message);
+                await session.client.sendMessage(botNumber, withAssistanceHeader(message));
                 subWarningState[sessionId] = 2;
                 warned++;
                 addLog(`[SUB] Avertissement final envoyé à ${owner} (étape 2/3)`);
@@ -910,8 +931,9 @@ async function checkSubscriptions() {
         } else if (state === 2) {
             // Étape 3: Déconnexion (5 min après l'avertissement)
             try {
-                await session.client.sendMessage(botNumber, `❌ *Session déconnectée — PayOol™ Bot*\n\nVotre session a été déconnectée car votre abonnement n'a pas été renouvelé.\n\n` +
-                    (dashboardUrl ? `Pour réactiver, rendez-vous sur : ${dashboardUrl}` : 'Rendez-vous sur votre tableau de bord pour réactiver.'));
+                const disconnectMessage = `❌ *Session déconnectée — PayOol™ Bot*\n\nVotre session a été déconnectée car votre abonnement n'a pas été renouvelé.\n\n` +
+                    (dashboardUrl ? `Pour réactiver, rendez-vous sur : ${dashboardUrl}` : 'Rendez-vous sur votre tableau de bord pour réactiver.');
+                await session.client.sendMessage(botNumber, withAssistanceHeader(disconnectMessage));
                 await new Promise(resolve => setTimeout(resolve, 5000));
             } catch (e) {}
             
@@ -4180,7 +4202,7 @@ async function handleGroupJoin(client, notification, sessionId) {
             try {
                 const media = await MessageMedia.fromUrl(profilePicUrl, { unsafeMime: true });
                 await rateLimiter.waitUntilAllowed();
-                await chat.sendMessage(media, { caption: welcomeMessage, mentions: [contact.id._serialized] });
+                await chat.sendMessage(media, { caption: withAssistanceHeader(welcomeMessage), mentions: [contact.id._serialized] });
                 rateLimiter.recordAction();
             } catch (e) {
                 await sendMessageHumanized(chat, welcomeMessage, { mentions: [contact.id._serialized] }, 0, sessionData);
