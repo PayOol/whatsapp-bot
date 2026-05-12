@@ -2203,7 +2203,8 @@ function getClientForSessionData(sessionData = null) {
 }
 
 async function canUseInteractiveMenusInChat(chat, sessionData = null) {
-    if (!chat?.isGroup) return false;
+    if (!chat) return false;
+    if (!chat.isGroup) return true;
 
     const sessionClient = getClientForSessionData(sessionData);
     const botWid = sessionClient?.info?.wid;
