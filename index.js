@@ -3473,6 +3473,49 @@ function requireAdmin(req, res, next) {
 // ============================================================
 
 const MENU_SESSION_TTL_MS = 60 * 60 * 1000;
+const MENU_SAVE_DEBOUNCE_MS = 50;
+
+function createMenuSaveState(label) {
+    return {
+        label,
+        timer: null,
+        saving: false,
+        dirty: false
+    };
+}
+
+function queueMenuSave(state, menuFile, menuSessionsFile, getPayload) {
+    if (!state) return;
+    state.dirty = true;
+    if (state.timer || state.saving) return;
+
+    state.timer = setTimeout(() => flushQueuedMenuSave(state, menuFile, menuSessionsFile, getPayload), MENU_SAVE_DEBOUNCE_MS);
+    state.timer.unref?.();
+}
+
+async function flushQueuedMenuSave(state, menuFile, menuSessionsFile, getPayload) {
+    state.timer = null;
+    if (state.saving) return;
+
+    state.saving = true;
+    state.dirty = false;
+
+    try {
+        const payload = getPayload();
+        await fs.promises.mkdir(path.dirname(menuFile), { recursive: true });
+        await Promise.all([
+            fs.promises.writeFile(menuFile, JSON.stringify(payload.menus || {}, null, 2)),
+            fs.promises.writeFile(menuSessionsFile, JSON.stringify(payload.menuSessions || {}, null, 2))
+        ]);
+    } catch (error) {
+        console.error(`Erreur sauvegarde menus (${state.label}):`, error);
+    } finally {
+        state.saving = false;
+        if (state.dirty) {
+            queueMenuSave(state, menuFile, menuSessionsFile, getPayload);
+        }
+    }
+}
 
 class SessionDataManager {
     constructor(sessionId) {
@@ -3490,6 +3533,7 @@ class SessionDataManager {
         this.unblockTimers = {};
         this.interactiveMenus = {};
         this.menuSessions = {};
+        this.menuSaveState = createMenuSaveState(`session ${sessionId}`);
         this.callHistory = [];
 
         this.ensureDir();
@@ -3752,10 +3796,10 @@ class SessionDataManager {
     saveMenus() {
         const file1 = path.join(this.sessionDir, 'menus.json');
         const file2 = path.join(this.sessionDir, 'menu_sessions.json');
-        try {
-            fs.writeFileSync(file1, JSON.stringify(this.interactiveMenus, null, 2));
-            fs.writeFileSync(file2, JSON.stringify(this.menuSessions, null, 2));
-        } catch (e) {}
+        queueMenuSave(this.menuSaveState, file1, file2, () => ({
+            menus: this.interactiveMenus,
+            menuSessions: this.menuSessions
+        }));
     }
     
     // === LOAD ALL ===
@@ -3794,6 +3838,7 @@ const CALL_SPAM_FILE = path.join(DATA_DIR, 'call_spam.json');
 const BLOCKED_USERS_FILE = path.join(DATA_DIR, 'blocked_users.json');
 const MENUS_FILE = path.join(DATA_DIR, 'menus.json');
 const MENU_SESSIONS_FILE = path.join(DATA_DIR, 'menu_sessions.json');
+const globalMenuSaveState = createMenuSaveState('global');
 
 // ============================================================
 // ✅ SYSTÈME ANTI-DOUBLON
@@ -3945,15 +3990,10 @@ function normalizeMenuConfig(config = {}, previous = {}) {
 }
 
 function saveMenus() {
-    try {
-        if (!fs.existsSync(DATA_DIR)) {
-            fs.mkdirSync(DATA_DIR, { recursive: true });
-        }
-        fs.writeFileSync(MENUS_FILE, JSON.stringify(interactiveMenus, null, 2));
-        fs.writeFileSync(MENU_SESSIONS_FILE, JSON.stringify(menuSessions, null, 2));
-    } catch (error) {
-        console.error('Erreur sauvegarde menus:', error);
-    }
+    queueMenuSave(globalMenuSaveState, MENUS_FILE, MENU_SESSIONS_FILE, () => ({
+        menus: interactiveMenus,
+        menuSessions
+    }));
 }
 
 function createMenu(config, sessionData = null) {

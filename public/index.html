@@ -5055,28 +5055,32 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             return;
         }
         
-        try {
-            const method = currentEditingMenu ? 'PUT' : 'POST';
-            const url = currentEditingMenu ? `/api/menus/${currentEditingMenu}` : '/api/menus';
-            
-            const res = await authFetch(url, {
-                method,
-                headers: getAuthHeaders(),
-                body: JSON.stringify(addSessionIdToBody(menuData))
+        const editingMenuId = currentEditingMenu;
+        const isEditing = !!editingMenuId;
+        const method = isEditing ? 'PUT' : 'POST';
+        const url = isEditing ? `/api/menus/${editingMenuId}` : '/api/menus';
+
+        closeMenuEditor();
+        showToast(isEditing ? 'Mise a jour du menu en arriere-plan...' : 'Creation du menu en arriere-plan...', 'info');
+
+        authFetch(url, {
+            method,
+            headers: getAuthHeaders(),
+            body: JSON.stringify(addSessionIdToBody(menuData))
+        })
+            .then(async (res) => {
+                const result = await res.json().catch(() => ({}));
+
+                if (result.success) {
+                    showToast(isEditing ? 'Menu mis a jour' : 'Menu cree', 'success');
+                    loadMenus();
+                } else {
+                    showToast(result.message || 'Erreur', 'error');
+                }
+            })
+            .catch(() => {
+                showToast('Erreur de sauvegarde', 'error');
             });
-            
-            const result = await res.json();
-            
-            if (result.success) {
-                showToast(currentEditingMenu ? 'Menu mis à jour' : 'Menu créé', 'success');
-                closeMenuEditor();
-                loadMenus();
-            } else {
-                showToast(result.message || 'Erreur', 'error');
-            }
-        } catch (e) {
-            showToast('Erreur de sauvegarde', 'error');
-        }
     }
     
     async function editMenu(menuId) {
