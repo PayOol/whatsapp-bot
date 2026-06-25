@@ -4788,18 +4788,25 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             return;
         }
         
-        const btn = document.getElementById('sub-pay-btn') || document.getElementById('sub-overlay-btn');
-        if (btn) {
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Traitement...';
+        const btn1 = document.getElementById('sub-pay-btn');
+        const btn2 = document.getElementById('sub-overlay-btn');
+        
+        function setBtnLoading(btn) {
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Traitement...';
+            }
         }
         
-        function resetBtn() {
+        function resetBtn(btn) {
             if (btn) {
                 btn.disabled = false;
                 btn.innerHTML = '<i class="fas fa-lock" style="margin-right:8px"></i>Payer maintenant';
             }
         }
+        
+        setBtnLoading(btn1);
+        setBtnLoading(btn2);
         
         try {
             const returnUrl = window.location.href.split('?')[0] + '?leekpay_return=1';
@@ -4823,11 +4830,13 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                 // Redirection normale vers la page de paiement
                 window.location.href = data.paymentUrl;
             } else {
-                resetBtn();
+                resetBtn(btn1);
+                resetBtn(btn2);
                 showToast(data.message || 'Erreur lors de la création du paiement', 'error');
             }
         } catch (e) {
-            resetBtn();
+            resetBtn(btn1);
+            resetBtn(btn2);
             showToast('Erreur de connexion au serveur', 'error');
             console.error('Erreur create-checkout:', e);
         }
