@@ -571,16 +571,34 @@ function loadPersistentMessageCache(sock, sessionId) {
     try {
         const file = getMessageCacheFile(sessionId);
         if (!fs.existsSync(file)) return;
+        const startedAt = Date.now();
         const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+        const rt = ensureRuntime(sock);
         let loaded = 0;
-        for (const messages of Object.values(data.chats || {})) {
-            for (const message of messages || []) {
-                cacheMessage(sock, message, { persist: false });
+
+        for (const [rawChatId, messages] of Object.entries(data.chats || {})) {
+            const chatId = normalizeJid(rawChatId) || rawChatId;
+            const validMessages = (messages || [])
+                .filter(message => message?.key?.remoteJid && message?.key?.id)
+                .sort((a, b) => messageTimestampNumber(a) - messageTimestampNumber(b))
+                .slice(-MESSAGE_CACHE_LIMIT_PER_CHAT);
+            if (!validMessages.length) continue;
+
+            const existing = rt.messagesByChat.get(chatId) || [];
+            const byId = new Map(existing.map(message => [message.key.id, message]));
+            for (const message of validMessages) {
+                byId.set(message.key.id, message);
                 cacheMessageContactInfo(sock, message);
-                loaded++;
             }
+
+            const list = Array.from(byId.values())
+                .sort((a, b) => messageTimestampNumber(a) - messageTimestampNumber(b))
+                .slice(-MESSAGE_CACHE_LIMIT_PER_CHAT);
+            rt.messagesByChat.set(chatId, list);
+            for (const message of list) rt.messagesById.set(message.key.id, message);
+            loaded += list.length;
         }
-        if (loaded) addLog('[CACHE] [' + sessionId + '] ' + loaded + ' messages restaures pour les scans');
+        if (loaded) addLog('[CACHE] [' + sessionId + '] ' + loaded + ' messages restaures pour les scans (' + (Date.now() - startedAt) + 'ms)');
     } catch (e) {
         addLog('[CACHE] [' + sessionId + '] Cache messages ignore: ' + e.message);
     }
@@ -4705,13 +4723,18 @@ class SessionManager {
         const baileys = await loadBaileys();
         const { state, saveCreds } = await baileys.useMultiFileAuthState(authPath);
         const makeWASocket = baileys.default || baileys.makeWASocket;
+        const HistorySyncType = baileys.proto?.HistorySync?.HistorySyncType || {};
         let sock;
         sock = makeWASocket({
             auth: state,
             logger: makeBaileysLogger(),
             browser: baileys.Browsers?.ubuntu?.('PayOol Bot') || undefined,
             markOnlineOnConnect: false,
-            syncFullHistory: true,
+            syncFullHistory: false,
+            shouldSyncHistoryMessage: ({ syncType }) => syncType === HistorySyncType.ON_DEMAND,
+            connectTimeoutMs: 60000,
+            keepAliveIntervalMs: 20000,
+            defaultQueryTimeoutMs: 90000,
             getMessage: async (key) => getCachedMessage(sock, key.id)?.message || undefined,
             cachedGroupMetadata: async (jid) => ensureRuntime(sock).chats.get(jid)?._raw || undefined
         });
@@ -4819,7 +4842,7 @@ class SessionManager {
                             addLog('[TIMER] [' + sessionId + '] Scan initial annule (session redemarree)');
                             return;
                         }
-                        try { await scanAllGroups(sessionId); }
+                        try { await scanAllGroups(sessionId, { automatic: true }); }
                         catch (scanError) { addLog('[X] [' + sessionId + '] Erreur scan initial: ' + scanError.message); }
                         scheduleNextScan(sessionId);
                     }, startupDelay);
@@ -5161,16 +5184,20 @@ async function scanOldMessages(chat, limit = 100, sessionId = null, options = {}
         return { deleted: 0, scanned: 0, warned: 0 };
     }
 
-    try { await markChatRead(sessionClient, chatInfo.jid); } catch (e) {}
-    await HumanBehavior.naturalDelay(HumanBehavior.gaussianRandom(2000, 1000));
+    if (!options.automatic) {
+        try { await markChatRead(sessionClient, chatInfo.jid); } catch (e) {}
+        await HumanBehavior.naturalDelay(HumanBehavior.gaussianRandom(2000, 1000));
+    }
 
     const cachedBeforeHistory = getCachedMessages(sessionClient, chatInfo.jid, limit).length;
     if (cachedBeforeHistory === 0 && options.anchorMessage) {
         log('[SCAN] Cache vide pour ' + chatInfo.name + ', utilisation de la commande comme repere historique');
     }
-    const messages = await fetchMoreHistory(sessionClient, chatInfo.jid, limit, {
-        anchorMessage: options.anchorMessage
-    });
+    const messages = options.automatic
+        ? getCachedMessages(sessionClient, chatInfo.jid, limit)
+        : await fetchMoreHistory(sessionClient, chatInfo.jid, limit, {
+            anchorMessage: options.anchorMessage
+        });
     if (!messages.length) {
         log('[SCAN] Aucun message disponible pour ' + chatInfo.name + ' (cache vide; le scan ne peut supprimer que les messages deja vus par le bot)');
     } else if (cachedBeforeHistory === 0 && messages.length > 0) {
@@ -5309,8 +5336,8 @@ async function scanAllGroups(sessionId = null, options = {}) {
     let chats;
     try {
         chats = await getAllChatsWithOptions(sessionClient, {
-            force: true,
-            retries: options.groupFetchRetries ?? 2,
+            force: options.forceGroupFetch ?? !options.automatic,
+            retries: options.groupFetchRetries ?? (options.automatic ? 0 : 2),
             retryDelayMs: options.groupFetchRetryDelayMs ?? GROUP_CACHE_RETRY_DELAY_MS
         });
     } catch (error) {
@@ -5341,8 +5368,8 @@ async function scanAllGroups(sessionId = null, options = {}) {
     if (groupsWithParticipants === 0) {
         addLog('[SCAN] Participants absents dans la liste des groupes, chargement des metadonnees groupe par groupe...');
         const hydration = await hydrateMissingGroupParticipants(sessionClient, allGroups, {
-            maxGroups: options.metadataHydrationLimit ?? 80,
-            delayMs: options.metadataHydrationDelayMs ?? 700
+            maxGroups: options.metadataHydrationLimit ?? (options.automatic ? 40 : 80),
+            delayMs: options.metadataHydrationDelayMs ?? (options.automatic ? 1200 : 700)
         });
         allGroups = allGroups.map(group => ensureRuntime(sessionClient).chats.get(group.jid) || group);
         groupsWithParticipants = allGroups.filter(g => (g.participants || []).length > 0).length;
@@ -5414,7 +5441,7 @@ function scheduleNextScan(sessionId) {
         if (sdTimerInner.config.AUTO_SCAN_ENABLED && session && session.data.status === 'connected') {
             addLog(`[TIMER] [${sessionId}] Scan automatique programme...`);
             try {
-                await scanAllGroups(sessionId);
+                await scanAllGroups(sessionId, { automatic: true });
             } catch (scanError) {
                 addLog(`[X] [${sessionId}] Erreur scan programme: ${scanError.message}`);
             }
