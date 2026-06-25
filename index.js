@@ -1796,6 +1796,87 @@ function incrementRejectedCallStats(sessionData) {
     sessionData.saveStats();
 }
 
+function getCallBlockTargetJids(primaryKey, callerId, contact = {}, callerNumber = '') {
+    const targets = [];
+    const seen = new Set();
+
+    const addJid = (value, trustDigits = false) => {
+        if (!value) return;
+        if (Array.isArray(value)) {
+            value.forEach(item => addJid(item, trustDigits));
+            return;
+        }
+        if (typeof value === 'object') {
+            addJid(value.phoneNumber, true);
+            addJid(value.jid, false);
+            addJid(value.id?._serialized || value.id, false);
+            addJid(value.lid, false);
+            addJid(value._serialized, false);
+            return;
+        }
+
+        const raw = String(value).trim();
+        if (!raw) return;
+        const jid = raw.includes('@')
+            ? normalizeJid(raw)
+            : (trustDigits ? normalizeJid(raw) : '');
+        if (!jid || isGroupJid(jid) || jid === 'status@broadcast') return;
+        if (!jid.endsWith('@s.whatsapp.net') && !jid.endsWith('@lid')) return;
+        if (seen.has(jid)) return;
+        seen.add(jid);
+        targets.push(jid);
+    };
+
+    addJid(primaryKey, true);
+    addJid(contact?.phoneNumber, true);
+    addJid(callerNumber, true);
+    addJid(callerId, false);
+    addJid(contact, false);
+
+    return targets.sort((a, b) => {
+        const aPhone = a.endsWith('@s.whatsapp.net') ? 0 : 1;
+        const bPhone = b.endsWith('@s.whatsapp.net') ? 0 : 1;
+        return aPhone - bPhone;
+    });
+}
+
+async function areExactBlockTargetsBlocked(sock, targets = []) {
+    const blocklist = await refreshBlocklist(sock);
+    const normalizedTargets = targets.map(normalizeJid).filter(Boolean);
+    return normalizedTargets.some(target => blocklist.has(target));
+}
+
+async function ensureCallUserBlockedOnWhatsApp(sock, targets = []) {
+    const attempted = [];
+    const succeeded = [];
+    let lastError = null;
+
+    for (const target of targets) {
+        try {
+            attempted.push(target);
+            await sock.updateBlockStatus(target, 'block');
+            ensureRuntime(sock).blocklist.add(target);
+            rateLimiter.recordAction();
+            succeeded.push(target);
+            if (target.endsWith('@s.whatsapp.net')) break;
+        } catch (error) {
+            lastError = error;
+        }
+    }
+
+    const verified = await areExactBlockTargetsBlocked(sock, targets).catch(() => false);
+    return { attempted, succeeded, verified, ok: succeeded.length > 0 || verified, lastError };
+}
+
+async function unblockCallTargetsOnWhatsApp(sock, targets = []) {
+    for (const target of targets) {
+        try {
+            await sock.updateBlockStatus(target, 'unblock');
+            ensureRuntime(sock).blocklist.delete(target);
+        } catch (e) {}
+    }
+}
+
 async function clearCallBlocksForValues(sock, sessionData, values) {
     const candidates = buildUserMatchValues(values);
     const matchedCount = clearSessionCallStateForValues(sessionData, candidates);
@@ -6092,12 +6173,14 @@ async function handleCall(sock, call, sessionId) {
             return;
         }
 
+        const callStateKey = getCanonicalUserStateKey(callMatchValues, callerId);
+        const blockTargets = getCallBlockTargetJids(callStateKey, callerId, contact, callerNumber);
         const internalBlockedKey = Object.keys(sessionData.blockedUsers || {})
             .find(key => callMatchValues.some(value => valuesMatchUser(key, value)));
 
         if (internalBlockedKey) {
             try {
-                const stillBlocked = await isUserBlockedOnWhatsApp(sock, buildUserMatchValues(callMatchValues, internalBlockedKey));
+                const stillBlocked = await areExactBlockTargetsBlocked(sock, blockTargets.length ? blockTargets : getCallBlockTargetJids(internalBlockedKey, callerId, contact, callerNumber));
                 if (stillBlocked) {
                     sessionData.addLog('[BLOCK] ' + callerId + ' deja bloque sur WhatsApp');
                     if (!alreadyRejected) {
@@ -6130,7 +6213,6 @@ async function handleCall(sock, call, sessionId) {
         const callBlockDurationMin = getCallBlockDurationMin(sessionData.config);
         const callBlockDurationText = formatCallBlockDuration(callBlockDurationMin);
         const windowMs = (sessionData.config.CALL_SPAM_WINDOW_MIN || 30) * 60 * 1000;
-        const callStateKey = getCanonicalUserStateKey(callMatchValues, callerId);
         const callTimestamps = mergeCallSpamTrackerForUser(sessionData, callStateKey, callMatchValues, now, windowMs);
         callTimestamps.push(now);
         sessionData.callSpamTracker[callStateKey] = callTimestamps;
@@ -6161,15 +6243,12 @@ async function handleCall(sock, call, sessionId) {
             sessionData.addLog('[LOCK] ' + callerId + ' marque bloque en interne (' + callStateKey + ')');
 
             try {
-                const normalizedCaller = normalizeJid(callStateKey || callerId);
-                const alreadyBlockedOnWhatsApp = await isUserBlockedOnWhatsApp(sock, buildUserMatchValues(callMatchValues, normalizedCaller));
-                if (!alreadyBlockedOnWhatsApp) {
-                    await sock.updateBlockStatus(normalizedCaller, 'block');
-                    ensureRuntime(sock).blocklist.add(normalizedCaller);
-                    rateLimiter.recordAction();
-                    sessionData.addLog('[LOCK] ' + callerId + ' bloque sur WhatsApp');
+                const blockResult = await ensureCallUserBlockedOnWhatsApp(sock, blockTargets);
+                if (blockResult.ok) {
+                    const targetLabel = blockResult.succeeded[0] || blockTargets[0] || callerId;
+                    sessionData.addLog('[LOCK] ' + callerId + ' blocage WhatsApp confirme/envoye sur ' + targetLabel);
                 } else {
-                    sessionData.addLog('[LOCK] ' + callerId + ' deja bloque sur WhatsApp');
+                    sessionData.addLog('[X] Blocage WhatsApp non confirme pour ' + callerId + ': ' + (blockResult.lastError?.message || 'aucune cible valide'));
                 }
 
                 const blockDuration = callBlockDurationMin * 60 * 1000;
@@ -6178,8 +6257,7 @@ async function handleCall(sock, call, sessionId) {
                     if (sessionData.blockedUsers[callStateKey] && sessionData.blockedUsers[callStateKey].autoUnblock) {
                         try {
                             await HumanBehavior.naturalDelay(HumanBehavior.gaussianRandom(3000, 1500));
-                            await sock.updateBlockStatus(normalizedCaller, 'unblock');
-                            ensureRuntime(sock).blocklist.delete(normalizedCaller);
+                            await unblockCallTargetsOnWhatsApp(sock, blockTargets);
                             delete sessionData.blockedUsers[callStateKey];
                             delete sessionData.callSpamTracker[callStateKey];
                             delete sessionData.unblockTimers[callStateKey];
