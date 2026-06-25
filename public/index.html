@@ -3180,7 +3180,13 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
     document.addEventListener('DOMContentLoaded', () => {
         // Handle return from LeekPay redirection
         const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.get('leekpay_return') === '1') {
+        
+        if (urlParams.get('leekpay_cancel') === '1') {
+            localStorage.removeItem('pendingLeekPayCheckout');
+            localStorage.removeItem('pendingSessionName');
+            showToast('Paiement annulé', 'warning');
+            window.history.replaceState({}, document.title, window.location.pathname);
+        } else if (urlParams.get('leekpay_return') === '1') {
             const checkoutId = localStorage.getItem('pendingLeekPayCheckout');
             if (checkoutId) {
                 localStorage.removeItem('pendingLeekPayCheckout');
@@ -4797,10 +4803,12 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         
         try {
             const returnUrl = window.location.href.split('?')[0] + '?leekpay_return=1';
+            const cancelUrl = window.location.href.split('?')[0] + '?leekpay_cancel=1';
+            
             const res = await authFetch('/api/subscription/create-checkout', {
                 method: 'POST',
                 headers: getAuthHeaders(),
-                body: JSON.stringify({ returnUrl: returnUrl })
+                body: JSON.stringify({ returnUrl: returnUrl, cancelUrl: cancelUrl })
             });
             const data = await res.json();
             

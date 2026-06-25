@@ -5005,6 +5005,7 @@ app.post('/api/subscription/create-checkout', requireAuth, async (req, res) => {
     if (!subscriptionSettings.secretKey) return res.json({ success: false, message: 'Clé secrète non configurée' });
 
     const returnUrl = req.body.returnUrl || `${req.protocol}://${req.get('host')}/`;
+    const cancelUrl = req.body.cancelUrl || `${req.protocol}://${req.get('host')}/`;
     
     try {
         const fetchResponse = await fetch('https://leekpay.fr/api/v1/checkout', {
@@ -5017,7 +5018,8 @@ app.post('/api/subscription/create-checkout', requireAuth, async (req, res) => {
                 amount: subscriptionSettings.amount,
                 currency: subscriptionSettings.currency,
                 description: subscriptionSettings.description || 'Abonnement PayOol Bot',
-                return_url: returnUrl
+                return_url: returnUrl,
+                cancel_url: cancelUrl
             })
         });
         const data = await fetchResponse.json();
