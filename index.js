@@ -1746,6 +1746,56 @@ function clearSessionCallStateForValues(sessionData, values) {
     return matchedKeys.length;
 }
 
+function getCanonicalUserStateKey(values = [], fallback = '') {
+    const candidates = buildUserMatchValues(values, fallback)
+        .filter(value => value && !isGroupJid(String(value)) && String(value) !== 'status@broadcast');
+    const normalizedJids = candidates
+        .filter(value => String(value).includes('@') || digitsOnly(value))
+        .map(value => normalizeJid(value))
+        .filter(Boolean);
+    const lidDigits = new Set(normalizedJids.filter(jid => jid.endsWith('@lid')).map(digitsOnly).filter(Boolean));
+    const phoneJid = normalizedJids.find(jid =>
+        jid.endsWith('@s.whatsapp.net') &&
+        digitsOnly(jid).length >= 7 &&
+        !lidDigits.has(digitsOnly(jid))
+    );
+    if (phoneJid) return phoneJid;
+    const lidJid = normalizedJids.find(jid => jid.endsWith('@lid'));
+    if (lidJid) return lidJid;
+    const digits = candidates.map(digitsOnly).find(value => value && value.length >= 7);
+    if (digits) return `${digits}@s.whatsapp.net`;
+    return normalizeJid(fallback || candidates[0] || '');
+}
+
+function mergeCallSpamTrackerForUser(sessionData, canonicalKey, values = [], now = Date.now(), windowMs = 30 * 60 * 1000) {
+    if (!sessionData || !canonicalKey) return [];
+    if (!sessionData.callSpamTracker) sessionData.callSpamTracker = {};
+
+    const candidates = buildUserMatchValues(canonicalKey, values);
+    const matchingKeys = Object.keys(sessionData.callSpamTracker)
+        .filter(key => key === canonicalKey || candidates.some(value => valuesMatchUser(key, value)));
+    const timestamps = [];
+
+    for (const key of matchingKeys) {
+        const list = Array.isArray(sessionData.callSpamTracker[key]) ? sessionData.callSpamTracker[key] : [];
+        timestamps.push(...list);
+        if (key !== canonicalKey) delete sessionData.callSpamTracker[key];
+    }
+
+    const merged = Array.from(new Set(timestamps
+        .map(ts => Number(ts))
+        .filter(ts => Number.isFinite(ts) && now - ts < windowMs)))
+        .sort((a, b) => a - b);
+    sessionData.callSpamTracker[canonicalKey] = merged;
+    return merged;
+}
+
+function incrementRejectedCallStats(sessionData) {
+    if (!sessionData) return;
+    sessionData.stats.totalCallsRejected = (sessionData.stats.totalCallsRejected || 0) + 1;
+    sessionData.saveStats();
+}
+
 async function clearCallBlocksForValues(sock, sessionData, values) {
     const candidates = buildUserMatchValues(values);
     const matchedCount = clearSessionCallStateForValues(sessionData, candidates);
@@ -5966,14 +6016,32 @@ async function handleGroupJoin(sock, notification, sessionId) {
 
 // ============================================================
 
-const callProcessingLock = new Map(); // { callerId: boolean } par session
+const recentCallEvents = new Map();
+const RECENT_CALL_EVENT_TTL_MS = 2 * 60 * 1000;
+
+function getCallEventId(call) {
+    return call?.id || call?.callId || call?.offerId || call?.callKey || call?.stanzaId || '';
+}
+
+function isDuplicateCallEvent(sessionId, callerId, call, now = Date.now()) {
+    for (const [key, timestamp] of recentCallEvents.entries()) {
+        if (now - timestamp > RECENT_CALL_EVENT_TTL_MS) recentCallEvents.delete(key);
+    }
+
+    const eventId = getCallEventId(call);
+    if (!eventId) return false;
+    const key = `${sessionId}:${callerId}:${eventId}`;
+
+    if (recentCallEvents.has(key)) return true;
+    recentCallEvents.set(key, now);
+    return false;
+}
 
 
 async function handleCall(sock, call, sessionId) {
     const receivedAt = Date.now();
     const sessionData = getSessionData(sessionId);
     const callerId = getCallFrom(call);
-    const lockKey = callerId ? sessionId + '_' + callerId : null;
     let alreadyRejected = false;
 
     try {
@@ -5982,17 +6050,16 @@ async function handleCall(sock, call, sessionId) {
 
         sessionData.addLog('[CALL] Appel entrant de ' + callerId);
 
-        if (lockKey && callProcessingLock.get(lockKey)) {
-            try { await rejectBaileysCall(sock, call); } catch (e) {}
-            sessionData.addLog('[CALL] Appel ' + callerId + ' rejete (traitement concurrent en cours)');
-            return;
-        }
-        if (lockKey) callProcessingLock.set(lockKey, true);
-
         const fastMatchValues = getCallFastMatchValues(sock, call, callerId);
         const fastException = findUserException(sessionData.userExceptions.excludedUsers, fastMatchValues, 'call');
         if (fastException) {
             sessionData.addLog('[OK] ' + callerId + ' exempte du rejet appels (cache local) - appel ignore');
+            return;
+        }
+
+        if (isDuplicateCallEvent(sessionId, callerId, call, receivedAt)) {
+            try { await rejectBaileysCall(sock, call); } catch (e) {}
+            sessionData.addLog('[CALL] Evenement appel deja traite pour ' + callerId + ' - compteur conserve');
             return;
         }
 
@@ -6001,14 +6068,17 @@ async function handleCall(sock, call, sessionId) {
             alreadyRejected = true;
             const rejectMs = Date.now() - receivedAt;
             sessionData.addLog('[REJECT] Appel rejete immediatement: ' + callerId + ' (' + rejectMs + 'ms)');
-            sessionData.stats.totalCallsRejected++;
+            incrementRejectedCallStats(sessionData);
             rateLimiter.recordAction();
         } catch (rejectError) {
             sessionData.addLog('[!] Erreur rejet appel immediat: ' + rejectError.message);
         }
 
         const contact = await getContactInfo(sock, callerId);
-        const callerNumber = contact.number || jidNumber(callerId);
+        const normalizedCallerId = normalizeJid(callerId);
+        const callerNumber = contact.phoneNumber
+            ? jidNumber(contact.phoneNumber)
+            : (normalizedCallerId.endsWith('@s.whatsapp.net') ? jidNumber(normalizedCallerId) : '');
         if (callerNumber) sessionData.addLog('Numero associe: ' + callerNumber);
 
         const callerAliases = await resolveUserAliases(sock, callerId);
@@ -6047,7 +6117,7 @@ async function handleCall(sock, call, sessionId) {
                 await rejectBaileysCall(sock, call);
                 alreadyRejected = true;
                 sessionData.addLog('[REJECT] Appel rejete: ' + callerId);
-                sessionData.stats.totalCallsRejected++;
+                incrementRejectedCallStats(sessionData);
                 rateLimiter.recordAction();
             } catch (rejectError) {
                 sessionData.addLog('[!] Erreur rejet appel: ' + rejectError.message);
@@ -6060,13 +6130,14 @@ async function handleCall(sock, call, sessionId) {
         const callBlockDurationMin = getCallBlockDurationMin(sessionData.config);
         const callBlockDurationText = formatCallBlockDuration(callBlockDurationMin);
         const windowMs = (sessionData.config.CALL_SPAM_WINDOW_MIN || 30) * 60 * 1000;
-        if (!sessionData.callSpamTracker[callerId]) sessionData.callSpamTracker[callerId] = [];
-        sessionData.callSpamTracker[callerId] = sessionData.callSpamTracker[callerId].filter(ts => now - ts < windowMs);
-        sessionData.callSpamTracker[callerId].push(now);
-        const callCount = sessionData.callSpamTracker[callerId].length;
+        const callStateKey = getCanonicalUserStateKey(callMatchValues, callerId);
+        const callTimestamps = mergeCallSpamTrackerForUser(sessionData, callStateKey, callMatchValues, now, windowMs);
+        callTimestamps.push(now);
+        sessionData.callSpamTracker[callStateKey] = callTimestamps;
+        const callCount = callTimestamps.length;
         sessionData.saveCallSpamData();
 
-        sessionData.addLog('[STATS] ' + callerId + ': ' + callCount + '/' + sessionData.config.CALL_SPAM_THRESHOLD + ' appels');
+        sessionData.addLog('[STATS] ' + (callerNumber ? '+' + callerNumber : callerId) + ': ' + callCount + '/' + sessionData.config.CALL_SPAM_THRESHOLD + ' appels');
 
         if (callCount >= sessionData.config.CALL_SPAM_THRESHOLD) {
             sessionData.addLog('[SPAM] SPAM: ' + callerId + ' - ' + callCount + ' appels -> BLOCAGE');
@@ -6081,16 +6152,16 @@ async function handleCall(sock, call, sessionId) {
 
             await HumanBehavior.naturalDelay(HumanBehavior.blockDelay());
 
-            sessionData.blockedUsers[callerId] = {
+            sessionData.blockedUsers[callStateKey] = {
                 blockedAt: Date.now(),
                 autoUnblock: true,
                 callCount
             };
             sessionData.saveCallSpamData();
-            sessionData.addLog('[LOCK] ' + callerId + ' marque bloque en interne');
+            sessionData.addLog('[LOCK] ' + callerId + ' marque bloque en interne (' + callStateKey + ')');
 
             try {
-                const normalizedCaller = normalizeJid(callerId);
+                const normalizedCaller = normalizeJid(callStateKey || callerId);
                 const alreadyBlockedOnWhatsApp = await isUserBlockedOnWhatsApp(sock, buildUserMatchValues(callMatchValues, normalizedCaller));
                 if (!alreadyBlockedOnWhatsApp) {
                     await sock.updateBlockStatus(normalizedCaller, 'block');
@@ -6102,16 +6173,16 @@ async function handleCall(sock, call, sessionId) {
                 }
 
                 const blockDuration = callBlockDurationMin * 60 * 1000;
-                if (sessionData.unblockTimers[callerId]) clearTimeout(sessionData.unblockTimers[callerId]);
-                sessionData.unblockTimers[callerId] = setTimeout(async () => {
-                    if (sessionData.blockedUsers[callerId] && sessionData.blockedUsers[callerId].autoUnblock) {
+                if (sessionData.unblockTimers[callStateKey]) clearTimeout(sessionData.unblockTimers[callStateKey]);
+                sessionData.unblockTimers[callStateKey] = setTimeout(async () => {
+                    if (sessionData.blockedUsers[callStateKey] && sessionData.blockedUsers[callStateKey].autoUnblock) {
                         try {
                             await HumanBehavior.naturalDelay(HumanBehavior.gaussianRandom(3000, 1500));
                             await sock.updateBlockStatus(normalizedCaller, 'unblock');
                             ensureRuntime(sock).blocklist.delete(normalizedCaller);
-                            delete sessionData.blockedUsers[callerId];
-                            delete sessionData.callSpamTracker[callerId];
-                            delete sessionData.unblockTimers[callerId];
+                            delete sessionData.blockedUsers[callStateKey];
+                            delete sessionData.callSpamTracker[callStateKey];
+                            delete sessionData.unblockTimers[callStateKey];
                             sessionData.saveCallSpamData();
                             sessionData.addLog('[UNBLOCK] ' + callerId + ' debloque automatiquement');
                         } catch (error) {
@@ -6142,8 +6213,6 @@ async function handleCall(sock, call, sessionId) {
     } catch (error) {
         const sd = getSessionData(sessionId);
         sd.addLog('[X] Erreur handler appel: ' + error.message);
-    } finally {
-        if (lockKey) callProcessingLock.delete(lockKey);
     }
 }
 
