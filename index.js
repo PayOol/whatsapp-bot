@@ -2158,6 +2158,18 @@ const HumanBehavior = {
 // ============================================================
 
 const MessagePool = {
+    remainingWarningsText(remaining) {
+        const safeRemaining = Math.max(0, Number(remaining) || 0);
+        const warningWord = safeRemaining > 1 ? 'avertissements' : 'avertissement';
+        const verbWord = safeRemaining > 1 ? 'restants' : 'restant';
+        return `${safeRemaining} ${warningWord} ${verbWord}`;
+    },
+
+    callAttemptsText(remaining) {
+        const safeRemaining = Math.max(0, Number(remaining) || 0);
+        return `${safeRemaining} tentative${safeRemaining > 1 ? 's' : ''}`;
+    },
+
     warnings: [
         (mention, count, max, remaining) =>
             `⚠️ ${mention} Les liens ne sont pas autorisés ici. Message supprimé.\nAvertissement ${count}/${max}. Encore ${remaining} avant bannissement.`,
@@ -2169,6 +2181,16 @@ const MessagePool = {
             `⚠️ ${mention}, les liens ne sont pas acceptés ici.\nMessage supprimé. Avertissement ${count}/${max}. Plus que ${remaining} avertissement(s).`,
         (mention, count, max, remaining) =>
             `${mention} 🔗❌ Pas de liens svp. Message retiré.\n${count}/${max} avertissements — ${remaining} restant(s) avant exclusion.`,
+        (mention, count, max, remaining) =>
+            `🚧 ${mention} Lien détecté et supprimé automatiquement.\nProgression: ${count}/${max}. ${MessagePool.remainingWarningsText(remaining)} avant exclusion.`,
+        (mention, count, max, remaining) =>
+            `${mention} Merci de respecter la règle anti-liens du groupe.\nMessage retiré. Avertissement ${count}/${max}, ${MessagePool.remainingWarningsText(remaining)}.`,
+        (mention, count, max, remaining) =>
+            `⚠️ Rappel pour ${mention}: aucun lien n'est autorisé ici.\nSuppression effectuée. Compteur: ${count}/${max}. ${remaining} chance(s) restante(s).`,
+        (mention, count, max, remaining) =>
+            `🔒 ${mention} Le partage de liens est bloqué dans ce groupe.\nVotre message a été supprimé. Avertissement ${count}/${max}, ${MessagePool.remainingWarningsText(remaining)}.`,
+        (mention, count, max, remaining) =>
+            `${mention} Ce groupe applique une modération anti-liens stricte.\nLien supprimé. Vous êtes à ${count}/${max}; il reste ${remaining} avant bannissement.`,
     ],
 
     bans: [
@@ -2178,6 +2200,14 @@ const MessagePool = {
             `❌ ${mention} est banni(e). ${max} avertissements pour partage de liens dépassés.`,
         (mention, max) =>
             `${mention} a été retiré(e) du groupe. Les ${max} avertissements pour liens ont été atteints. 🚫`,
+        (mention, max) =>
+            `⛔ ${mention} a atteint la limite de ${max} avertissements anti-liens. Exclusion appliquée.`,
+        (mention, max) =>
+            `🔒 Modération appliquée: ${mention} est retiré(e) après ${max} avertissements pour liens interdits.`,
+        (mention, max) =>
+            `${mention} n'a pas respecté la règle anti-liens après ${max} avertissements. Bannissement effectué.`,
+        (mention, max) =>
+            `🚫 Limite atteinte pour ${mention}: ${max}/${max} avertissements. Retrait du groupe effectué.`,
     ],
 
     callRejections: [
@@ -2197,6 +2227,18 @@ const MessagePool = {
             `🚫 Appel rejeté. Merci d'utiliser les messages.\n🔒 Encore ${remaining} appel(s) et votre contact sera bloqué pendant ${blockDurationText}.`,
         (remaining) =>
             `📞❌ Les appels sont désactivés. Préférez un message texte svp.\n⚠️ ${remaining} tentative(s) restante(s) avant suspension temporaire.`,
+        (remaining, blockDurationText) =>
+            `📵 Appel refusé automatiquement. Merci d'écrire directement ici.\nEncore ${MessagePool.callAttemptsText(remaining)} avant blocage temporaire de ${blockDurationText}.`,
+        (remaining) =>
+            `🔕 Je ne peux pas répondre aux appels pour le moment.\nEnvoyez un message texte. ${MessagePool.callAttemptsText(remaining)} avant blocage.`,
+        (remaining, blockDurationText) =>
+            `⚠️ Les appels répétés déclenchent un blocage automatique.\nIl reste ${MessagePool.callAttemptsText(remaining)} avant une pause de ${blockDurationText}.`,
+        (remaining) =>
+            `❌ Appel non accepté. Pour toute demande, utilisez les messages WhatsApp.\nLimite avant blocage: ${MessagePool.callAttemptsText(remaining)}.`,
+        (remaining, blockDurationText) =>
+            `🚫 Les appels sont filtrés ici. Merci d'envoyer votre demande par écrit.\nAprès ${MessagePool.callAttemptsText(remaining)}, blocage pendant ${blockDurationText}.`,
+        (remaining) =>
+            `📩 Contact par message uniquement, s'il vous plaît.\n${MessagePool.callAttemptsText(remaining)} avant blocage temporaire.`,
     ],
 
     callBlocked: [
@@ -2208,9 +2250,15 @@ const MessagePool = {
         (blockDurationText) => `⏳ Suite à vos appels répétés, vous êtes bloqué(e) pendant ${blockDurationText}. Envoyez un message ensuite.`,
         (blockDurationText) => `🚫 Appels excessifs détectés. Blocage temporaire de ${blockDurationText} en cours. Merci de patienter.`,
         (blockDurationText) => `⛔ Vous avez dépassé la limite d'appels autorisée. Contact bloqué pour ${blockDurationText}.`,
+        (blockDurationText) => `🔕 Trop d'appels rapprochés. Un blocage automatique de ${blockDurationText} vient d'être appliqué.`,
+        (blockDurationText) => `📵 La limite d'appels a été atteinte. Vous pourrez réessayer après ${blockDurationText}.`,
+        (blockDurationText) => `🚧 Protection anti-spam activée: contact bloqué pendant ${blockDurationText} à cause des appels répétés.`,
+        (blockDurationText) => `⏱️ Blocage temporaire en cours pour ${blockDurationText}. Merci d'utiliser les messages après ce délai.`,
+        (blockDurationText) => `🔒 Appels multiples détectés. Votre contact est suspendu pendant ${blockDurationText}.`,
     ],
 
     pick(pool, ...args) {
+        if (!Array.isArray(pool) || !pool.length) return '';
         const index = Math.floor(Math.random() * pool.length);
         return typeof pool[index] === 'function' ? pool[index](...args) : pool[index];
     }
