@@ -4824,15 +4824,20 @@ class SessionManager {
                 sock.isReady = false;
                 sock._destroyed = true;
                 const statusCode = lastDisconnect?.error?.output?.statusCode;
+                const restartRequired = statusCode === DisconnectReason?.restartRequired
+                    || String(lastDisconnect?.error?.message || '').toLowerCase().includes('restart required');
                 const reason = statusCode === DisconnectReason?.loggedOut ? 'LOGOUT' : (lastDisconnect?.error?.message || String(statusCode || 'close'));
                 if (session) {
-                    session.data.status = statusCode === DisconnectReason?.loggedOut ? 'auth_failure' : 'disconnected';
+                    session.data.status = statusCode === DisconnectReason?.loggedOut
+                        ? 'auth_failure'
+                        : (restartRequired ? 'pending' : 'disconnected');
                     this.sessionsList[sessionId].status = session.data.status;
                     this.saveSessionsList();
                 }
-                addLog('[DECO] [' + sessionId + '] Deconnecte: ' + reason);
+                if (restartRequired) addLog('[RESTART] [' + sessionId + '] Redemarrage Baileys requis apres appairage');
+                else addLog('[DECO] [' + sessionId + '] Deconnecte: ' + reason);
                 if (statusCode !== DisconnectReason?.loggedOut) {
-                    this.scheduleReconnect(sessionId, reason, 10000);
+                    this.scheduleReconnect(sessionId, reason, restartRequired ? 1000 : 10000);
                 }
             }
         });
