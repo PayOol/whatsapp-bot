@@ -4999,6 +4999,40 @@ app.delete('/api/suggestions/:id', requireAuth, (req, res) => {
 
 // ============ API ABONNEMENTS ============
 
+// Créer une session de checkout LeekPay (pour redirection)
+app.post('/api/subscription/create-checkout', requireAuth, async (req, res) => {
+    if (!subscriptionSettings.enabled) return res.json({ success: false, message: 'Abonnement désactivé' });
+    if (!subscriptionSettings.secretKey) return res.json({ success: false, message: 'Clé secrète non configurée' });
+
+    const returnUrl = req.body.returnUrl || `${req.protocol}://${req.get('host')}/`;
+    
+    try {
+        const fetchResponse = await fetch('https://leekpay.fr/api/v1/checkout', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${subscriptionSettings.secretKey}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                amount: subscriptionSettings.amount,
+                currency: subscriptionSettings.currency,
+                description: subscriptionSettings.description || 'Abonnement PayOol Bot',
+                return_url: returnUrl
+            })
+        });
+        const data = await fetchResponse.json();
+        
+        if (data.success && data.data && data.data.payment_url) {
+            res.json({ success: true, paymentUrl: data.data.payment_url, checkoutId: data.data.id });
+        } else {
+            res.status(400).json({ success: false, message: 'Erreur création checkout: ' + JSON.stringify(data) });
+        }
+    } catch(e) {
+        console.error('Erreur create-checkout:', e);
+        res.status(500).json({ success: false, message: 'Erreur serveur' });
+    }
+});
+
 // Obtenir les paramètres d'abonnement publics (clé API, montant, etc.)
 app.get('/api/subscription/settings', (req, res) => {
     res.json({

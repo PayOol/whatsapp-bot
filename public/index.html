@@ -3178,6 +3178,29 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
     }
     
     document.addEventListener('DOMContentLoaded', () => {
+        // Handle return from LeekPay redirection
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('leekpay_return') === '1') {
+            const checkoutId = localStorage.getItem('pendingLeekPayCheckout');
+            if (checkoutId) {
+                localStorage.removeItem('pendingLeekPayCheckout');
+                const storedSession = localStorage.getItem('pendingSessionName');
+                if (storedSession) {
+                    pendingSessionName = storedSession;
+                    localStorage.removeItem('pendingSessionName');
+                }
+                
+                showToast('Vérification du paiement en cours...', 'info');
+                
+                // The URL is cleaned without reloading
+                window.history.replaceState({}, document.title, window.location.pathname);
+                
+                // Need to wait slightly for UI to be ready
+                setTimeout(() => {
+                    confirmPayment({ payment_id: checkoutId });
+                }, 1000);
+            }
+        }
         // Vérifier l'authentification d'abord
         checkAuthStatus().then(isAuthed => {
             if (isAuthed) {
@@ -4753,18 +4776,12 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         pendingSessionName = null;
     }
     
-    function initiatePayment() {
+    async function initiatePayment() {
         if (!subSettings || !subSettings.apiKey) {
             showToast('Système de paiement non configuré', 'error');
             return;
         }
         
-        if (typeof LeekPay === 'undefined') {
-            showToast('SDK de paiement non chargé. Rechargez la page.', 'error');
-            return;
-        }
-        
-        // Utiliser le bouton de la modale OU de l'overlay
         const btn = document.getElementById('sub-pay-btn') || document.getElementById('sub-overlay-btn');
         if (btn) {
             btn.disabled = true;
@@ -4779,24 +4796,32 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         }
         
         try {
-            LeekPay.checkout({
-                apiKey: subSettings.apiKey,
-                amount: subSettings.amount,
-                currency: subSettings.currency,
-                description: subSettings.description || 'Abonnement PayOol Bot',
-                onSuccess: function(data) {
-                    resetBtn();
-                    confirmPayment(data);
-                },
-                onCancel: function() {
-                    resetBtn();
-                    showToast('Paiement annulé', 'warning');
-                }
+            const returnUrl = window.location.href.split('?')[0] + '?leekpay_return=1';
+            const res = await authFetch('/api/subscription/create-checkout', {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                body: JSON.stringify({ returnUrl: returnUrl })
             });
+            const data = await res.json();
+            
+            if (data.success && data.paymentUrl) {
+                // Sauvegarder l'ID de session LeekPay pour vérification au retour
+                localStorage.setItem('pendingLeekPayCheckout', data.checkoutId);
+                // Si on a une session en attente, la sauvegarder aussi
+                if (pendingSessionName) {
+                    localStorage.setItem('pendingSessionName', pendingSessionName);
+                }
+                
+                // Redirection normale vers la page de paiement
+                window.location.href = data.paymentUrl;
+            } else {
+                resetBtn();
+                showToast(data.message || 'Erreur lors de la création du paiement', 'error');
+            }
         } catch (e) {
             resetBtn();
-            showToast('Erreur paiement: ' + e.message, 'error');
-            console.error('LeekPay error:', e);
+            showToast('Erreur de connexion au serveur', 'error');
+            console.error('Erreur create-checkout:', e);
         }
     }
     
