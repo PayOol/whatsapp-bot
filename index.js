@@ -5008,6 +5008,9 @@ app.post('/api/subscription/create-checkout', requireAuth, async (req, res) => {
     const cancelUrl = req.body.cancelUrl || `${req.protocol}://${req.get('host')}/`;
     
     try {
+        const baseDescription = subscriptionSettings.description || 'Abonnement PayOol Bot';
+        const finalDescription = `${baseDescription} - Utilisateur: ${req.user.username}`;
+        
         const fetchResponse = await fetch('https://leekpay.fr/api/v1/checkout', {
             method: 'POST',
             headers: {
@@ -5017,7 +5020,7 @@ app.post('/api/subscription/create-checkout', requireAuth, async (req, res) => {
             body: JSON.stringify({
                 amount: subscriptionSettings.amount,
                 currency: subscriptionSettings.currency,
-                description: subscriptionSettings.description || 'Abonnement PayOol Bot',
+                description: finalDescription,
                 return_url: returnUrl,
                 cancel_url: cancelUrl
             })
