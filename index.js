@@ -749,6 +749,32 @@ async function getAllChatsWithOptions(sock, options = {}) {
     return cachedChats();
 }
 
+async function hydrateMissingGroupParticipants(sock, groups = [], options = {}) {
+    const missingGroups = groups.filter(group => group?.isGroup && (!group.participants || group.participants.length === 0));
+    const maxGroups = Math.max(0, Math.min(Number(options.maxGroups || 80), missingGroups.length));
+    const delayMs = Math.max(0, Number(options.delayMs ?? 700));
+    let hydrated = 0;
+    let rateLimited = false;
+
+    for (const group of missingGroups.slice(0, maxGroups)) {
+        try {
+            const before = (ensureRuntime(sock).chats.get(group.jid)?.participants || group.participants || []).length;
+            const fresh = await getChatInfo(sock, group.jid, true);
+            const after = (fresh?.participants || []).length;
+            if (!before && after > 0) hydrated++;
+        } catch (error) {
+            if (isRateLimitError(error)) {
+                rateLimited = true;
+                break;
+            }
+        }
+
+        if (delayMs > 0) await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+
+    return { hydrated, attempted: Math.min(maxGroups, missingGroups.length), missing: missingGroups.length, rateLimited };
+}
+
 function mergeDefinedObject(...objects) {
     const merged = {};
     for (const object of objects || []) {
@@ -4520,6 +4546,9 @@ try {
 class SessionManager {
     constructor() {
         this.sessions = new Map();
+        this.startPromises = new Map();
+        this.reconnectTimers = new Map();
+        this.initialScanTimers = new Map();
         this.activeSessionId = null;
         this.sessionsFile = path.join(DATA_DIR, 'sessions.json');
         this.loadSessionsList();
@@ -4591,7 +4620,7 @@ class SessionManager {
         this.saveSessionsList();
 
         const client = await this.initClient(id);
-        this.sessions.set(id, { client, data: sessionData });
+        this.sessions.set(id, { client, data: sessionData, socketGeneration: client?._socketGeneration });
         return sessionData;
     }
 
@@ -4620,7 +4649,37 @@ class SessionManager {
         return sessionsToRemove.length;
     }
 
-    async initClient(sessionId) {
+    clearReconnectTimer(sessionId) {
+        const timer = this.reconnectTimers.get(sessionId);
+        if (timer) clearTimeout(timer);
+        this.reconnectTimers.delete(sessionId);
+    }
+
+    clearInitialScanTimer(sessionId) {
+        const timer = this.initialScanTimers.get(sessionId);
+        if (timer) clearTimeout(timer);
+        this.initialScanTimers.delete(sessionId);
+    }
+
+    scheduleReconnect(sessionId, reason, delayMs = 10000) {
+        if (this.reconnectTimers.has(sessionId)) return;
+        addLog('[RECONNECT] [' + sessionId + '] Reconnexion auto dans ' + Math.round(delayMs / 1000) + 's...');
+        const timer = setTimeout(() => {
+            this.reconnectTimers.delete(sessionId);
+            this.startSession(sessionId).catch(e => addLog('[RECONNECT] [' + sessionId + '] Erreur: ' + e.message));
+        }, delayMs);
+        timer.unref?.();
+        this.reconnectTimers.set(sessionId, timer);
+    }
+
+    isCurrentSocket(sessionId, sock) {
+        const session = this.sessions.get(sessionId);
+        if (!session) return true;
+        if (session.client === sock) return true;
+        return !!sock?._socketGeneration && session.socketGeneration === sock._socketGeneration;
+    }
+
+    async initClient(sessionId, socketGeneration = null) {
         const sessionData = this.sessionsList[sessionId];
         if (!sessionData) return null;
 
@@ -4649,6 +4708,7 @@ class SessionManager {
         sock.info = null;
         sock.isReady = false;
         sock._destroyed = false;
+        sock._socketGeneration = socketGeneration || ('sock_' + Date.now() + '_' + crypto.randomBytes(4).toString('hex'));
         ensureRuntime(sock);
         loadPersistentMessageCache(sock, sessionId);
         this.setupClientEvents(sock, sessionId, {
@@ -4669,6 +4729,7 @@ class SessionManager {
         sock.ev.on('connection.update', async (update) => {
             const { connection, lastDisconnect, qr } = update;
             const session = this.sessions.get(sessionId);
+            if (!this.isCurrentSocket(sessionId, sock)) return;
 
             if (qr) {
                 if (session) {
@@ -4692,6 +4753,7 @@ class SessionManager {
             }
 
             if (connection === 'open') {
+                this.clearReconnectTimer(sessionId);
                 if (qrTimeout) { clearTimeout(qrTimeout); qrTimeout = null; }
                 const me = sock.user || sock.authState?.creds?.me || {};
                 const ownJid = jidNormalizedUser ? jidNormalizedUser(me.lid || me.id) : normalizeJid(me.lid || me.id);
@@ -4727,28 +4789,37 @@ class SessionManager {
                 await sock.fetchBlocklist?.().then(list => {
                     ensureRuntime(sock).blocklist = new Set((list || []).filter(Boolean).map(normalizeJid));
                 }).catch(() => {});
+                if (!this.isCurrentSocket(sessionId, sock) || sock._destroyed) return;
 
                 addLog('[OK] [' + sessionId + '] Bot connecte et pret!');
                 restoreUnblockTimers(sessionId);
                 startPresenceManager(sessionId);
                 const sessionData = getSessionData(sessionId);
+                this.clearInitialScanTimer(sessionId);
                 if (sessionData.config.AUTO_SCAN_ENABLED) {
                     const startupDelay = HumanBehavior.gaussianRandom(45000, 15000);
                     addLog('[TIMER] [' + sessionId + '] Premier scan dans ' + Math.round(startupDelay / 1000) + 's...');
                     const scheduledFor = sock;
-                    await new Promise(r => setTimeout(r, startupDelay));
-                    const currentSession = this.sessions.get(sessionId);
-                    if (!currentSession || currentSession.client !== scheduledFor) {
-                        addLog('[TIMER] [' + sessionId + '] Scan initial annule (session redemarree)');
-                    } else {
+                    const initialTimer = setTimeout(async () => {
+                        this.initialScanTimers.delete(sessionId);
+                        const currentSession = this.sessions.get(sessionId);
+                        if (!currentSession || currentSession.client !== scheduledFor || currentSession.data.status !== 'connected') {
+                            addLog('[TIMER] [' + sessionId + '] Scan initial annule (session redemarree)');
+                            return;
+                        }
                         try { await scanAllGroups(sessionId); }
                         catch (scanError) { addLog('[X] [' + sessionId + '] Erreur scan initial: ' + scanError.message); }
-                    }
+                        scheduleNextScan(sessionId);
+                    }, startupDelay);
+                    initialTimer.unref?.();
+                    this.initialScanTimers.set(sessionId, initialTimer);
+                } else {
+                    scheduleNextScan(sessionId);
                 }
-                scheduleNextScan(sessionId);
             }
 
             if (connection === 'close') {
+                this.clearInitialScanTimer(sessionId);
                 if (qrTimeout) { clearTimeout(qrTimeout); qrTimeout = null; }
                 sock.isReady = false;
                 sock._destroyed = true;
@@ -4761,13 +4832,13 @@ class SessionManager {
                 }
                 addLog('[DECO] [' + sessionId + '] Deconnecte: ' + reason);
                 if (statusCode !== DisconnectReason?.loggedOut) {
-                    addLog('[RECONNECT] [' + sessionId + '] Reconnexion auto dans 10s...');
-                    setTimeout(() => this.startSession(sessionId).catch(e => addLog('[RECONNECT] [' + sessionId + '] Erreur: ' + e.message)), 10000);
+                    this.scheduleReconnect(sessionId, reason, 10000);
                 }
             }
         });
 
         sock.ev.on('messages.upsert', async ({ type, messages }) => {
+            if (!this.isCurrentSocket(sessionId, sock)) return;
             for (const message of messages || []) {
                 cacheMessage(sock, message);
                 cacheMessageContactInfo(sock, message);
@@ -4780,6 +4851,7 @@ class SessionManager {
         });
 
         sock.ev.on('messaging-history.set', ({ chats, contacts, messages, lidPnMappings }) => {
+            if (!this.isCurrentSocket(sessionId, sock)) return;
             const rt = ensureRuntime(sock);
             for (const chat of chats || []) rt.chats.set(chat.id, hydrateChat(chat.id, chat));
             for (const contact of contacts || []) cacheContactInfo(sock, contact);
@@ -4794,32 +4866,40 @@ class SessionManager {
         });
 
         sock.ev.on('lid-mapping.update', ({ lid, pn }) => {
+            if (!this.isCurrentSocket(sessionId, sock)) return;
             cacheLidPnMapping(sock, lid, pn);
         });
 
         sock.ev.on('chats.upsert', chats => {
+            if (!this.isCurrentSocket(sessionId, sock)) return;
             const rt = ensureRuntime(sock);
             for (const chat of chats || []) rt.chats.set(chat.id, hydrateChat(chat.id, chat));
         });
         sock.ev.on('chats.update', chats => {
+            if (!this.isCurrentSocket(sessionId, sock)) return;
             const rt = ensureRuntime(sock);
             for (const chat of chats || []) rt.chats.set(chat.id, hydrateChat(chat.id, { ...(rt.chats.get(chat.id)?._raw || {}), ...chat }));
         });
         sock.ev.on('contacts.upsert', contacts => {
+            if (!this.isCurrentSocket(sessionId, sock)) return;
             for (const contact of contacts || []) cacheContactInfo(sock, contact);
         });
         sock.ev.on('contacts.update', contacts => {
+            if (!this.isCurrentSocket(sessionId, sock)) return;
             for (const contact of contacts || []) cacheContactInfo(sock, contact);
         });
         sock.ev.on('groups.upsert', groups => {
+            if (!this.isCurrentSocket(sessionId, sock)) return;
             const rt = ensureRuntime(sock);
             for (const group of groups || []) rt.chats.set(group.id, hydrateChat(group.id, group));
         });
         sock.ev.on('groups.update', groups => {
+            if (!this.isCurrentSocket(sessionId, sock)) return;
             const rt = ensureRuntime(sock);
             for (const group of groups || []) rt.chats.set(group.id, hydrateChat(group.id, { ...(rt.chats.get(group.id)?._raw || {}), ...group }));
         });
         sock.ev.on('group-participants.update', async (event) => {
+            if (!this.isCurrentSocket(sessionId, sock)) return;
             if (!event?.id) return;
             getCachedChatInfo(sock, event.id);
             if (event.action === 'add') {
@@ -4829,9 +4909,11 @@ class SessionManager {
             }
         });
         sock.ev.on('blocklist.set', ({ blocklist }) => {
+            if (!this.isCurrentSocket(sessionId, sock)) return;
             ensureRuntime(sock).blocklist = new Set((blocklist || []).filter(Boolean).map(normalizeJid));
         });
         sock.ev.on('blocklist.update', async ({ blocklist, type }) => {
+            if (!this.isCurrentSocket(sessionId, sock)) return;
             const rt = ensureRuntime(sock);
             const sessionData = getSessionData(sessionId);
             for (const jid of blocklist || []) {
@@ -4846,6 +4928,7 @@ class SessionManager {
             }
         });
         sock.ev.on('call', async (calls) => {
+            if (!this.isCurrentSocket(sessionId, sock)) return;
             for (const call of calls || []) {
                 const status = call.status || call.tag;
                 if (!status || ['offer', 'ringing', 'call'].includes(status)) {
@@ -4856,11 +4939,14 @@ class SessionManager {
     }
 
     async startSession(sessionId) {
+        if (this.startPromises.has(sessionId)) return this.startPromises.get(sessionId);
+
+        const startPromise = (async () => {
         let session = this.sessions.get(sessionId);
         if (!session && this.sessionsList[sessionId]) {
             const client = await this.initClient(sessionId);
             if (!client) return false;
-            this.sessions.set(sessionId, { client, data: { ...this.sessionsList[sessionId] } });
+            this.sessions.set(sessionId, { client, data: { ...this.sessionsList[sessionId] }, socketGeneration: client._socketGeneration });
             session = this.sessions.get(sessionId);
         }
         if (!session) return false;
@@ -4869,9 +4955,12 @@ class SessionManager {
         }
         if (!session.client || session.client._destroyed) {
             addLog('[START] [' + sessionId + '] Creation du socket Baileys');
-            const newClient = await this.initClient(sessionId);
+            const socketGeneration = 'sock_' + Date.now() + '_' + crypto.randomBytes(4).toString('hex');
+            session.socketGeneration = socketGeneration;
+            const newClient = await this.initClient(sessionId, socketGeneration);
             if (!newClient) return false;
             session.client = newClient;
+            session.socketGeneration = newClient._socketGeneration;
         }
         session.data.status = 'pending';
         if (this.sessionsList[sessionId]) {
@@ -4880,9 +4969,19 @@ class SessionManager {
         }
         addLog('[START] [' + sessionId + '] Session demarree');
         return true;
+        })();
+
+        this.startPromises.set(sessionId, startPromise);
+        try {
+            return await startPromise;
+        } finally {
+            this.startPromises.delete(sessionId);
+        }
     }
 
     async stopSession(sessionId) {
+        this.clearReconnectTimer(sessionId);
+        this.clearInitialScanTimer(sessionId);
         const session = this.sessions.get(sessionId);
         if (session && session.client) {
             try {
@@ -4977,7 +5076,7 @@ class SessionManager {
             }
             if (!this.sessions.has(sessionId)) {
                 const client = await this.initClient(sessionId);
-                if (client) this.sessions.set(sessionId, { client, data: { ...sessionData } });
+                if (client) this.sessions.set(sessionId, { client, data: { ...sessionData }, socketGeneration: client._socketGeneration });
             }
         }
         for (const sessionId of orphanSessions) {
@@ -5215,10 +5314,22 @@ async function scanAllGroups(sessionId = null, options = {}) {
         return { totalDeleted: 0, totalScanned: 0, totalWarned: 0, deferred: true };
     }
 
-    const allGroups = chats.filter(c => c.isGroup);
+    let allGroups = chats.filter(c => c.isGroup);
     if (!allGroups.length) {
         addLog('[SCAN] Aucun groupe charge depuis WhatsApp; scan reporte');
         return { totalDeleted: 0, totalScanned: 0, totalWarned: 0, deferred: true };
+    }
+
+    let groupsWithParticipants = allGroups.filter(g => (g.participants || []).length > 0).length;
+    if (groupsWithParticipants === 0) {
+        addLog('[SCAN] Participants absents dans la liste des groupes, chargement des metadonnees groupe par groupe...');
+        const hydration = await hydrateMissingGroupParticipants(sessionClient, allGroups, {
+            maxGroups: options.metadataHydrationLimit ?? 80,
+            delayMs: options.metadataHydrationDelayMs ?? 700
+        });
+        allGroups = allGroups.map(group => ensureRuntime(sessionClient).chats.get(group.jid) || group);
+        groupsWithParticipants = allGroups.filter(g => (g.participants || []).length > 0).length;
+        addLog('[SCAN] Metadonnees groupes: ' + hydration.hydrated + '/' + hydration.attempted + ' groupe(s) avec participants apres hydratation' + (hydration.rateLimited ? ' (limite WhatsApp atteinte)' : ''));
     }
 
     const groups = allGroups.filter(c => {
@@ -5229,7 +5340,6 @@ async function scanAllGroups(sessionId = null, options = {}) {
 
     addLog('[STATS] ' + groups.length + ' groupes administres detectes');
     if (!groups.length) {
-        const groupsWithParticipants = allGroups.filter(g => (g.participants || []).length > 0).length;
         addLog('[SCAN] ' + allGroups.length + ' groupe(s) vu(s), ' + groupsWithParticipants + ' avec participants. Verification admin impossible ou bot non reconnu.');
         addLog('[SCAN] Identifiants bot connus: ' + getOwnJids(sessionClient).slice(0, 6).join(', '));
         if (groupsWithParticipants === 0 && options.autoRetry !== false && !options._retriedAfterIncompleteGroups) {
