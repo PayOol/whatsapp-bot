@@ -1830,7 +1830,7 @@
             transition:all 0.2s;
         }
         .sub-pay-btn:hover{transform:translateY(-1px);box-shadow:0 4px 16px rgba(0,210,106,0.4);}
-        .sub-pay-btn:disabled{opacity:0.6;cursor:not-allowed;transform:none;box-shadow:none;}
+        .sub-pay-btn:disabled, #sub-overlay-btn:disabled {background: #cccccc !important; color: #666666 !important; cursor:not-allowed !important; transform:none; box-shadow:none;}
         .sub-status-bar{
             display:flex;align-items:center;gap:8px;
             padding:8px 14px;border-radius:var(--radius-md);
