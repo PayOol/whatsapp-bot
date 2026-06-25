@@ -1834,6 +1834,18 @@ function getCallFrom(call) {
     return normalizeJid(call?.from || call?.chatId || call?.creator || call?.participant || '');
 }
 
+function getCallFastMatchValues(sock, call, callerId) {
+    const cachedContact = findCachedContactInfo(sock, callerId, call?.from, call?.chatId, call?.creator, call?.participant);
+    return buildUserMatchValues(
+        callerId,
+        cachedContact,
+        call?.from,
+        call?.chatId,
+        call?.creator,
+        call?.participant
+    );
+}
+
 function isVideoCall(call) {
     return call?.isVideo === true || call?.type === 'video' || call?.callType === 'video';
 }
@@ -5931,9 +5943,11 @@ const callProcessingLock = new Map(); // { callerId: boolean } par session
 
 
 async function handleCall(sock, call, sessionId) {
+    const receivedAt = Date.now();
     const sessionData = getSessionData(sessionId);
     const callerId = getCallFrom(call);
     const lockKey = callerId ? sessionId + '_' + callerId : null;
+    let alreadyRejected = false;
 
     try {
         if (!sessionData.config.CALL_REJECT_ENABLED) return;
@@ -5948,6 +5962,24 @@ async function handleCall(sock, call, sessionId) {
         }
         if (lockKey) callProcessingLock.set(lockKey, true);
 
+        const fastMatchValues = getCallFastMatchValues(sock, call, callerId);
+        const fastException = findUserException(sessionData.userExceptions.excludedUsers, fastMatchValues, 'call');
+        if (fastException) {
+            sessionData.addLog('[OK] ' + callerId + ' exempte du rejet appels (cache local) - appel ignore');
+            return;
+        }
+
+        try {
+            await rejectBaileysCall(sock, call);
+            alreadyRejected = true;
+            const rejectMs = Date.now() - receivedAt;
+            sessionData.addLog('[REJECT] Appel rejete immediatement: ' + callerId + ' (' + rejectMs + 'ms)');
+            sessionData.stats.totalCallsRejected++;
+            rateLimiter.recordAction();
+        } catch (rejectError) {
+            sessionData.addLog('[!] Erreur rejet appel immediat: ' + rejectError.message);
+        }
+
         const contact = await getContactInfo(sock, callerId);
         const callerNumber = contact.number || jidNumber(callerId);
         if (callerNumber) sessionData.addLog('Numero associe: ' + callerNumber);
@@ -5959,7 +5991,7 @@ async function handleCall(sock, call, sessionId) {
         if (userException) {
             await clearCallBlocksForValues(sock, sessionData, buildUserMatchValues(callMatchValues, userException));
             sessionData.saveUserExceptions();
-            sessionData.addLog('[OK] ' + callerNumber + ' exempte du rejet appels - appel ignore');
+            sessionData.addLog('[OK] ' + callerNumber + ' exempte du rejet appels' + (alreadyRejected ? ' (detecte apres rejet rapide)' : ' - appel ignore'));
             return;
         }
 
@@ -5971,7 +6003,9 @@ async function handleCall(sock, call, sessionId) {
                 const stillBlocked = await isUserBlockedOnWhatsApp(sock, buildUserMatchValues(callMatchValues, internalBlockedKey));
                 if (stillBlocked) {
                     sessionData.addLog('[BLOCK] ' + callerId + ' deja bloque sur WhatsApp');
-                    try { await rejectBaileysCall(sock, call); } catch (e) {}
+                    if (!alreadyRejected) {
+                        try { await rejectBaileysCall(sock, call); } catch (e) {}
+                    }
                     return;
                 }
                 const cleared = await clearCallBlocksForValues(sock, sessionData, buildUserMatchValues(callMatchValues, internalBlockedKey));
@@ -5981,13 +6015,16 @@ async function handleCall(sock, call, sessionId) {
             }
         }
 
-        try {
-            await rejectBaileysCall(sock, call);
-            sessionData.addLog('[REJECT] Appel rejete: ' + callerId);
-            sessionData.stats.totalCallsRejected++;
-            rateLimiter.recordAction();
-        } catch (rejectError) {
-            sessionData.addLog('[!] Erreur rejet appel: ' + rejectError.message);
+        if (!alreadyRejected) {
+            try {
+                await rejectBaileysCall(sock, call);
+                alreadyRejected = true;
+                sessionData.addLog('[REJECT] Appel rejete: ' + callerId);
+                sessionData.stats.totalCallsRejected++;
+                rateLimiter.recordAction();
+            } catch (rejectError) {
+                sessionData.addLog('[!] Erreur rejet appel: ' + rejectError.message);
+            }
         }
 
         sessionData.addCallToHistory(callerId, callerNumber, isVideoCall(call), 'rejected');
