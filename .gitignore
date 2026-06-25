@@ -2,7 +2,9 @@
 node_modules/
 
 # WhatsApp session data
+.baileys_auth/
 .wwebjs_auth/
+.wwebjs_cache/
 
 # Data files
 *.json

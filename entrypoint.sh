@@ -2,7 +2,7 @@
 
 # Nettoyer les fichiers de verrouillage Chromium récursivement avec find
 echo "🔧 Nettoyage des fichiers de verrouillage Chromium..."
-find /app/.wwebjs_auth -name "Singleton*" -exec rm -f {} \; 2>/dev/null
+find /app/.baileys_auth -name "Singleton*" -exec rm -f {} \; 2>/dev/null
 echo "   ✅ Nettoyage terminé"
 
 # Créer le dossier data s'il n'existe pas
@@ -26,7 +26,7 @@ for file in logs.json warnings.json; do
 done
 
 # Créer les répertoires nécessaires
-mkdir -p /app/.wwebjs_auth /app/.wwebjs_cache
+mkdir -p /app/.baileys_auth
 
 # Lancer l'application
 exec npm start

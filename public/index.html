@@ -719,6 +719,46 @@
         }
         .cards-grid .card{margin-bottom:0}
 
+        #config-form{
+            display:grid;
+            gap:16px;
+        }
+        #config-form .card{margin-bottom:0}
+        #config-form .card-header{padding:16px 20px}
+        #config-form .card-body{padding:18px 20px}
+        #config-form .form-group{margin-bottom:14px}
+        #config-form .form-group:last-child{margin-bottom:0}
+        #config-form .form-hint + .form-hint{margin-top:2px}
+        #config-form .setting-row{padding:12px 0}
+        #config-form .setting-icon{width:36px;height:36px}
+        .config-top-grid{
+            display:grid;
+            grid-template-columns:repeat(3,minmax(0,1fr));
+            gap:16px;
+            align-items:start;
+        }
+        .config-top-grid .card{margin-bottom:0}
+        .config-delays-grid{
+            display:grid;
+            grid-template-columns:repeat(4,minmax(0,1fr));
+            gap:12px;
+            align-items:start;
+        }
+        .config-delays-grid .form-group{margin-bottom:0}
+        .config-save-row{margin-top:0}
+
+        @media (max-width:1200px){
+            .config-top-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+            .config-top-grid .card:nth-child(3){grid-column:1/-1}
+            .config-delays-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+        }
+
+        @media (max-width:760px){
+            .config-top-grid,
+            .config-delays-grid{grid-template-columns:1fr}
+            .config-top-grid .card:nth-child(3){grid-column:auto}
+        }
+
         /* ═══════════════════════════════════════
            BUTTONS
            ═══════════════════════════════════════ */
@@ -2127,7 +2167,7 @@
                                         <div class="action-icon green"><i class="fas fa-search"></i></div>
                                         <div class="action-text">
                                             <h4>Scanner les groupes</h4>
-                                            <p>Analyser tous les messages</p>
+                                            <p>Messages connus du bot</p>
                                         </div>
                                     </div>
                                     <div class="action-card" onclick="clearWarnings()">
@@ -2209,7 +2249,7 @@
                     </div>
 
                     <form id="config-form" autocomplete="off">
-                        <div class="cards-grid">
+                        <div class="config-top-grid">
                             <!-- Warnings -->
                             <div class="card">
                                 <div class="card-header">
@@ -2266,6 +2306,48 @@
                                     </div>
                                 </div>
                             </div>
+
+                            <!-- Calls -->
+                            <div class="card">
+                                <div class="card-header">
+                                    <h3 class="card-title">
+                                        <span class="card-title-icon"><i class="fas fa-phone-slash"></i></span>
+                                        Appels entrants
+                                    </h3>
+                                </div>
+                                <div class="card-body">
+                                    <div class="setting-row" style="padding-top:0">
+                                        <div class="setting-info">
+                                            <div class="setting-icon"><i class="fas fa-ban"></i></div>
+                                            <div class="setting-text">
+                                                <h4>Rejeter les appels</h4>
+                                                <p>Refuser automatiquement les appels WhatsApp entrants</p>
+                                            </div>
+                                        </div>
+                                        <label class="toggle">
+                                            <input type="checkbox" id="callRejectEnabled" checked>
+                                            <span class="toggle-track"></span>
+                                        </label>
+                                    </div>
+                                    <div class="form-row" style="margin-top:16px">
+                                        <div class="form-group">
+                                            <label class="form-label">Appels avant blocage</label>
+                                            <input type="number" class="form-input" id="callSpamThreshold" min="1" max="50" value="4">
+                                            <p class="form-hint">Nombre d'appels dans la fenetre avant blocage temporaire</p>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label">Fenetre anti-spam (min)</label>
+                                            <input type="number" class="form-input" id="callSpamWindow" min="1" max="1440" value="10">
+                                            <p class="form-hint">Periode observee pour compter les appels repetes</p>
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Duree du blocage (min)</label>
+                                        <input type="number" class="form-input" id="callBlockDuration" min="1" max="10080" value="30">
+                                        <p class="form-hint">Temps pendant lequel les appels du numero sont ignores apres abus</p>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <!-- Delays -->
@@ -2277,16 +2359,25 @@
                                 </h3>
                             </div>
                             <div class="card-body">
-                                <div class="form-row">
+                                <div class="config-delays-grid">
                                     <div class="form-group">
                                         <label class="form-label">Délai minimum (ms)</label>
-                                        <input type="number" class="form-input" id="delayMin" min="500" max="10000" value="2000">
+                                        <input type="number" class="form-input" id="delayMin" min="0" max="60000" value="2000">
                                     </div>
                                     <div class="form-group">
                                         <label class="form-label">Délai maximum (ms)</label>
-                                        <input type="number" class="form-input" id="delayMax" min="1000" max="20000" value="5000">
+                                        <input type="number" class="form-input" id="delayMax" min="0" max="120000" value="5000">
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Delai minimum entre groupes (ms)</label>
+                                        <input type="number" class="form-input" id="groupDelayMin" min="0" max="300000" value="5000">
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Delai maximum entre groupes (ms)</label>
+                                        <input type="number" class="form-input" id="groupDelayMax" min="0" max="600000" value="15000">
                                     </div>
                                 </div>
+                                <p class="form-hint">Ces pauses s'appliquent entre deux groupes pendant les scans globaux et les publications multi-groupes.</p>
                                 <p class="form-hint">Délais aléatoires entre les actions pour éviter le bannissement par WhatsApp</p>
                             </div>
                         </div>
@@ -2354,7 +2445,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                             </div>
                         </div>
 
-                        <div class="btn-group" style="margin-top:8px">
+                        <div class="btn-group config-save-row">
                             <button type="submit" class="btn btn-primary">
                                 Enregistrer les modifications
                             </button>
@@ -2428,6 +2519,58 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                     <div class="card">
                         <div class="card-header">
                             <h3 class="card-title">
+                                <span class="card-title-icon"><i class="fas fa-paper-plane"></i></span>
+                                Envoi WhatsApp cible
+                            </h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">Numeros WhatsApp</label>
+                                    <textarea class="form-input" id="bulk-whatsapp-numbers" rows="4" placeholder="237682167016&#10;33612345678&#10;+1 555 0100"></textarea>
+                                    <div class="btn-group" style="margin-top:10px">
+                                        <input type="file" id="bulk-whatsapp-csv-file" accept=".csv,text/csv" style="display:none" onchange="importBulkWhatsAppCsv(this.files?.[0]); this.value=''">
+                                        <button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById('bulk-whatsapp-csv-file').click()">
+                                            <i class="fas fa-file-csv"></i> Importer CSV
+                                        </button>
+                                    </div>
+                                    <p class="form-hint">Un numero par ligne, separe par virgule, ou CSV exporte depuis les participants du groupe.</p>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Message</label>
+                                    <textarea class="form-input" id="bulk-whatsapp-message" rows="4" placeholder="Votre message..."></textarea>
+                                    <p class="form-hint">L'envoi reste humanise et utilise des pauses entre les destinataires.</p>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">Delai min (s)</label>
+                                    <input type="number" class="form-input" id="bulk-delay-min" min="3" max="600" value="15">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Delai max (s)</label>
+                                    <input type="number" class="form-input" id="bulk-delay-max" min="3" max="900" value="45">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Pause tous les</label>
+                                    <input type="number" class="form-input" id="bulk-pause-every" min="0" max="100" value="8">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Pause longue (s)</label>
+                                    <input type="number" class="form-input" id="bulk-pause-min" min="10" max="1800" value="90">
+                                </div>
+                            </div>
+                            <div class="btn-group">
+                                <button class="btn btn-primary" onclick="sendBulkWhatsAppNumbers()">
+                                    <i class="fas fa-paper-plane"></i> Envoyer aux numeros
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">
                                 <span class="card-title-icon"><i class="fas fa-layer-group"></i></span>
                                 Tous les groupes
                             </h3>
@@ -2490,13 +2633,14 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                         </div>
                         <div class="card-body">
                             <div class="input-with-btn">
-                                <input type="text" class="form-input" id="userException" placeholder="Numéro WhatsApp (ex: 237682167016)"
+                                <input type="tel" class="form-input" id="userException" inputmode="tel" autocomplete="tel"
+                                       placeholder="Format international (ex: 237682167016, 33612345678)"
                                        onkeydown="if(event.key==='Enter'){event.preventDefault();addUserException()}">
                                 <button class="btn btn-ghost" onclick="addUserException()">
                                     + Ajouter
                                 </button>
                             </div>
-                            <p class="form-hint">Entrez le numéro WhatsApp sans le symbole + ni espaces</p>
+                            <p class="form-hint">Indicatif pays + numéro, chiffres uniquement. Le +, les espaces et les tirets sont nettoyés automatiquement.</p>
                             <div class="tags-wrap" id="exception-users-list"></div>
                         </div>
                     </div>
@@ -2597,7 +2741,8 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                                     </ul>
                                     <p><strong>Declencheurs :</strong></p>
                                     <ul style="margin:8px 0 16px 20px">
-                                        <li>Les utilisateurs tapent le mot-clé pour afficher le menu</li>
+                                        <li>Mode exact: le message doit correspondre au mot-clé</li>
+                                        <li>Mode contient: le mot-clé peut etre dans une phrase</li>
                                         <li>Exemple: "menu", "aide", "catalogue"</li>
                                     </ul>
                                     <p><strong>Actions disponibles :</strong></p>
@@ -3225,15 +3370,21 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             const res = await authFetch(getApiUrlWithAuth('/api/config'));
             const cfg = await res.json();
 
-            document.getElementById('maxWarnings').value = cfg.MAX_WARNINGS || 3;
-            document.getElementById('warningExpiry').value = cfg.WARNING_EXPIRY_HOURS || 24;
-            document.getElementById('scanLimit').value = cfg.SCAN_LIMIT || 100;
-            document.getElementById('autoScanInterval').value = cfg.AUTO_SCAN_INTERVAL_HOURS || 24;
-            document.getElementById('delayMin').value = cfg.DELAY_BETWEEN_ACTIONS_MIN || 2000;
-            document.getElementById('delayMax').value = cfg.DELAY_BETWEEN_ACTIONS_MAX || 5000;
+            document.getElementById('maxWarnings').value = cfg.MAX_WARNINGS ?? 3;
+            document.getElementById('warningExpiry').value = cfg.WARNING_EXPIRY_HOURS ?? 24;
+            document.getElementById('scanLimit').value = cfg.SCAN_LIMIT ?? 100;
+            document.getElementById('autoScanInterval').value = cfg.AUTO_SCAN_INTERVAL_HOURS ?? 24;
+            document.getElementById('delayMin').value = cfg.DELAY_BETWEEN_ACTIONS_MIN ?? 2000;
+            document.getElementById('delayMax').value = cfg.DELAY_BETWEEN_ACTIONS_MAX ?? 5000;
+            document.getElementById('groupDelayMin').value = cfg.DELAY_BETWEEN_GROUPS_MIN ?? 5000;
+            document.getElementById('groupDelayMax').value = cfg.DELAY_BETWEEN_GROUPS_MAX ?? 15000;
             document.getElementById('welcomeMessage').value = cfg.WELCOME_MESSAGE || '';
             document.getElementById('welcomeEnabled').checked = cfg.WELCOME_ENABLED !== false;
             document.getElementById('autoScanEnabled').checked = cfg.AUTO_SCAN_ENABLED !== false;
+            document.getElementById('callRejectEnabled').checked = cfg.CALL_REJECT_ENABLED !== false;
+            document.getElementById('callSpamThreshold').value = cfg.CALL_SPAM_THRESHOLD ?? 4;
+            document.getElementById('callSpamWindow').value = cfg.CALL_SPAM_WINDOW_MIN ?? 10;
+            document.getElementById('callBlockDuration').value = cfg.CALL_BLOCK_DURATION_MIN ?? 30;
             document.getElementById('deleteStatusMentions').checked = cfg.DELETE_STATUS_MENTIONS !== false;
         } catch (e) {
             console.error('Config load error:', e);
@@ -3243,16 +3394,37 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
     document.getElementById('config-form').addEventListener('submit', async (e) => {
         e.preventDefault();
 
+        const actionDelayMin = parseInt(document.getElementById('delayMin').value, 10);
+        const actionDelayMax = parseInt(document.getElementById('delayMax').value, 10);
+        const groupDelayMin = parseInt(document.getElementById('groupDelayMin').value, 10);
+        const groupDelayMax = parseInt(document.getElementById('groupDelayMax').value, 10);
+
+        if (actionDelayMax < actionDelayMin) {
+            showToast('Le delai maximum entre actions doit etre superieur ou egal au minimum', 'error');
+            return;
+        }
+
+        if (groupDelayMax < groupDelayMin) {
+            showToast('Le delai maximum entre groupes doit etre superieur ou egal au minimum', 'error');
+            return;
+        }
+
         const config = {
-            MAX_WARNINGS: parseInt(document.getElementById('maxWarnings').value),
-            WARNING_EXPIRY_HOURS: parseInt(document.getElementById('warningExpiry').value),
-            SCAN_LIMIT: parseInt(document.getElementById('scanLimit').value),
-            AUTO_SCAN_INTERVAL_HOURS: parseInt(document.getElementById('autoScanInterval').value),
-            DELAY_BETWEEN_ACTIONS_MIN: parseInt(document.getElementById('delayMin').value),
-            DELAY_BETWEEN_ACTIONS_MAX: parseInt(document.getElementById('delayMax').value),
+            MAX_WARNINGS: parseInt(document.getElementById('maxWarnings').value, 10),
+            WARNING_EXPIRY_HOURS: parseInt(document.getElementById('warningExpiry').value, 10),
+            SCAN_LIMIT: parseInt(document.getElementById('scanLimit').value, 10),
+            AUTO_SCAN_INTERVAL_HOURS: parseInt(document.getElementById('autoScanInterval').value, 10),
+            DELAY_BETWEEN_ACTIONS_MIN: actionDelayMin,
+            DELAY_BETWEEN_ACTIONS_MAX: actionDelayMax,
+            DELAY_BETWEEN_GROUPS_MIN: groupDelayMin,
+            DELAY_BETWEEN_GROUPS_MAX: groupDelayMax,
             WELCOME_MESSAGE: document.getElementById('welcomeMessage').value,
             WELCOME_ENABLED: document.getElementById('welcomeEnabled').checked,
             AUTO_SCAN_ENABLED: document.getElementById('autoScanEnabled').checked,
+            CALL_REJECT_ENABLED: document.getElementById('callRejectEnabled').checked,
+            CALL_SPAM_THRESHOLD: parseInt(document.getElementById('callSpamThreshold').value, 10),
+            CALL_SPAM_WINDOW_MIN: parseInt(document.getElementById('callSpamWindow').value, 10),
+            CALL_BLOCK_DURATION_MIN: parseInt(document.getElementById('callBlockDuration').value, 10),
             DELETE_STATUS_MENTIONS: document.getElementById('deleteStatusMentions').checked
         };
 
@@ -3710,6 +3882,12 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                         </div>
                     </div>
                     <div class="group-actions">
+                        <button class="btn btn-ghost btn-sm" onclick="openGroupParticipants('${g.id}', '${encodeURIComponent(g.name || '')}')">
+                            <i class="fas fa-users"></i> Membres
+                        </button>
+                        <button class="btn btn-primary btn-sm" onclick="openGroupParticipants('${g.id}', '${encodeURIComponent(g.name || '')}', true)">
+                            <i class="fas fa-paper-plane"></i> Message
+                        </button>
                         <button class="btn btn-ghost btn-sm" onclick="leaveGroup('${g.id}', '${escapeHtml(g.name)}')">
                             🚪 Quitter
                         </button>
@@ -3723,6 +3901,431 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                 <div class="empty-state-icon">❌</div>
                 <p class="empty-state-text">Erreur: ${e.message}</p>
             </div>`;
+        }
+    }
+
+    let currentParticipantGroup = null;
+    let currentGroupParticipants = [];
+    let pendingCsvExportChoice = null;
+
+    function parseRecipientText(value) {
+        return extractBulkRecipients(value);
+    }
+
+    function normalizeCsvHeader(value) {
+        return String(value || '')
+            .replace(/^\ufeff/, '')
+            .trim()
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^a-z0-9]/g, '');
+    }
+
+    function parseCsvRows(text) {
+        const rows = [];
+        let row = [];
+        let cell = '';
+        let inQuotes = false;
+        const value = String(text || '').replace(/^\ufeff/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+        for (let i = 0; i < value.length; i++) {
+            const char = value[i];
+            const next = value[i + 1];
+
+            if (char === '"') {
+                if (inQuotes && next === '"') {
+                    cell += '"';
+                    i++;
+                } else {
+                    inQuotes = !inQuotes;
+                }
+                continue;
+            }
+
+            if (!inQuotes && (char === ',' || char === ';' || char === '\t')) {
+                row.push(cell.trim());
+                cell = '';
+                continue;
+            }
+
+            if (!inQuotes && char === '\n') {
+                row.push(cell.trim());
+                if (row.some(item => item !== '')) rows.push(row);
+                row = [];
+                cell = '';
+                continue;
+            }
+
+            cell += char;
+        }
+
+        row.push(cell.trim());
+        if (row.some(item => item !== '')) rows.push(row);
+        return rows;
+    }
+
+    function isNumberCsvHeader(header) {
+        const h = normalizeCsvHeader(header);
+        return h.includes('numero')
+            || h.includes('number')
+            || h.includes('phone')
+            || h.includes('telephone')
+            || h.includes('mobile')
+            || h.includes('whatsapp')
+            || h.includes('destinataire')
+            || h.includes('recipient');
+    }
+
+    function isJidCsvHeader(header) {
+        const h = normalizeCsvHeader(header);
+        return h === 'jid' || h.endsWith('jid') || h.includes('whatsappjid');
+    }
+
+    function normalizeBulkRecipientCandidate(value) {
+        let raw = String(value || '').trim();
+        if (!raw) return '';
+        raw = raw.replace(/^="?/, '').replace(/"?$/, '').trim();
+        const lower = raw.toLowerCase();
+
+        if (lower.includes('@g.us') || lower.includes('status@broadcast') || lower.includes('@lid')) return '';
+        if (lower.includes('@s.whatsapp.net')) {
+            const jidNumber = raw.split('@')[0].split(':')[0].replace(/\D/g, '');
+            return jidNumber.length >= 7 && jidNumber.length <= 15 ? `+${jidNumber}` : '';
+        }
+
+        const urlMatch = raw.match(/(?:wa\.me\/|phone=|send\?phone=)(\+?\d[\d\s().-]{5,})/i);
+        const source = urlMatch ? urlMatch[1] : raw;
+        const digits = source.replace(/\D/g, '');
+        if (digits.length < 7 || digits.length > 15) return '';
+        return `+${digits}`;
+    }
+
+    function bulkRecipientKey(value) {
+        const digits = String(value || '').replace(/\D/g, '');
+        return digits || String(value || '').trim().toLowerCase();
+    }
+
+    function uniqueBulkRecipients(values) {
+        const seen = new Set();
+        const recipients = [];
+        for (const value of values || []) {
+            const recipient = normalizeBulkRecipientCandidate(value);
+            const key = bulkRecipientKey(recipient);
+            if (!recipient || !key || seen.has(key)) continue;
+            seen.add(key);
+            recipients.push(recipient);
+        }
+        return recipients;
+    }
+
+    function extractBulkRecipients(value) {
+        const rows = parseCsvRows(value);
+        if (!rows.length) return [];
+
+        const headers = rows[0] || [];
+        const numberColumns = headers.map((header, index) => isNumberCsvHeader(header) ? index : -1).filter(index => index >= 0);
+        const jidColumns = headers.map((header, index) => isJidCsvHeader(header) ? index : -1).filter(index => index >= 0);
+        const targetColumns = numberColumns.length ? numberColumns : jidColumns;
+        const candidates = [];
+
+        if (targetColumns.length) {
+            for (const row of rows.slice(1)) {
+                for (const index of targetColumns) {
+                    candidates.push(row[index]);
+                }
+            }
+        } else {
+            for (const row of rows) {
+                for (const cell of row) {
+                    String(cell || '').split(/[\n,;|]+/).forEach(item => candidates.push(item));
+                }
+            }
+        }
+
+        return uniqueBulkRecipients(candidates);
+    }
+
+    async function importBulkWhatsAppCsv(file) {
+        if (!file) return;
+        try {
+            const text = await file.text();
+            const imported = extractBulkRecipients(text);
+            if (!imported.length) {
+                showToast('Aucun numero valide trouve dans ce CSV', 'warning');
+                return;
+            }
+
+            const textarea = document.getElementById('bulk-whatsapp-numbers');
+            const existing = parseRecipientText(textarea.value);
+            const merged = uniqueBulkRecipients([...existing, ...imported]);
+            const added = merged.length - existing.length;
+            textarea.value = merged.join('\n');
+            showToast(`${added} numero(s) importe(s), ${merged.length} au total`, added ? 'success' : 'warning');
+        } catch (e) {
+            showToast('Import CSV impossible: ' + (e.message || 'fichier invalide'), 'error');
+        }
+    }
+
+    const backgroundJobPollers = new Map();
+
+    function trackBackgroundJob(jobId, label = 'Envoi WhatsApp') {
+        if (!jobId || backgroundJobPollers.has(jobId)) return;
+
+        const poll = async () => {
+            try {
+                const res = await authFetch(`/api/jobs/${encodeURIComponent(jobId)}`);
+                const data = await res.json();
+                if (!res.ok || data.success === false) throw new Error(data.message || 'Suivi impossible');
+                const job = data.job || {};
+
+                if (job.status === 'completed') {
+                    backgroundJobPollers.delete(jobId);
+                    showToast(`${job.sent || 0} envoye(s), ${job.failed || 0} echec(s)`, job.failed ? 'warning' : 'success', `${label} termine`);
+                    refreshLogs();
+                    return;
+                }
+
+                if (job.status === 'failed') {
+                    backgroundJobPollers.delete(jobId);
+                    showToast(job.error || 'Envoi echoue', 'error', `${label} echoue`);
+                    refreshLogs();
+                    return;
+                }
+
+                const timer = setTimeout(poll, 5000);
+                backgroundJobPollers.set(jobId, timer);
+            } catch (e) {
+                backgroundJobPollers.delete(jobId);
+                showToast(e.message || 'Suivi du job impossible', 'warning');
+            }
+        };
+
+        const timer = setTimeout(poll, 1500);
+        backgroundJobPollers.set(jobId, timer);
+    }
+
+    function handleBackgroundSendResult(result, label) {
+        if (!result?.background || !result.jobId) return false;
+        const total = result.total || result.job?.total || 0;
+        showToast(`${total} destinataire(s) traite(s) en arriere-plan`, 'success', `${label} demarre`);
+        trackBackgroundJob(result.jobId, label);
+        refreshLogs();
+        return true;
+    }
+
+    function getBulkDelayOptions(prefix) {
+        const minSeconds = parseInt(document.getElementById(prefix + '-delay-min')?.value || '15', 10);
+        const maxSeconds = parseInt(document.getElementById(prefix + '-delay-max')?.value || '45', 10);
+        const pauseEvery = parseInt(document.getElementById(prefix + '-pause-every')?.value || '8', 10);
+        const pauseMinSeconds = parseInt(document.getElementById(prefix + '-pause-min')?.value || '90', 10);
+        return {
+            minDelayMs: Math.max(3, minSeconds) * 1000,
+            maxDelayMs: Math.max(Math.max(3, minSeconds), maxSeconds) * 1000,
+            pauseEvery: Math.max(0, pauseEvery),
+            pauseMinMs: Math.max(10, pauseMinSeconds) * 1000,
+            pauseMaxMs: Math.max(20, pauseMinSeconds * 2) * 1000
+        };
+    }
+
+    function csvCell(value) {
+        const text = String(value ?? '');
+        return `"${text.replace(/"/g, '""')}"`;
+    }
+
+    function downloadCsv(filename, rows) {
+        const csv = rows.map(row => row.map(csvCell).join(',')).join('\n');
+        const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+    }
+
+    function askParticipantsCsvExportMode() {
+        return new Promise(resolve => {
+            pendingCsvExportChoice = resolve;
+            document.getElementById('participants-csv-choice-modal').classList.add('active');
+        });
+    }
+
+    function chooseParticipantsCsvExportMode(mode) {
+        document.getElementById('participants-csv-choice-modal').classList.remove('active');
+        if (pendingCsvExportChoice) pendingCsvExportChoice(mode);
+        pendingCsvExportChoice = null;
+    }
+
+    function closeParticipantsCsvExportChoice() {
+        document.getElementById('participants-csv-choice-modal').classList.remove('active');
+        if (pendingCsvExportChoice) pendingCsvExportChoice(null);
+        pendingCsvExportChoice = null;
+    }
+
+    async function openGroupParticipants(groupId, encodedGroupName = '', focusMessage = false) {
+        currentParticipantGroup = { id: groupId, name: decodeURIComponent(encodedGroupName || '') };
+        currentGroupParticipants = [];
+        document.getElementById('group-participants-title').textContent = currentParticipantGroup.name || 'Participants du groupe';
+        document.getElementById('group-participants-search').value = '';
+        document.getElementById('group-participants-message').value = '';
+        document.getElementById('group-participants-list').innerHTML = `<div class="empty-state"><div class="empty-state-icon">...</div><p class="empty-state-text">Chargement des participants...</p></div>`;
+        document.getElementById('group-participants-modal').classList.add('active');
+
+        try {
+            const res = await authFetch(`/api/groups/participants?groupId=${encodeURIComponent(groupId)}`);
+            const data = await res.json();
+            if (!res.ok || data.success === false) throw new Error(data.message || 'Chargement impossible');
+            currentParticipantGroup = data.group || currentParticipantGroup;
+            currentGroupParticipants = data.participants || [];
+            renderGroupParticipants();
+            if (focusMessage) document.getElementById('group-participants-message').focus();
+        } catch (e) {
+            document.getElementById('group-participants-list').innerHTML = `<div class="empty-state"><div class="empty-state-icon">!</div><p class="empty-state-text">${escapeHtml(e.message || 'Erreur')}</p></div>`;
+        }
+    }
+
+    function closeGroupParticipantsModal() {
+        document.getElementById('group-participants-modal').classList.remove('active');
+    }
+
+    function renderGroupParticipants() {
+        const query = String(document.getElementById('group-participants-search').value || '').toLowerCase().trim();
+        const participants = currentGroupParticipants.filter(p => {
+            const haystack = `${p.name || ''} ${p.username || ''} ${p.number || ''} ${p.displayNumber || ''} ${p.role || ''}`.toLowerCase();
+            return !query || haystack.includes(query);
+        });
+        const container = document.getElementById('group-participants-list');
+        document.getElementById('group-participants-count').textContent = `${participants.length}/${currentGroupParticipants.length} participant(s)`;
+
+        if (!participants.length) {
+            container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">0</div><p class="empty-state-text">Aucun participant trouve</p></div>`;
+            return;
+        }
+
+        container.innerHTML = participants.map(p => `
+            <label class="group-card" style="margin-bottom:8px;cursor:pointer">
+                <div class="group-left">
+                    <input type="checkbox" class="participant-check" value="${escapeHtml(p.jid || p.phoneNumber || p.number)}" style="margin-right:10px">
+                    <div class="group-avatar"><i class="fas fa-user"></i></div>
+                    <div class="group-details">
+                        <div class="group-name">${escapeHtml(p.name || 'Nom non disponible')}</div>
+                        <div class="group-meta">
+                            <span class="group-meta-item">${escapeHtml(p.displayNumber || p.number || 'Numero non disponible')}</span>
+                            <span class="badge ${p.isAdmin ? 'badge-success' : 'badge-info'}">${escapeHtml(p.role || 'Membre')}</span>
+                        </div>
+                    </div>
+                </div>
+            </label>
+        `).join('');
+    }
+
+    function toggleAllGroupParticipants(checked) {
+        document.querySelectorAll('#group-participants-list .participant-check').forEach(input => {
+            input.checked = checked;
+        });
+    }
+
+    function selectedParticipantJids() {
+        return Array.from(document.querySelectorAll('#group-participants-list .participant-check:checked'))
+            .map(input => input.value)
+            .filter(Boolean);
+    }
+
+    async function exportCurrentGroupParticipantsCsv() {
+        if (!currentGroupParticipants.length) {
+            showToast('Aucun participant a exporter', 'warning');
+            return;
+        }
+        const exportMode = await askParticipantsCsvExportMode();
+        if (!exportMode) return;
+
+        const safeName = String(currentParticipantGroup?.name || 'participants').replace(/[^\w.-]+/g, '_').slice(0, 60);
+        if (exportMode === 'numbers') {
+            const numbers = currentGroupParticipants
+                .map(p => p.displayNumber || (p.number ? `+${p.number}` : ''))
+                .filter(Boolean);
+            if (!numbers.length) {
+                showToast('Aucun numero a exporter', 'warning');
+                return;
+            }
+            downloadCsv(`${safeName}_numeros.csv`, [['Numero'], ...numbers.map(number => [number])]);
+            return;
+        }
+
+        const rows = [
+            ['Nom', 'Username', 'Numero', 'Role', 'JID', 'LID'],
+            ...currentGroupParticipants.map(p => [p.name, p.username || '', p.displayNumber || p.number, p.role, p.jid, p.lid || ''])
+        ];
+        downloadCsv(`${safeName}_participants_complet.csv`, rows);
+    }
+
+    async function sendMessageToSelectedParticipants() {
+        const recipients = selectedParticipantJids();
+        const message = document.getElementById('group-participants-message').value.trim();
+        if (!recipients.length) {
+            showToast('Selectionnez au moins un participant', 'warning');
+            return;
+        }
+        if (!message) {
+            showToast('Le message est requis', 'warning');
+            return;
+        }
+        if (!confirm(`Envoyer ce message a ${recipients.length} participant(s) ?`)) return;
+
+        try {
+            const res = await authFetch('/api/groups/message-users', {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                body: JSON.stringify(addSessionIdToBody({
+                    groupId: currentParticipantGroup?.id,
+                    recipients,
+                    message,
+                    ...getBulkDelayOptions('group-message')
+                }))
+            });
+            const result = await res.json();
+            if (!res.ok || result.success === false) throw new Error(result.message || 'Envoi impossible');
+            if (handleBackgroundSendResult(result, 'Message participants')) return;
+            showToast(`${result.sent} envoye(s), ${result.failed} echec(s)`, result.failed ? 'warning' : 'success', 'Envoi termine');
+            refreshLogs();
+        } catch (e) {
+            showToast(e.message || 'Envoi impossible', 'error');
+        }
+    }
+
+    async function sendBulkWhatsAppNumbers() {
+        const numbers = parseRecipientText(document.getElementById('bulk-whatsapp-numbers').value);
+        const message = document.getElementById('bulk-whatsapp-message').value.trim();
+        if (!numbers.length) {
+            showToast('Ajoutez au moins un numero', 'warning');
+            return;
+        }
+        if (!message) {
+            showToast('Le message est requis', 'warning');
+            return;
+        }
+        if (!confirm(`Envoyer ce message a ${numbers.length} numero(s) ?`)) return;
+
+        try {
+            const res = await authFetch('/api/whatsapp/bulk-message', {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                body: JSON.stringify(addSessionIdToBody({
+                    numbers,
+                    message,
+                    ...getBulkDelayOptions('bulk')
+                }))
+            });
+            const result = await res.json();
+            if (!res.ok || result.success === false) throw new Error(result.message || 'Envoi impossible');
+            if (handleBackgroundSendResult(result, 'Envoi cible')) return;
+            showToast(`${result.sent} envoye(s), ${result.failed} echec(s)`, result.failed ? 'warning' : 'success', 'Envoi termine');
+            refreshLogs();
+        } catch (e) {
+            showToast(e.message || 'Envoi impossible', 'error');
         }
     }
 
@@ -3889,16 +4492,24 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         }
     }
 
+    function normalizePhoneExceptionInput(value) {
+        return String(value || '').replace(/\D/g, '');
+    }
+
     async function addUserException() {
         const input = document.getElementById('userException');
-        const userId = input.value.trim();
+        const userId = normalizePhoneExceptionInput(input.value);
         if (!userId) return;
+        if (userId.length < 7) {
+            showToast('Entrez le numéro au format international', 'warning');
+            return;
+        }
 
         try {
             await authFetch('/api/users/exceptions', {
                 method: 'POST',
                 headers: getAuthHeaders(),
-                body: JSON.stringify(addSessionIdToBody({ userId, linkException: true, callException: false }))
+                body: JSON.stringify(addSessionIdToBody({ userId, linkException: true, callException: true }))
             });
             input.value = '';
             loadUserExceptions();
@@ -3945,7 +4556,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
     async function triggerScan() {
         if (!confirm('Lancer un scan complet de tous les groupes ?')) return;
 
-        showToast('Scan en cours…', 'warning', 'Veuillez patienter');
+        showToast('Scan en cours...', 'warning', 'Veuillez patienter');
 
         try {
             const res = await authFetch('/api/scan', { 
@@ -3953,28 +4564,35 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                 headers: getAuthHeaders(),
                 body: JSON.stringify(addSessionIdToBody({}))
             });
-            const result = await res.json();
-            showToast(`Scan terminé : ${result.totalDeleted} lien(s) supprimé(s)`, 'success', 'Scan complet');
+            const result = await res.json().catch(() => ({}));
+            if (!res.ok || result.success === false) throw new Error(result.message || 'Scan impossible');
+            const scanned = result.totalScanned ?? result.scanned ?? 0;
+            const deleted = result.totalDeleted ?? result.deleted ?? 0;
+            const warned = result.totalWarned ?? result.warned ?? 0;
+            showToast(`Scan termine : ${scanned} analyse(s), ${deleted} suppression(s), ${warned} avertissement(s)`, 'success', 'Scan complet');
             loadStats();
             refreshLogs();
         } catch (e) {
-            showToast('Le scan a échoué', 'error');
+            showToast(e.message || 'Le scan a echoue', 'error');
         }
     }
 
     async function clearWarnings() {
-        if (!confirm('Effacer tous les avertissements ? Cette action est irréversible.')) return;
+        if (!confirm('Effacer tous les avertissements ? Cette action est irreversible.')) return;
 
         try {
-            await authFetch('/api/warnings', { 
+            const res = await authFetch('/api/warnings', { 
                 method: 'DELETE',
                 headers: getAuthHeaders(),
                 body: JSON.stringify(addSessionIdToBody({}))
             });
-            showToast('Tous les avertissements ont été effacés', 'success');
+            const result = await res.json().catch(() => ({}));
+            if (!res.ok || result.success === false) throw new Error(result.message || 'Action impossible');
+            showToast('Tous les avertissements ont ete effaces', 'success');
             loadStats();
+            refreshLogs();
         } catch (e) {
-            showToast('Impossible d\'effacer les avertissements', 'error');
+            showToast(e.message || 'Impossible d effacer les avertissements', 'error');
         }
     }
 
@@ -4112,6 +4730,26 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
     let availableGroups = [];
     let menusData = {};
     let menuImageData = null;
+
+    function splitMenuTriggerText(value) {
+        return String(value || '').split(/[,;\n|]+/).map(t => t.trim()).filter(Boolean);
+    }
+
+    function cleanMenuTriggerText(value) {
+        const seen = new Set();
+        const triggers = [];
+        splitMenuTriggerText(value).forEach(trigger => {
+            const key = trigger.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+            if (!key || seen.has(key)) return;
+            seen.add(key);
+            triggers.push(trigger);
+        });
+        return triggers.join(', ');
+    }
+
+    function getMenuTriggerModeLabel(mode) {
+        return mode === 'contains' ? 'Contient' : 'Exact';
+    }
     
     async function loadMenus() {
         try {
@@ -4139,7 +4777,8 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                             <div class="group-name">${escapeHtml(menu.title)}</div>
                             <div class="group-meta">
                                 <span class="group-meta-item">${menu.type === 'buttons' ? 'Boutons' : 'Liste'}</span>
-                                ${menu.trigger ? menu.trigger.split(',').map(t => t.trim()).filter(Boolean).map(t => `<span class="badge badge-info">${escapeHtml(t)}</span>`).join('') : ''}
+                                ${menu.trigger ? splitMenuTriggerText(menu.trigger).map(t => `<span class="badge badge-info">${escapeHtml(t)}</span>`).join('') : ''}
+                                ${menu.trigger ? `<span class="badge badge-primary">${getMenuTriggerModeLabel(menu.triggerMode)}</span>` : '<span class="badge badge-warning">Sans declencheur</span>'}
                                 ${!menu.enabled ? '<span class="badge badge-warning">Désactivé</span>' : ''}
                                 ${menu.buttons?.length ? `<span class="group-meta-item">${menu.buttons.length} boutons</span>` : ''}
                                 ${menu.listSections?.length ? `<span class="group-meta-item">${menu.listSections.reduce((a,s) => a + s.rows.length, 0)} options</span>` : ''}
@@ -4168,6 +4807,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
             document.getElementById('menu-title').value = menu.title || '';
             document.getElementById('menu-id').value = menu.id;
             document.getElementById('menu-trigger').value = menu.trigger || '';
+            document.getElementById('menu-trigger-mode').value = menu.triggerMode || 'exact';
             document.getElementById('menu-type').value = menu.type || 'buttons';
             document.getElementById('menu-description').value = menu.description || '';
             document.getElementById('menu-enabled').checked = menu.enabled !== false;
@@ -4178,6 +4818,7 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         } else {
             form.reset();
             document.getElementById('menu-id').value = 'menu_' + Date.now();
+            document.getElementById('menu-trigger-mode').value = 'exact';
             document.getElementById('menu-enabled').checked = true;
             menuImageData = null;
             renderMenuButtons([]);
@@ -4399,7 +5040,8 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
         const menuData = {
             id: document.getElementById('menu-id').value,
             title: document.getElementById('menu-title').value,
-            trigger: document.getElementById('menu-trigger').value || null,
+            trigger: cleanMenuTriggerText(document.getElementById('menu-trigger').value) || null,
+            triggerMode: document.getElementById('menu-trigger-mode').value || 'exact',
             type: document.getElementById('menu-type').value,
             description: document.getElementById('menu-description').value,
             enabled: document.getElementById('menu-enabled').checked,
@@ -5541,6 +6183,89 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
     </script>
 
     <!-- Stat Modal -->
+    <div id="group-participants-modal" class="modal-overlay" onclick="closeGroupParticipantsModal()">
+        <div class="modal-content" style="max-width:900px;max-height:90vh;overflow-y:auto" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3 id="group-participants-title">Participants du groupe</h3>
+                <button class="modal-close" onclick="closeGroupParticipantsModal()">×</button>
+            </div>
+            <div style="padding:20px">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Recherche</label>
+                        <input type="text" class="form-input" id="group-participants-search" placeholder="Nom, numero, role..." oninput="renderGroupParticipants()">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Actions</label>
+                        <div class="btn-group">
+                            <button type="button" class="btn btn-ghost btn-sm" onclick="toggleAllGroupParticipants(true)">
+                                <i class="fas fa-check-square"></i> Tout selectionner
+                            </button>
+                            <button type="button" class="btn btn-ghost btn-sm" onclick="toggleAllGroupParticipants(false)">
+                                <i class="fas fa-square"></i> Tout retirer
+                            </button>
+                            <button type="button" class="btn btn-primary btn-sm" onclick="exportCurrentGroupParticipantsCsv()">
+                                <i class="fas fa-file-csv"></i> CSV
+                            </button>
+                        </div>
+                        <p class="form-hint" id="group-participants-count">0 participant(s)</p>
+                    </div>
+                </div>
+
+                <div id="group-participants-list" style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius-md);padding:8px;margin-bottom:16px"></div>
+
+                <div class="form-group">
+                    <label class="form-label">Message aux participants selectionnes</label>
+                    <textarea class="form-input" id="group-participants-message" rows="4" placeholder="Votre message..."></textarea>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Delai min (s)</label>
+                        <input type="number" class="form-input" id="group-message-delay-min" min="3" max="600" value="15">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Delai max (s)</label>
+                        <input type="number" class="form-input" id="group-message-delay-max" min="3" max="900" value="45">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Pause tous les</label>
+                        <input type="number" class="form-input" id="group-message-pause-every" min="0" max="100" value="8">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Pause longue (s)</label>
+                        <input type="number" class="form-input" id="group-message-pause-min" min="10" max="1800" value="90">
+                    </div>
+                </div>
+                <div class="btn-group">
+                    <button type="button" class="btn btn-primary" onclick="sendMessageToSelectedParticipants()">
+                        <i class="fas fa-paper-plane"></i> Envoyer aux selectionnes
+                    </button>
+                    <button type="button" class="btn btn-ghost" onclick="closeGroupParticipantsModal()">Fermer</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="participants-csv-choice-modal" class="modal-overlay" onclick="closeParticipantsCsvExportChoice()">
+        <div class="modal-content" style="max-width:520px" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3>Export CSV</h3>
+                <button class="modal-close" onclick="closeParticipantsCsvExportChoice()">Ã—</button>
+            </div>
+            <div style="padding:20px">
+                <p class="form-hint" style="margin-bottom:16px">Choisissez les informations a telecharger pour ce groupe.</p>
+                <div class="form-row">
+                    <button type="button" class="btn btn-primary" style="width:100%;justify-content:center" onclick="chooseParticipantsCsvExportMode('full')">
+                        <i class="fas fa-table"></i> Informations completes
+                    </button>
+                    <button type="button" class="btn btn-ghost" style="width:100%;justify-content:center" onclick="chooseParticipantsCsvExportMode('numbers')">
+                        <i class="fas fa-phone"></i> Numeros uniquement
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div id="stat-modal" class="modal-overlay">
         <div class="modal-content stat-modal-content">
             <div class="modal-header">
@@ -5571,6 +6296,15 @@ Merci de respecter ces règles. Bonne discussion ! 🎉</textarea>
                         <label class="form-label">Mots-clés déclencheurs</label>
                         <input type="text" class="form-input" id="menu-trigger" placeholder="Ex: menu, aide, catalogue, bonjour">
                         <p class="form-hint">Séparez les mots-clés par des virgules. Le menu s'affiche quand un utilisateur envoie l'un de ces mots ou phrases.</p>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Mode de detection</label>
+                        <select class="form-input" id="menu-trigger-mode">
+                            <option value="exact">Message exact</option>
+                            <option value="contains">Le message contient le declencheur</option>
+                        </select>
+                        <p class="form-hint">Exact evite les faux declenchements. Contient permet par exemple "bonjour menu" pour le declencheur "menu".</p>
                     </div>
                     
                     <div class="form-group">

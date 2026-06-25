@@ -1,94 +1,57 @@
 # WhatsApp Link Guard Bot
 
-Bot WhatsApp qui supprime automatiquement les liens dans les groupes et gère les avertissements.
+Plateforme web de gestion de bots WhatsApp basee sur Baileys. Elle protege les groupes contre les liens, gere les avertissements, les bannissements, les appels, les menus textuels, les annonces, les sessions utilisateurs et l'administration web.
 
-## Fonctionnalités
+## Fonctionnalites principales
 
-- 🔍 Détection automatique des liens (HTTP, HTTPS, WhatsApp, etc.)
-- 🗑️ Suppression automatique des messages contenant des liens
-- ⚠️ Système d'avertissements avec compteur
-- 🚫 Bannissement automatique après le seuil d'avertissements
-- 💾 Stockage persistant des avertissements
-- ⏰ Expiration des avertissements après 24h
-- 👑 Les administrateurs peuvent partager des liens
+- Detection automatique des liens HTTP/HTTPS, domaines, `wa.me` et invitations `chat.whatsapp.com`.
+- Suppression des messages contenant des liens via Baileys.
+- Avertissements persistants par groupe et utilisateur.
+- Bannissement automatique quand le seuil d'avertissements est atteint.
+- Exceptions par groupe, par motif de nom de groupe, par utilisateur et pour les admins.
+- Messages de bienvenue configurables.
+- Rejet d'appels et blocage temporaire en cas de spam d'appels.
+- Multi-sessions WhatsApp avec QR code par utilisateur.
+- Interface web utilisateur/admin, authentification, recuperation de mot de passe et mode beta.
+- Menus textuels numerotes avec reponses, sous-menus, contacts, liens autorises et webhooks.
+- Annonces multi-groupes avec texte, image, apercu de lien et statistiques.
+- Abonnements PayOol/LeekPay, notifications d'expiration et deconnexion des sessions expirees.
+- Statistiques, journaux, scan manuel et scan automatique planifie.
 
-## Prérequis
+## Prerequis
 
-- Node.js v16 ou supérieur
-- Un compte WhatsApp
-- Google Chrome ou Chromium installé
+- Node.js 20 ou superieur, requis par Baileys 7.
+- Un compte WhatsApp ou WhatsApp Business utilisable comme appareil lie.
+- Chromium/Chrome uniquement pour la generation de l'image Open Graph du site via Puppeteer.
 
 ## Installation
 
-1. **Installer les dépendances :**
-   ```bash
-   npm install
-   ```
-
-2. **Configurer le bot (optionnel) :**
-   
-   Modifiez les constantes dans `index.js` :
-   ```javascript
-   const CONFIG = {
-       MAX_WARNINGS: 3,           // Nombre max d'avertissements
-       WARNING_EXPIRY_HOURS: 24,  // Expiration des avertissements
-   };
-   ```
-
-## Utilisation
-
-1. **Démarrer le bot :**
-   ```bash
-   npm start
-   ```
-
-2. **Scanner le QR code :**
-   
-   Un QR code apparaîtra dans le terminal. Scannez-le avec votre application WhatsApp :
-   - Ouvrez WhatsApp
-   - Paramètres > Appareils liés
-   - Scanner le QR code
-
-3. **Ajouter le bot à un groupe :**
-   
-   Ajoutez le numéro WhatsApp associé au bot à vos groupes et **assurez-vous qu'il est administrateur**.
-
-## Fonctionnement
-
-1. Le bot surveille tous les messages dans les groupes où il est admin
-2. Quand un lien est détecté, le message est supprimé
-3. L'utilisateur reçoit un avertissement avec le compteur
-4. Après `MAX_WARNINGS` avertissements, l'utilisateur est banni
-5. Les avertissements expirent après 24 heures
-
-## Structure des fichiers
-
-```
-WhatsApp Bot/
-├── index.js          # Code principal du bot
-├── package.json      # Dépendances npm
-├── warnings.json     # Stockage des avertissements (créé automatiquement)
-├── .wwebjs_auth/     # Session WhatsApp (créé automatiquement)
-└── README.md         # Documentation
+```bash
+npm install
+npm start
 ```
 
-## Notes importantes
+Ouvrez ensuite l'interface web, creez une session, puis scannez le QR code avec WhatsApp depuis `Parametres > Appareils lies`.
 
-- Le bot doit être **administrateur** du groupe pour supprimer des messages et bannir
-- Les administrateurs du groupe peuvent partager des liens sans restriction
-- La première connexion nécessite de scanner le QR code
-- Les connexions suivantes utiliseront la session sauvegardée
+## Migration Baileys
 
-## Dépannage
+Le projet utilise maintenant `baileys@^7.0.0-rc13`.
 
-**Le bot ne supprime pas les messages :**
-- Vérifiez qu'il est admin dans le groupe
-- Vérifiez que le message contient bien un lien reconnu
+Les anciennes sessions stockees dans `.wwebjs_auth/` ne sont pas reutilisables par Baileys. Les nouvelles sessions sont stockees dans `.baileys_auth/`; il faut donc rescanner un QR code pour chaque session existante.
 
-**Erreur "Failed to launch the browser" :**
-- Installez Google Chrome ou Chromium
-- Sur Linux, vous pouvez avoir besoin de dépendances supplémentaires
+## Structure utile
 
-**Session perdue :**
-- Supprimez le dossier `.wwebjs_auth`
-- Relancez le bot et scannez le QR code
+```text
+index.js              # Serveur Express, logique metier et integration Baileys native
+public/               # Interfaces web utilisateur/admin/landing
+data/                 # Configuration, logs, sessions et etats persistants
+.baileys_auth/        # Sessions WhatsApp Baileys (ignore par git)
+og-screenshot.js      # Generation de l'image Open Graph via Puppeteer
+```
+
+## Docker
+
+L'image Docker utilise Node 22 et monte les volumes suivants:
+
+- `/app/.baileys_auth` pour les sessions WhatsApp.
+- `/app/data` pour les donnees applicatives.

@@ -1,16 +1,16 @@
 {
   "name": "whatsapp-link-guard-bot",
   "version": "1.0.0",
-  "description": "Bot WhatsApp qui supprime automatiquement les liens et gère les avertissements",
+  "description": "Plateforme de moderation WhatsApp multi-sessions basee sur Baileys",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
+    "baileys": "^7.0.0-rc13",
     "cookie-parser": "^1.4.7",
     "express": "^4.18.2",
     "puppeteer": "^22.0.0",
-    "qrcode-terminal": "^0.12.0",
-    "whatsapp-web.js": "github:wwebjs/whatsapp-web.js"
+    "qrcode-terminal": "^0.12.0"
   }
 }

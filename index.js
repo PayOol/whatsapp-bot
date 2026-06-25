@@ -1,4 +1,3 @@
-const { Client, LocalAuth, Buttons, List, MessageMedia } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const fs = require('fs');
 const path = require('path');
@@ -6,6 +5,1828 @@ const express = require('express');
 const cookieParser = require('cookie-parser');
 const crypto = require('crypto');
 const { ensureOgImage, captureLandingPage, isOgImageValid, OUTPUT_PATH } = require('./og-screenshot');
+
+function shouldSuppressLibsignalConsoleLog(args) {
+    const first = String(args?.[0] || '');
+    return first === 'Closing session:' || first === 'Session already closed';
+}
+
+function installConsolePrivacyFilters() {
+    if (console.__payoolPrivacyFiltersInstalled) return;
+    const originalInfo = console.info.bind(console);
+    const originalWarn = console.warn.bind(console);
+
+    console.info = (...args) => {
+        if (shouldSuppressLibsignalConsoleLog(args)) return;
+        return originalInfo(...args);
+    };
+
+    console.warn = (...args) => {
+        if (shouldSuppressLibsignalConsoleLog(args)) return;
+        return originalWarn(...args);
+    };
+
+    console.__payoolPrivacyFiltersInstalled = true;
+}
+
+installConsolePrivacyFilters();
+
+let baileysModulePromise = null;
+function loadBaileys() {
+    if (!baileysModulePromise) baileysModulePromise = import('baileys');
+    return baileysModulePromise;
+}
+
+function makeBaileysLogger() {
+    const noop = () => {};
+    return {
+        level: 'silent',
+        fatal: noop,
+        error: noop,
+        warn: noop,
+        info: noop,
+        debug: noop,
+        trace: noop,
+        child: () => makeBaileysLogger()
+    };
+}
+
+function getJidValue(value) {
+    if (!value) return '';
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'bigint') {
+        return String(value).trim();
+    }
+    if (typeof value !== 'object') return '';
+
+    if (value.user && value.server) {
+        return `${value.user}@${value.server}`;
+    }
+
+    const candidates = [
+        value._serialized,
+        value.jid,
+        value.lid,
+        value.phoneNumber,
+        value.id,
+        value.participant,
+        value.remoteJid,
+        value.recipient,
+        value.user
+    ];
+
+    for (const candidate of candidates) {
+        const jid = getJidValue(candidate);
+        if (jid) return jid;
+    }
+
+    return '';
+}
+
+function normalizeJid(jid) {
+    jid = getJidValue(jid);
+    if (!jid) return '';
+    if (jid.endsWith('@c.us')) return jid.replace('@c.us', '@s.whatsapp.net');
+    if (jid.includes('@')) return jid;
+    const digits = jid.replace(/\D/g, '');
+    return `${digits || jid}@s.whatsapp.net`;
+}
+
+function isGroupJid(jid) {
+    return typeof jid === 'string' && jid.endsWith('@g.us');
+}
+
+function jidNumber(jid) {
+    return getJidValue(jid).split('@')[0].split(':')[0];
+}
+
+function digitsOnly(value) {
+    return String(value || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+}
+
+function phoneNumbersMatch(a, b) {
+    const da = digitsOnly(a);
+    const db = digitsOnly(b);
+    if (!da || !db) return false;
+    if (da === db) return true;
+    const shortest = Math.min(da.length, db.length);
+    return shortest >= 7 && (da.endsWith(db) || db.endsWith(da));
+}
+
+function addUserMatchValue(set, value) {
+    if (!value) return;
+    const raw = String(value).trim();
+    if (!raw) return;
+    set.add(raw);
+    set.add(raw.replace(/\s+/g, ''));
+    if (raw.includes('@')) set.add(normalizeJid(raw));
+    const digits = digitsOnly(raw);
+    if (digits) {
+        set.add(digits);
+        set.add(`+${digits}`);
+        set.add(`${digits}@s.whatsapp.net`);
+    }
+}
+
+function buildUserMatchValues(...values) {
+    const set = new Set();
+    const add = (value) => {
+        if (Array.isArray(value)) {
+            value.forEach(add);
+            return;
+        }
+        if (value && typeof value === 'object') {
+            add(value.id);
+            add(value.jid);
+            add(value.lid);
+            add(value.phoneNumber);
+            add(value.number);
+            add(value._serialized);
+            add(value.aliases);
+            return;
+        }
+        addUserMatchValue(set, value);
+    };
+    values.forEach(add);
+    return Array.from(set);
+}
+
+function valuesMatchUser(a, b) {
+    if (!a || !b) return false;
+    if (a === b) return true;
+    if (String(a).trim() === String(b).trim()) return true;
+    if (String(a).includes('@') && String(b).includes('@') && normalizeJid(String(a)) === normalizeJid(String(b))) return true;
+    return phoneNumbersMatch(a, b);
+}
+
+function userExceptionMatches(entry, values) {
+    const id = typeof entry === 'object' ? entry.id : entry;
+    const aliases = typeof entry === 'object' ? (entry.aliases || []) : [];
+    const entryValues = buildUserMatchValues(id, aliases);
+    return entryValues.some(entryValue => values.some(value => valuesMatchUser(entryValue, value)));
+}
+
+function userExceptionEnabled(entry, type) {
+    if (!type) return true;
+    if (type === 'link') return typeof entry === 'object' ? entry.linkException !== false : true;
+    if (type === 'call') return typeof entry === 'object' ? entry.callException === true : false;
+    return true;
+}
+
+function findUserException(excludedUsers = [], values = [], type = null) {
+    const candidates = buildUserMatchValues(values);
+    return excludedUsers.find(entry => userExceptionMatches(entry, candidates) && userExceptionEnabled(entry, type));
+}
+
+function jidObject(jid) {
+    const serialized = jid || '';
+    return { _serialized: serialized, user: jidNumber(serialized) };
+}
+
+function unwrapMessageContent(message) {
+    if (!message) return null;
+    if (message.ephemeralMessage?.message) return unwrapMessageContent(message.ephemeralMessage.message);
+    if (message.viewOnceMessage?.message) return unwrapMessageContent(message.viewOnceMessage.message);
+    if (message.viewOnceMessageV2?.message) return unwrapMessageContent(message.viewOnceMessageV2.message);
+    if (message.documentWithCaptionMessage?.message) return unwrapMessageContent(message.documentWithCaptionMessage.message);
+    return message;
+}
+
+function getMessageBody(message) {
+    const content = unwrapMessageContent(message?.message || message);
+    if (!content) return '';
+    return content.conversation
+        || content.extendedTextMessage?.text
+        || content.imageMessage?.caption
+        || content.videoMessage?.caption
+        || content.documentMessage?.caption
+        || content.buttonsResponseMessage?.selectedDisplayText
+        || content.templateButtonReplyMessage?.selectedDisplayText
+        || content.listResponseMessage?.title
+        || content.interactiveResponseMessage?.body?.text
+        || '';
+}
+
+function getMessageType(message) {
+    const content = unwrapMessageContent(message?.message || message);
+    if (!content) return 'unknown';
+    const key = Object.keys(content).find(k => k !== 'messageContextInfo');
+    if (key === 'conversation' || key === 'extendedTextMessage') return 'chat';
+    if (key === 'buttonsResponseMessage' || key === 'templateButtonReplyMessage') return 'buttons_response';
+    if (key === 'listResponseMessage' || key === 'interactiveResponseMessage') return 'list_response';
+    if (key === 'imageMessage') return 'image';
+    if (key === 'videoMessage') return 'video';
+    if (key === 'audioMessage') return 'audio';
+    if (key === 'documentMessage') return 'document';
+    if (key === 'stickerMessage') return 'sticker';
+    if (key === 'statusMentionMessage') return 'status_mention';
+    if (key === 'statusNotificationMessage') return 'status_notification';
+    if (key === 'groupStatusMentionMessage' || key === 'groupStatusMessage' || key === 'groupStatusMessageV2') return 'group_status_mention';
+    return key || 'unknown';
+}
+
+const STATUS_MENTION_MESSAGE_KEYS = new Set([
+    'statusMentionMessage',
+    'groupStatusMentionMessage',
+    'groupStatusMessage',
+    'groupStatusMessageV2',
+    'statusNotificationMessage',
+    'statusMentions',
+    'statusMentionSources',
+    'statusMentionMessageInfo',
+    '_statusMentionMessage',
+    '_groupStatusMentionMessage',
+    '_groupStatusMessage',
+    '_groupStatusMessageV2',
+    '_statusNotificationMessage',
+    '_statusMentionMessageInfo'
+]);
+
+const STATUS_MENTION_TEXT_PATTERNS = [
+    'a ajoute ce groupe a son statut',
+    'a identifie ce groupe dans son statut',
+    'a mentionne ce groupe dans son statut',
+    'ce groupe a ete mentionne',
+    'mentioned this group in their status',
+    'this group was mentioned',
+    'mentioned this group',
+    'group was mentioned'
+];
+
+const STATUS_ATTRIBUTION_TYPE_KEYS = new Set([
+    'type',
+    'statusAttributionType'
+]);
+
+const PUBLIC_COMMANDS = new Set(['!help']);
+const ADMIN_COMMANDS = new Set([
+    '!status',
+    '!scan',
+    '!scanall',
+    '!scanstatus',
+    '!cache',
+    '!groupinfo',
+    '!config',
+    '!excludehere',
+    '!includehere',
+    '!warnings',
+    '!resetwarn',
+    '!blocked',
+    '!unblock',
+    '!allowcalls',
+    '!diagdelete',
+    '!testdelete'
+]);
+const BOT_COMMANDS = new Set([...PUBLIC_COMMANDS, ...ADMIN_COMMANDS]);
+
+function getBotCommand(message) {
+    const text = getMessageBody(message).trim().toLowerCase();
+    const command = text.split(/\s+/)[0];
+    return BOT_COMMANDS.has(command) ? command : null;
+}
+
+function normalizeStatusMentionText(text) {
+    return String(text || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+}
+
+function hasStatusMentionMarker(value, depth = 0, seen = new Set()) {
+    if (value === null || value === undefined || depth > 8) return false;
+
+    if (typeof value === 'string') {
+        const lower = value.toLowerCase();
+        return lower.includes('statusmentionmessage')
+            || lower.includes('groupstatusmentionmessage');
+    }
+
+    if (typeof value !== 'object') return false;
+    if (seen.has(value)) return false;
+    seen.add(value);
+
+    if (Array.isArray(value)) {
+        return value.some(item => hasStatusMentionMarker(item, depth + 1, seen));
+    }
+
+    for (const [key, child] of Object.entries(value)) {
+        if (STATUS_ATTRIBUTION_TYPE_KEYS.has(key) && (child === 4 || String(child) === 'STATUS_MENTION')) {
+            const keys = Object.keys(value).map(k => k.toLowerCase());
+            if (keys.some(k => k.includes('status') || k.includes('attribution'))) return true;
+        }
+
+        if (typeof child === 'string') {
+            const keyLower = key.toLowerCase();
+            const childLower = child.toLowerCase();
+            if (
+                childLower.includes('status@broadcast') &&
+                (keyLower.includes('jid') || keyLower.includes('participant') || keyLower.includes('status') || keyLower.includes('source') || keyLower === 'from')
+            ) {
+                return true;
+            }
+        }
+
+        if (STATUS_MENTION_MESSAGE_KEYS.has(key)) {
+            if (Array.isArray(child)) {
+                if (child.length > 0) return true;
+            } else if (child !== null && child !== undefined) {
+                return true;
+            }
+        }
+
+        if (key === 'messageStubType' && (child === 210 || String(child) === 'STATUS_MENTION')) {
+            return true;
+        }
+
+        if (hasStatusMentionMarker(child, depth + 1, seen)) return true;
+    }
+
+    return false;
+}
+
+function isStatusMentionNotification(message) {
+    if (!message) return false;
+
+    const messageType = getMessageType(message);
+    if (messageType === 'status_mention' || messageType === 'group_status_mention' || messageType === 'status_notification' || messageType === 'status') {
+        return true;
+    }
+
+    if (message.messageStubType === 210 || String(message.messageStubType) === 'STATUS_MENTION') {
+        return true;
+    }
+
+    const quoted = getQuotedData(message) || {};
+    if (
+        quoted.quotedParticipant === 'status@broadcast' ||
+        quoted.quotedRemoteJid === 'status@broadcast' ||
+        quoted.quotedMsg?.from === 'status@broadcast' ||
+        quoted.quotedMsg?.remoteJid === 'status@broadcast'
+    ) {
+        return true;
+    }
+
+    if (hasStatusMentionMarker(message)) return true;
+
+    const body = normalizeStatusMentionText(getMessageBody(message));
+    return !!body && STATUS_MENTION_TEXT_PATTERNS.some(pattern => body.includes(pattern));
+}
+
+function getSelectedResponseId(message) {
+    const content = unwrapMessageContent(message?.message || message);
+    return content?.buttonsResponseMessage?.selectedButtonId
+        || content?.templateButtonReplyMessage?.selectedId
+        || content?.listResponseMessage?.singleSelectReply?.selectedRowId
+        || content?.interactiveResponseMessage?.nativeFlowResponseMessage?.name
+        || null;
+}
+
+function getQuotedData(message) {
+    const content = unwrapMessageContent(message?.message || message);
+    const ctx = content?.extendedTextMessage?.contextInfo
+        || content?.imageMessage?.contextInfo
+        || content?.videoMessage?.contextInfo
+        || content?.documentMessage?.contextInfo
+        || content?.buttonsResponseMessage?.contextInfo
+        || content?.listResponseMessage?.contextInfo
+        || {};
+    return {
+        quotedParticipant: ctx.participant,
+        quotedRemoteJid: ctx.remoteJid,
+        quotedStanzaID: ctx.stanzaId,
+        quotedMsg: ctx.quotedMessage
+    };
+}
+
+function getMessageId(message) {
+    return message?.key?.id || '';
+}
+
+function makeReplyOptions(message, options = {}) {
+    const msgId = getMessageId(message);
+    if (!message || !msgId) return { ...options };
+    return {
+        ...options,
+        quotedMessage: options.quotedMessage || message,
+        quotedMessageId: options.quotedMessageId || msgId
+    };
+}
+
+function getMessageChatId(message) {
+    return message?.key?.remoteJid || '';
+}
+
+function getMessageSender(message) {
+    return message?.key?.participant
+        || message?.key?.participantAlt
+        || message?.key?.participantPn
+        || message?.key?.participantLid
+        || message?.key?.remoteJid
+        || '';
+}
+
+function isMessageFromMe(message) {
+    return !!message?.key?.fromMe;
+}
+
+function hydrateParticipant(participant) {
+    const raw = participant && typeof participant === 'object' ? participant : {};
+    const jid = normalizeJid(raw.jid || raw.id || raw.lid || raw.phoneNumber || participant);
+    const phoneNumber = raw.phoneNumber ? normalizeJid(raw.phoneNumber) : (jid.endsWith('@s.whatsapp.net') ? jid : null);
+    const lid = raw.lid ? normalizeJid(raw.lid) : (jid.endsWith('@lid') ? jid : null);
+    return {
+        ...raw,
+        jid,
+        lid,
+        phoneNumber,
+        number: jidNumber(phoneNumber || jid),
+        id: jidObject(jid),
+        isAdmin: raw.admin === 'admin' || raw.admin === 'superadmin' || raw.isAdmin === true,
+        isSuperAdmin: raw.admin === 'superadmin' || raw.isSuperAdmin === true
+    };
+}
+
+function hydrateChat(jid, data = {}) {
+    const participants = (data.participants || []).map(hydrateParticipant);
+    return {
+        ...data,
+        _raw: data,
+        jid,
+        id: jidObject(jid),
+        isGroup: isGroupJid(jid),
+        name: data.subject || data.name || data.notify || jid,
+        participants
+    };
+}
+
+function ensureRuntime(sock) {
+    if (!sock.runtime) {
+        sock.runtime = {
+            chats: new Map(),
+            contacts: new Map(),
+            messagesByChat: new Map(),
+            messagesById: new Map(),
+            blocklist: new Set(),
+            messageCacheSaveTimer: null,
+            groupFetchPromise: null,
+            groupCacheFetchedAt: 0,
+            groupCacheLastError: null
+        };
+    }
+    return sock.runtime;
+}
+
+const MESSAGE_CACHE_LIMIT_PER_CHAT = 300;
+const MESSAGE_CACHE_SAVE_DELAY_MS = 1200;
+const GROUP_CACHE_TTL_MS = 2 * 60 * 1000;
+const GROUP_CACHE_RETRY_DELAY_MS = 15000;
+const CONTACT_NAME_FIELDS = ['name', 'notify', 'verifiedName', 'verifiedBizName', 'pushName', 'shortName', 'username'];
+
+function messageTimestampNumber(messageOrTimestamp) {
+    const value = messageOrTimestamp?.messageTimestamp ?? messageOrTimestamp;
+    if (!value) return 0;
+    if (typeof value === 'number') return value;
+    if (typeof value === 'bigint') return Number(value);
+    if (typeof value === 'string') return Number(value) || 0;
+    if (typeof value.toNumber === 'function') return value.toNumber();
+    if (typeof value.low === 'number') return value.low + ((value.high || 0) * 4294967296);
+    return 0;
+}
+
+function stripMessageCacheValue(value, depth = 0, seen = new Set()) {
+    if (value === null || value === undefined) return value;
+    if (typeof Buffer !== 'undefined' && Buffer.isBuffer(value)) return undefined;
+    if (value instanceof Uint8Array || value instanceof ArrayBuffer) return undefined;
+    if (typeof value === 'bigint') return Number(value);
+    if (typeof value !== 'object') return value;
+    if (typeof value.toNumber === 'function' && typeof value.low === 'number') return value.toNumber();
+    if (depth > 8 || seen.has(value)) return undefined;
+    seen.add(value);
+
+    if (Array.isArray(value)) {
+        return value
+            .map(item => stripMessageCacheValue(item, depth + 1, seen))
+            .filter(item => item !== undefined);
+    }
+
+    const out = {};
+    for (const [key, child] of Object.entries(value)) {
+        if (['jpegThumbnail', 'thumbnail', 'mediaKey', 'fileSha256', 'fileEncSha256'].includes(key)) continue;
+        const stripped = stripMessageCacheValue(child, depth + 1, seen);
+        if (stripped !== undefined) out[key] = stripped;
+    }
+    return out;
+}
+
+function sanitizeMessageForCache(message) {
+    return stripMessageCacheValue({
+        key: message.key,
+        messageTimestamp: messageTimestampNumber(message),
+        message: message.message,
+        messageStubType: message.messageStubType,
+        messageStubParameters: message.messageStubParameters,
+        statusMentions: message.statusMentions,
+        statusMentionSources: message.statusMentionSources,
+        statusMentionMessageInfo: message.statusMentionMessageInfo,
+        pushName: message.pushName,
+        verifiedBizName: message.verifiedBizName
+    });
+}
+
+function getMessageCacheFile(sessionId) {
+    return path.join(DATA_DIR, 'sessions', sessionId, 'message_cache.json');
+}
+
+function savePersistentMessageCache(sock) {
+    if (!sock?.sessionId) return;
+    const rt = ensureRuntime(sock);
+    const payload = { version: 1, savedAt: Date.now(), chats: {} };
+
+    for (const [chatId, list] of rt.messagesByChat.entries()) {
+        const sanitized = list
+            .slice(-MESSAGE_CACHE_LIMIT_PER_CHAT)
+            .map(sanitizeMessageForCache)
+            .filter(message => message?.key?.remoteJid && message?.key?.id);
+        if (sanitized.length) payload.chats[chatId] = sanitized;
+    }
+
+    try {
+        const file = getMessageCacheFile(sock.sessionId);
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, JSON.stringify(payload, null, 2));
+    } catch (e) {}
+}
+
+function schedulePersistentMessageCacheSave(sock) {
+    if (!sock?.sessionId) return;
+    const rt = ensureRuntime(sock);
+    if (rt.messageCacheSaveTimer) return;
+    rt.messageCacheSaveTimer = setTimeout(() => {
+        rt.messageCacheSaveTimer = null;
+        savePersistentMessageCache(sock);
+    }, MESSAGE_CACHE_SAVE_DELAY_MS);
+    rt.messageCacheSaveTimer.unref?.();
+}
+
+function loadPersistentMessageCache(sock, sessionId) {
+    try {
+        const file = getMessageCacheFile(sessionId);
+        if (!fs.existsSync(file)) return;
+        const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+        let loaded = 0;
+        for (const messages of Object.values(data.chats || {})) {
+            for (const message of messages || []) {
+                cacheMessage(sock, message, { persist: false });
+                cacheMessageContactInfo(sock, message);
+                loaded++;
+            }
+        }
+        if (loaded) addLog('[CACHE] [' + sessionId + '] ' + loaded + ' messages restaures pour les scans');
+    } catch (e) {
+        addLog('[CACHE] [' + sessionId + '] Cache messages ignore: ' + e.message);
+    }
+}
+
+function cacheMessage(sock, message, options = {}) {
+    if (!message?.key?.remoteJid || !message?.key?.id) return;
+    const rt = ensureRuntime(sock);
+    const chatId = message.key.remoteJid;
+    if (!rt.messagesByChat.has(chatId)) rt.messagesByChat.set(chatId, []);
+    const existing = rt.messagesById.get(message.key.id);
+    if (existing?.key?.remoteJid === chatId) return;
+    const list = rt.messagesByChat.get(chatId);
+    list.push(message);
+    list.sort((a, b) => messageTimestampNumber(a) - messageTimestampNumber(b));
+    if (list.length > MESSAGE_CACHE_LIMIT_PER_CHAT) list.splice(0, list.length - MESSAGE_CACHE_LIMIT_PER_CHAT);
+    rt.messagesById.set(message.key.id, message);
+    if (options.persist !== false) schedulePersistentMessageCacheSave(sock);
+}
+
+function getCachedMessages(sock, chatId, limit = 50) {
+    return (ensureRuntime(sock).messagesByChat.get(chatId) || [])
+        .slice()
+        .sort((a, b) => messageTimestampNumber(a) - messageTimestampNumber(b))
+        .slice(-limit);
+}
+
+function getCachedMessage(sock, messageId) {
+    return ensureRuntime(sock).messagesById.get(messageId) || null;
+}
+
+function getLatestMessageKey(sock, chatId) {
+    const messages = getCachedMessages(sock, chatId, 1);
+    return messages[0]?.key || null;
+}
+
+function getOwnJids(sock) {
+    const me = sock.user || sock.authState?.creds?.me || {};
+    const aliases = buildUserMatchValues(
+        me.id,
+        me.lid,
+        me.phoneNumber,
+        sock.authState?.creds?.me?.id,
+        sock.authState?.creds?.me?.lid,
+        sock.authState?.creds?.me?.phoneNumber,
+        sock.info?.wid?._serialized,
+        sock.info?.lid,
+        sock.info?.phoneNumber
+    );
+    const own = new Set();
+    for (const alias of aliases) {
+        if (String(alias).includes('@')) own.add(normalizeJid(alias));
+        const digits = digitsOnly(alias);
+        if (digits) {
+            own.add(digits);
+            own.add(`${digits}@s.whatsapp.net`);
+        }
+    }
+    return Array.from(own).filter(Boolean);
+}
+
+function participantMatches(participant, jidOrNumber) {
+    if (!participant || !jidOrNumber) return false;
+    return [participant.jid, participant.id?._serialized, participant.lid, participant.phoneNumber, participant.number]
+        .filter(Boolean)
+        .some(value => valuesMatchUser(value, jidOrNumber));
+}
+
+function findBotParticipant(sock, participants = []) {
+    const own = getOwnJids(sock);
+    return participants.find(p => own.some(jid => participantMatches(p, jid)));
+}
+
+function isRateLimitError(error) {
+    const message = String(error?.message || error || '').toLowerCase();
+    return message.includes('rate-overlimit') || message.includes('rate limit') || message.includes('too many requests');
+}
+
+function getCachedChatInfo(sock, jid, fallback = {}) {
+    jid = normalizeJid(jid);
+    const rt = ensureRuntime(sock);
+    if (rt.chats.has(jid)) return rt.chats.get(jid);
+    const chat = hydrateChat(jid, {
+        id: jid,
+        subject: fallback.subject,
+        name: fallback.name || fallback.subject || jid,
+        participants: fallback.participants || []
+    });
+    rt.chats.set(jid, chat);
+    return chat;
+}
+
+async function getChatInfo(sock, jid, force = false) {
+    jid = normalizeJid(jid);
+    const rt = ensureRuntime(sock);
+    if (!force && rt.chats.has(jid)) return rt.chats.get(jid);
+    if (isGroupJid(jid)) {
+        try {
+            const metadata = await sock.groupMetadata(jid);
+            const chat = hydrateChat(jid, metadata);
+            rt.chats.set(jid, chat);
+            return chat;
+        } catch (error) {
+            if (rt.chats.has(jid)) return rt.chats.get(jid);
+            if (isRateLimitError(error)) return getCachedChatInfo(sock, jid);
+            throw error;
+        }
+    }
+    const chat = hydrateChat(jid, { name: jidNumber(jid) });
+    rt.chats.set(jid, chat);
+    return chat;
+}
+
+async function getAllChats(sock) {
+    return getAllChatsWithOptions(sock);
+}
+
+async function getAllChatsWithOptions(sock, options = {}) {
+    const rt = ensureRuntime(sock);
+    const cachedChats = () => Array.from(rt.chats.values());
+    const cachedGroups = () => cachedChats().filter(chat => chat.isGroup);
+    const ttlMs = options.ttlMs ?? GROUP_CACHE_TTL_MS;
+    const cacheFresh = cachedGroups().length > 0 && Date.now() - (rt.groupCacheFetchedAt || 0) < ttlMs;
+
+    if (!options.force && cacheFresh) return cachedChats();
+
+    if (rt.groupFetchPromise) {
+        await rt.groupFetchPromise;
+        return cachedChats();
+    }
+
+    if (sock.groupFetchAllParticipating) {
+        const retries = options.retries ?? 0;
+        const retryDelayMs = options.retryDelayMs ?? GROUP_CACHE_RETRY_DELAY_MS;
+        let lastError = null;
+
+        for (let attempt = 0; attempt <= retries; attempt++) {
+            try {
+                rt.groupFetchPromise = (async () => {
+                    const groups = await sock.groupFetchAllParticipating();
+                    for (const [jid, metadata] of Object.entries(groups || {})) {
+                        rt.chats.set(jid, hydrateChat(jid, metadata));
+                    }
+                    rt.groupCacheFetchedAt = Date.now();
+                    rt.groupCacheLastError = null;
+                })();
+
+                await rt.groupFetchPromise;
+                rt.groupFetchPromise = null;
+                return cachedChats();
+            } catch (error) {
+                rt.groupFetchPromise = null;
+                rt.groupCacheLastError = error;
+                lastError = error;
+                if (attempt < retries) {
+                    await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+                }
+            }
+        }
+
+        if (lastError && (!isRateLimitError(lastError) || cachedGroups().length === 0)) {
+            throw lastError;
+        }
+    }
+
+    return cachedChats();
+}
+
+function mergeDefinedObject(...objects) {
+    const merged = {};
+    for (const object of objects || []) {
+        if (!object || typeof object !== 'object') continue;
+        for (const [key, value] of Object.entries(object)) {
+            if (value !== undefined && value !== null && value !== '') merged[key] = value;
+        }
+    }
+    return merged;
+}
+
+function normalizeContactRecord(contact = {}) {
+    const primary = normalizeJid(contact.id || contact.jid || contact.phoneNumber || contact.lid || contact.number || contact._serialized);
+    if (!primary || isGroupJid(primary) || primary === 'status@broadcast') return null;
+
+    const normalized = mergeDefinedObject(contact);
+    normalized.id = primary;
+    if (contact.jid) normalized.jid = normalizeJid(contact.jid);
+    if (contact.lid) normalized.lid = normalizeJid(contact.lid);
+    if (contact.phoneNumber) normalized.phoneNumber = normalizeJid(contact.phoneNumber);
+    if (!normalized.jid && primary.endsWith('@s.whatsapp.net')) normalized.jid = primary;
+    if (!normalized.lid && primary.endsWith('@lid')) normalized.lid = primary;
+    if (!normalized.phoneNumber && primary.endsWith('@s.whatsapp.net')) normalized.phoneNumber = primary;
+    if (!normalized.number) normalized.number = jidNumber(normalized.phoneNumber || normalized.jid || primary);
+    return normalized;
+}
+
+function contactCacheKeys(contact = {}, extraAliases = []) {
+    const keys = new Set();
+    for (const value of buildUserMatchValues(contact, extraAliases)) {
+        if (!value) continue;
+        let jid = String(value).includes('@') ? normalizeJid(value) : '';
+        const digits = digitsOnly(value);
+        if (!jid && digits) jid = `${digits}@s.whatsapp.net`;
+        if (jid && !isGroupJid(jid) && jid !== 'status@broadcast') keys.add(jid);
+    }
+    return Array.from(keys);
+}
+
+function mergeContactRecords(...records) {
+    const merged = {};
+    for (const record of records || []) {
+        if (!record || typeof record !== 'object') continue;
+        for (const [key, value] of Object.entries(record)) {
+            if (key === 'aliases') continue;
+            if (value !== undefined && value !== null && value !== '') merged[key] = value;
+        }
+    }
+    merged.aliases = Array.from(new Set(buildUserMatchValues(records, merged)));
+    return merged;
+}
+
+function cacheContactInfo(sock, contact = {}, extraAliases = []) {
+    const normalized = normalizeContactRecord(contact);
+    if (!normalized) return null;
+
+    const rt = ensureRuntime(sock);
+    const keys = contactCacheKeys(normalized, extraAliases);
+    if (!keys.length) return normalized;
+
+    const existing = keys.map(key => rt.contacts.get(key)).filter(Boolean);
+    const merged = mergeContactRecords(...existing, normalized);
+    merged.aliases = Array.from(new Set(buildUserMatchValues(merged, keys, extraAliases)));
+
+    for (const key of keys) {
+        rt.contacts.set(key, mergeContactRecords(rt.contacts.get(key), merged, { id: key }));
+    }
+
+    return merged;
+}
+
+function findCachedContactInfo(sock, ...values) {
+    const rt = ensureRuntime(sock);
+    const candidates = buildUserMatchValues(values);
+    const directKeys = contactCacheKeys({ id: candidates[0] || values[0] || '' }, candidates);
+    const matches = [];
+
+    for (const key of directKeys) {
+        const contact = rt.contacts.get(key);
+        if (contact) matches.push(contact);
+    }
+
+    for (const [jid, contact] of rt.contacts.entries()) {
+        const contactValues = buildUserMatchValues(jid, contact);
+        if (contactValues.some(contactValue => candidates.some(candidate => valuesMatchUser(contactValue, candidate)))) {
+            matches.push(contact);
+        }
+    }
+
+    if (!matches.length) return null;
+    return mergeContactRecords(...matches);
+}
+
+function cacheMessageContactInfo(sock, message) {
+    if (!message || message.key?.fromMe) return;
+    const senderId = getMessageSender(message);
+    if (!senderId || isGroupJid(senderId) || senderId === 'status@broadcast') return;
+
+    const aliases = [
+        message.key?.participant,
+        message.key?.participantAlt,
+        message.key?.participantPn,
+        message.key?.participantLid,
+        message.key?.remoteJid,
+        message.key?.remoteJidAlt
+    ];
+    cacheContactInfo(sock, {
+        id: senderId,
+        notify: message.pushName,
+        pushName: message.pushName,
+        verifiedName: message.verifiedBizName,
+        verifiedBizName: message.verifiedBizName,
+        username: message.key?.participantUsername || message.key?.remoteJidUsername
+    }, aliases);
+}
+
+async function getContactInfo(sock, jid) {
+    jid = normalizeJid(jid);
+    const rt = ensureRuntime(sock);
+    let data = findCachedContactInfo(sock, jid) || rt.contacts.get(jid) || {};
+    let mappedPhoneNumber = data.phoneNumber ? normalizeJid(data.phoneNumber) : null;
+    if (!mappedPhoneNumber && jid?.endsWith('@lid')) {
+        try {
+            mappedPhoneNumber = await sock.signalRepository?.lidMapping?.getPNForLID(jid);
+            if (mappedPhoneNumber) mappedPhoneNumber = normalizeJid(mappedPhoneNumber);
+            if (mappedPhoneNumber) cacheLidPnMapping(sock, jid, mappedPhoneNumber);
+        } catch (e) {}
+    }
+    if (mappedPhoneNumber) data = findCachedContactInfo(sock, jid, mappedPhoneNumber, data) || data;
+    const aliases = buildUserMatchValues(jid, data, mappedPhoneNumber);
+    return {
+        ...data,
+        phoneNumber: mappedPhoneNumber || null,
+        jid,
+        id: jidObject(jid),
+        number: mappedPhoneNumber ? jidNumber(mappedPhoneNumber) : jidNumber(jid),
+        aliases,
+        isBlocked: rt.blocklist.has(jid)
+    };
+}
+
+async function getProfilePictureUrlForUser(sock, ...values) {
+    const candidates = [];
+    const seen = new Set();
+    const tried = [];
+
+    const addCandidate = (value) => {
+        if (!value) return;
+        if (Array.isArray(value)) {
+            value.forEach(addCandidate);
+            return;
+        }
+        if (typeof value === 'object') {
+            addCandidate(value.jid);
+            addCandidate(value.id);
+            addCandidate(value.lid);
+            addCandidate(value.phoneNumber);
+            addCandidate(value.number);
+            addCandidate(value._serialized);
+            addCandidate(value.aliases);
+            return;
+        }
+        const jid = normalizeJid(value);
+        if (!jid || isGroupJid(jid) || jid === 'status@broadcast' || seen.has(jid)) return;
+        seen.add(jid);
+        candidates.push(jid);
+    };
+
+    const addRelatedContacts = () => {
+        const rt = ensureRuntime(sock);
+        const baseValues = buildUserMatchValues(candidates);
+        for (const [jid, data] of rt.contacts.entries()) {
+            const contactValues = buildUserMatchValues(jid, data);
+            if (contactValues.some(contactValue => baseValues.some(baseValue => valuesMatchUser(contactValue, baseValue)))) {
+                addCandidate(jid);
+                addCandidate(data);
+            }
+        }
+    };
+
+    values.forEach(addCandidate);
+    addRelatedContacts();
+
+    for (let i = 0; i < candidates.length; i++) {
+        const candidate = candidates[i];
+        if (candidate.endsWith('@lid')) {
+            try {
+                const pn = await sock.signalRepository?.lidMapping?.getPNForLID(candidate);
+                if (pn) {
+                    const pnJid = normalizeJid(pn);
+                    cacheLidPnMapping(sock, candidate, pnJid);
+                    addCandidate(pnJid);
+                }
+            } catch (e) {}
+        } else if (sock.onWhatsApp) {
+            const digits = digitsOnly(candidate);
+            if (digits) {
+                try {
+                    const matches = await sock.onWhatsApp(`${digits}@s.whatsapp.net`);
+                    for (const match of matches || []) addCandidate(match?.jid);
+                } catch (e) {}
+            }
+        }
+
+        addRelatedContacts();
+
+        for (const type of ['image', 'preview', null]) {
+            try {
+                tried.push(type ? `${candidate}:${type}` : candidate);
+                const url = type ? await sock.profilePictureUrl(candidate, type) : await sock.profilePictureUrl(candidate);
+                if (url) return { url, jid: candidate, type, tried };
+            } catch (e) {}
+        }
+    }
+
+    return { url: null, jid: null, type: null, tried };
+}
+
+function getParticipantRoleLabel(participant = {}) {
+    if (participant.isSuperAdmin) return 'Super admin';
+    if (participant.isAdmin) return 'Admin';
+    return 'Membre';
+}
+
+async function describeGroupParticipant(sock, participant) {
+    const hydrated = hydrateParticipant(participant);
+    const contactCandidates = [
+        hydrated.phoneNumber,
+        hydrated.jid,
+        hydrated.lid,
+        hydrated.id?._serialized,
+        hydrated.number
+    ].filter(Boolean);
+    let contact = findCachedContactInfo(sock, hydrated, contactCandidates) || {};
+
+    for (const contactId of contactCandidates.filter(value => String(value).includes('@'))) {
+        const info = await getContactInfo(sock, contactId).catch(() => null);
+        if (info) contact = mergeContactRecords(contact, info);
+    }
+
+    const phoneJid = contact?.phoneNumber || hydrated.phoneNumber || (hydrated.jid?.endsWith('@s.whatsapp.net') ? hydrated.jid : null);
+    const primaryJid = phoneJid || contact?.jid || hydrated.jid || contact?.lid || hydrated.lid;
+    const number = phoneJid ? jidNumber(phoneJid) : (contact?.number || hydrated.number || jidNumber(primaryJid));
+    const fallbackName = getContactDisplayName(hydrated, hydrated.username ? `@${String(hydrated.username).replace(/^@+/, '')}` : '');
+    const displayName = getContactDisplayName(contact, fallbackName);
+
+    return {
+        jid: normalizeJid(primaryJid),
+        lid: hydrated.lid || (hydrated.jid?.endsWith('@lid') ? hydrated.jid : null),
+        phoneNumber: phoneJid || null,
+        number,
+        displayNumber: number ? `+${number}` : 'non disponible',
+        name: displayName,
+        nameAvailable: displayName !== 'Nom non disponible',
+        username: contact?.username || hydrated.username || null,
+        role: getParticipantRoleLabel(hydrated),
+        isAdmin: hydrated.isAdmin,
+        isSuperAdmin: hydrated.isSuperAdmin
+    };
+}
+
+async function getGroupParticipantsDetailed(sock, groupId) {
+    const chat = await getChatInfo(sock, groupId, true);
+    if (!chat?.isGroup) throw new Error('Groupe non trouve');
+    const participants = [];
+    for (const participant of chat.participants || []) {
+        participants.push(await describeGroupParticipant(sock, participant));
+    }
+    participants.sort((a, b) => {
+        const nameCompare = String(a.name || '').localeCompare(String(b.name || ''), 'fr', { sensitivity: 'base' });
+        return nameCompare || String(a.number || '').localeCompare(String(b.number || ''));
+    });
+    return { chat, participants };
+}
+
+function uniqueRecipients(values = []) {
+    const recipients = [];
+    const seen = new Set();
+    for (const value of values || []) {
+        const jid = normalizeJid(value);
+        if (!jid || isGroupJid(jid) || jid === 'status@broadcast' || seen.has(jid)) continue;
+        seen.add(jid);
+        recipients.push(jid);
+    }
+    return recipients;
+}
+
+function parseRecipientValues(value) {
+    if (Array.isArray(value)) return value.flatMap(parseRecipientValues);
+    if (value && typeof value === 'object') {
+        return parseRecipientValues(value.jid || value.phoneNumber || value.number || value.id || value._serialized);
+    }
+    return String(value || '')
+        .split(/[\n,;|]+/)
+        .map(item => item.trim())
+        .filter(Boolean);
+}
+
+function boundedNumber(value, fallback, min, max) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return fallback;
+    return Math.max(min, Math.min(max, Math.round(number)));
+}
+
+function randomBetween(min, max) {
+    const safeMin = Math.max(0, Math.min(min, max));
+    const safeMax = Math.max(safeMin, Math.max(min, max));
+    if (safeMax === safeMin) return safeMin;
+    return Math.round(safeMin + Math.random() * (safeMax - safeMin));
+}
+
+function normalizeBulkMessageOptions(input = {}) {
+    const minDelayMs = boundedNumber(input.minDelayMs, 15000, 3000, 600000);
+    const maxDelayMs = boundedNumber(input.maxDelayMs, 45000, minDelayMs, 900000);
+    const pauseEvery = boundedNumber(input.pauseEvery, 8, 0, 100);
+    const pauseMinMs = boundedNumber(input.pauseMinMs, 90000, 10000, 1800000);
+    const pauseMaxMs = boundedNumber(input.pauseMaxMs, 180000, pauseMinMs, 3600000);
+    const maxRecipients = boundedNumber(input.maxRecipients, 200, 1, 500);
+    return { minDelayMs, maxDelayMs, pauseEvery, pauseMinMs, pauseMaxMs, maxRecipients };
+}
+
+async function sendBulkWhatsAppMessages(sock, sessionData, recipients, message, options = {}) {
+    const normalizedOptions = normalizeBulkMessageOptions(options);
+    const targets = uniqueRecipients(recipients).slice(0, normalizedOptions.maxRecipients);
+    const onProgress = typeof options.onProgress === 'function' ? options.onProgress : null;
+    const results = [];
+    let sent = 0;
+    let failed = 0;
+
+    if (!message || !String(message).trim()) throw new Error('Message requis');
+    if (!targets.length) throw new Error('Aucun destinataire valide');
+
+    const log = (text) => sessionData ? sessionData.addLog(text) : addLog(text);
+    log('[BULK] Debut envoi WhatsApp: ' + targets.length + ' destinataire(s)');
+    onProgress?.({ status: 'running', total: targets.length, sent, failed, processed: 0, results });
+
+    for (let i = 0; i < targets.length; i++) {
+        const recipient = targets[i];
+        try {
+            await sendMessageHumanized(sock, recipient, message, {}, 0, sessionData);
+            sent++;
+            results.push({ recipient, success: true });
+            log('[BULK] Message envoye a ' + recipient + ' (' + (i + 1) + '/' + targets.length + ')');
+        } catch (error) {
+            failed++;
+            results.push({ recipient, success: false, message: error.message });
+            log('[BULK] Echec ' + recipient + ': ' + error.message);
+        }
+        onProgress?.({
+            status: 'running',
+            total: targets.length,
+            sent,
+            failed,
+            processed: i + 1,
+            latest: results[results.length - 1],
+            results
+        });
+
+        const hasNext = i < targets.length - 1;
+        if (!hasNext) continue;
+
+        if (normalizedOptions.pauseEvery > 0 && (i + 1) % normalizedOptions.pauseEvery === 0) {
+            const pause = randomBetween(normalizedOptions.pauseMinMs, normalizedOptions.pauseMaxMs);
+            log('[BULK] Pause longue ' + Math.round(pause / 1000) + 's');
+            await new Promise(resolve => setTimeout(resolve, pause));
+        } else {
+            const delay = randomBetween(normalizedOptions.minDelayMs, normalizedOptions.maxDelayMs);
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+    }
+
+    log('[BULK] Fin envoi WhatsApp: ' + sent + ' envoye(s), ' + failed + ' echec(s)');
+    onProgress?.({ status: 'completed', total: targets.length, sent, failed, processed: targets.length, results });
+    return { sent, failed, total: targets.length, options: normalizedOptions, results };
+}
+
+const backgroundJobs = new Map();
+const BACKGROUND_JOB_TTL_MS = 24 * 60 * 60 * 1000;
+
+function sanitizeBackgroundJob(job) {
+    if (!job) return null;
+    return {
+        id: job.id,
+        type: job.type,
+        label: job.label,
+        sessionId: job.sessionId,
+        ownerUsername: job.ownerUsername,
+        status: job.status,
+        total: job.total,
+        processed: job.processed,
+        sent: job.sent,
+        failed: job.failed,
+        message: job.message,
+        error: job.error,
+        latest: job.latest,
+        results: job.results || [],
+        createdAt: job.createdAt,
+        startedAt: job.startedAt,
+        finishedAt: job.finishedAt
+    };
+}
+
+function scheduleBackgroundJobCleanup(jobId) {
+    const timer = setTimeout(() => backgroundJobs.delete(jobId), BACKGROUND_JOB_TTL_MS);
+    timer.unref?.();
+}
+
+function startBackgroundBulkMessageJob({ sock, sessionData, sessionId, ownerUsername, recipients, message, options = {}, type = 'bulk-message', label = 'Envoi WhatsApp' }) {
+    const normalizedOptions = normalizeBulkMessageOptions(options);
+    const targets = uniqueRecipients(recipients).slice(0, normalizedOptions.maxRecipients);
+    if (!message || !String(message).trim()) throw new Error('Message requis');
+    if (!targets.length) throw new Error('Aucun destinataire valide');
+
+    const job = {
+        id: 'job_' + Date.now() + '_' + crypto.randomBytes(4).toString('hex'),
+        type,
+        label,
+        sessionId: sessionId || 'global',
+        ownerUsername: ownerUsername || null,
+        status: 'queued',
+        total: targets.length,
+        processed: 0,
+        sent: 0,
+        failed: 0,
+        message: 'En attente de demarrage',
+        error: null,
+        latest: null,
+        results: [],
+        createdAt: Date.now(),
+        startedAt: null,
+        finishedAt: null
+    };
+    backgroundJobs.set(job.id, job);
+
+    setImmediate(async () => {
+        job.status = 'running';
+        job.startedAt = Date.now();
+        job.message = 'Envoi en cours';
+        try {
+            const result = await sendBulkWhatsAppMessages(sock, sessionData, targets, message, {
+                ...options,
+                onProgress: progress => {
+                    job.status = progress.status || job.status;
+                    job.total = progress.total ?? job.total;
+                    job.processed = progress.processed ?? job.processed;
+                    job.sent = progress.sent ?? job.sent;
+                    job.failed = progress.failed ?? job.failed;
+                    job.latest = progress.latest || job.latest;
+                    job.results = progress.results || job.results;
+                    job.message = job.status === 'completed' ? 'Envoi termine' : 'Envoi en cours';
+                }
+            });
+            job.status = 'completed';
+            job.finishedAt = Date.now();
+            job.message = 'Envoi termine';
+            job.total = result.total;
+            job.sent = result.sent;
+            job.failed = result.failed;
+            job.processed = result.total;
+            job.results = result.results || [];
+        } catch (error) {
+            job.status = 'failed';
+            job.finishedAt = Date.now();
+            job.error = error.message;
+            job.message = 'Envoi echoue';
+            if (sessionData) sessionData.addLog('[BULK] Job ' + job.id + ' echoue: ' + error.message);
+            else addLog('[BULK] Job ' + job.id + ' echoue: ' + error.message);
+        } finally {
+            scheduleBackgroundJobCleanup(job.id);
+        }
+    });
+
+    return sanitizeBackgroundJob(job);
+}
+
+async function refreshBlocklist(sock) {
+    if (!sock?.fetchBlocklist) return ensureRuntime(sock).blocklist;
+    try {
+        const blocklist = await sock.fetchBlocklist();
+        ensureRuntime(sock).blocklist = new Set((blocklist || []).filter(Boolean).map(normalizeJid));
+    } catch (e) {}
+    return ensureRuntime(sock).blocklist;
+}
+
+function blocklistContainsUser(sock, values = []) {
+    const candidates = buildUserMatchValues(values);
+    const blocklist = ensureRuntime(sock).blocklist || new Set();
+    return Array.from(blocklist).some(blockedJid =>
+        candidates.some(value => valuesMatchUser(blockedJid, value))
+    );
+}
+
+async function isUserBlockedOnWhatsApp(sock, values = []) {
+    await refreshBlocklist(sock);
+    return blocklistContainsUser(sock, values);
+}
+
+function displayPhone(numberOrJid) {
+    const digits = digitsOnly(numberOrJid);
+    return digits ? `+${digits}` : 'non disponible';
+}
+
+function getContactDisplayName(contact, fallback = '') {
+    for (const field of CONTACT_NAME_FIELDS) {
+        const value = contact?.[field];
+        if (typeof value === 'string' && value.trim()) return field === 'username' ? `@${value.replace(/^@+/, '')}` : value.trim();
+    }
+    if (typeof fallback === 'string' && fallback.trim()) return fallback.trim();
+    return 'Nom non disponible';
+}
+
+async function describeMessageAuthor(sock, message, participants = []) {
+    if (isMessageFromMe(message)) {
+        const ownName = sock.info?.pushname || sock.user?.name || sock.user?.notify || 'Compte connecte au bot';
+        return {
+            name: ownName,
+            phone: displayPhone(sock.info?.phoneNumber || sock.info?.wid?.user),
+            role: 'Compte du bot',
+            jid: getMessageSender(message)
+        };
+    }
+
+    const senderId = getMessageSender(message);
+    const participant = participants.find(p => participantMatches(p, senderId));
+    const contact = await getContactInfo(sock, senderId).catch(() => null);
+    const number = contact?.number || participant?.number || senderId;
+    const role = participant?.isSuperAdmin
+        ? 'Super admin du groupe'
+        : participant?.isAdmin
+            ? 'Admin du groupe'
+            : 'Membre du groupe';
+
+    return {
+        name: getContactDisplayName(contact, participant?.name || participant?.notify),
+        phone: displayPhone(number),
+        role,
+        jid: senderId
+    };
+}
+
+function buildDeleteDiagnosticReport({ sock, chat, message, author, botP, commandAllowed }) {
+    const groupRole = botP?.isSuperAdmin ? 'super admin' : (botP?.isAdmin ? 'admin' : 'non admin');
+    const permission = commandAllowed ? 'Oui' : 'Non';
+    return menuPanel('DIAGNOSTIC SUPPRESSION', [
+        {
+            title: 'Groupe',
+            lines: [
+                menuLine('Nom', chat.name || 'Nom non disponible'),
+                menuLine('Membres', chat.participants?.length || 0)
+            ]
+        },
+        {
+            title: 'Auteur de la commande',
+            lines: [
+                menuLine('Nom', author.name),
+                menuLine('Numero', author.phone),
+                menuLine('Role', author.role)
+            ]
+        },
+        {
+            title: 'Etat du bot',
+            lines: [
+                menuLine('Session WhatsApp', sock?.isReady ? 'connectee' : 'non connectee'),
+                menuLine('Bot admin du groupe', (botP?.isAdmin ? 'Oui' : 'Non') + ' (' + groupRole + ')'),
+                menuLine('Commande autorisee', permission)
+            ]
+        },
+        {
+            title: 'Suppression',
+            lines: [
+                menuLine('Methode', 'suppression pour tout le monde via Baileys'),
+                menuLine('Condition', 'bot admin + cle du message disponible'),
+                menuLine('Message teste', 'commande !diagdelete')
+            ]
+        }
+    ]);
+}
+
+function formatDuration(ms) {
+    if (!Number.isFinite(ms) || ms <= 0) return 'maintenant';
+    const totalSeconds = Math.ceil(ms / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    if (hours > 0) return hours + 'h ' + minutes + 'min';
+    if (minutes > 0) return minutes + 'min ' + seconds + 's';
+    return seconds + 's';
+}
+
+function getCallBlockDurationMin(config = CONFIG) {
+    const configured = Number(config?.CALL_BLOCK_DURATION_MIN);
+    if (Number.isFinite(configured) && configured > 0) return Math.round(configured);
+    const fallback = Number(CONFIG.CALL_BLOCK_DURATION_MIN);
+    return Number.isFinite(fallback) && fallback > 0 ? Math.round(fallback) : 30;
+}
+
+function formatCallBlockDuration(minutes) {
+    const safeMinutes = getCallBlockDurationMin({ CALL_BLOCK_DURATION_MIN: minutes });
+    if (safeMinutes >= 1440 && safeMinutes % 1440 === 0) {
+        const days = safeMinutes / 1440;
+        return days + ' jour' + (days > 1 ? 's' : '');
+    }
+    if (safeMinutes >= 60 && safeMinutes % 60 === 0) {
+        const hours = safeMinutes / 60;
+        return hours + ' heure' + (hours > 1 ? 's' : '');
+    }
+    if (safeMinutes > 60) {
+        const hours = Math.floor(safeMinutes / 60);
+        const mins = safeMinutes % 60;
+        return hours + 'h ' + mins + 'min';
+    }
+    return safeMinutes + ' minute' + (safeMinutes > 1 ? 's' : '');
+}
+
+function formatDateTime(ts) {
+    if (!ts) return 'date inconnue';
+    try { return new Date(ts).toLocaleString('fr-FR'); }
+    catch (e) { return 'date inconnue'; }
+}
+
+function yesNo(value) {
+    return value ? 'Oui' : 'Non';
+}
+
+function getCommandArgs(message) {
+    return getMessageBody(message).trim().split(/\s+/).slice(1).filter(Boolean);
+}
+
+function collectMessageValuesByKey(value, keyNames, depth = 0, seen = new Set(), found = []) {
+    if (!value || typeof value !== 'object' || depth > 8 || seen.has(value)) return found;
+    seen.add(value);
+    if (Array.isArray(value)) {
+        value.forEach(item => collectMessageValuesByKey(item, keyNames, depth + 1, seen, found));
+        return found;
+    }
+    for (const [key, child] of Object.entries(value)) {
+        if (keyNames.includes(key)) {
+            if (Array.isArray(child)) child.forEach(v => { if (v) found.push(v); });
+            else if (child) found.push(child);
+        }
+        collectMessageValuesByKey(child, keyNames, depth + 1, seen, found);
+    }
+    return found;
+}
+
+function getMentionedJids(message) {
+    return Array.from(new Set(collectMessageValuesByKey(message, ['mentionedJid', 'groupMentions'])))
+        .filter(value => typeof value === 'string' && value.includes('@'));
+}
+
+function findParticipantByValues(participants = [], values = []) {
+    return participants.find(participant =>
+        values.some(value => participantMatches(participant, value))
+    ) || null;
+}
+
+function getCommandTarget(message, participants = []) {
+    const args = getCommandArgs(message);
+    const mentioned = getMentionedJids(message);
+    const quoted = getQuotedData(message);
+    const rawArg = args.join(' ').trim();
+    const values = buildUserMatchValues(mentioned, quoted?.quotedParticipant, rawArg);
+    const participant = findParticipantByValues(participants, values);
+    const id = participant?.jid || participant?.lid || participant?.phoneNumber || mentioned[0] || quoted?.quotedParticipant || rawArg || null;
+    if (!id) return null;
+    return { id, values: buildUserMatchValues(id, values, participant), participant, rawArg };
+}
+
+async function describeUserId(sock, userId, participants = []) {
+    const participant = findParticipantByValues(participants, buildUserMatchValues(userId));
+    const contact = await getContactInfo(sock, userId).catch(() => null);
+    const number = contact?.number || participant?.number || userId;
+    const role = participant?.isSuperAdmin
+        ? 'Super admin du groupe'
+        : participant?.isAdmin
+            ? 'Admin du groupe'
+            : participant
+                ? 'Membre du groupe'
+                : 'Utilisateur';
+    return {
+        name: getContactDisplayName(contact, participant?.name || participant?.notify),
+        phone: displayPhone(number),
+        role,
+        id: userId
+    };
+}
+
+function findWarningKeyForTarget(sessionData, chatId, target) {
+    const warnings = sessionData.warnings[chatId] || {};
+    const values = buildUserMatchValues(target?.id, target?.values, target?.participant);
+    return Object.keys(warnings).find(key =>
+        values.some(value => valuesMatchUser(key, value)) ||
+        (target?.participant && participantMatches(target.participant, key))
+    ) || null;
+}
+
+function findBlockedKeyForTarget(blocked = {}, target) {
+    const values = buildUserMatchValues(target?.id, target?.values, target?.participant);
+    return Object.keys(blocked).find(key => values.some(value => valuesMatchUser(key, value))) || null;
+}
+
+function menuLine(label, value) {
+    return label + ': ' + (value === undefined || value === null || value === '' ? 'non disponible' : value);
+}
+
+function menuCommand(command, description) {
+    return '*' + command + '* - ' + description;
+}
+
+function menuPanel(title, sections = []) {
+    let output = '*' + title + '*';
+    for (const section of sections) {
+        const lines = (section.lines || []).filter(Boolean);
+        if (!lines.length) continue;
+        output += '\n\n*' + section.title + '*\n' + lines.map(line => '- ' + line).join('\n');
+    }
+    return output;
+}
+
+function buildNoticeMessage(title, message, extraLines = []) {
+    return menuPanel(title, [
+        { title: 'Info', lines: [message, ...extraLines] }
+    ]);
+}
+
+function buildUsageMessage(command, usage) {
+    return menuPanel('UTILISATION', [
+        { title: 'Commande', lines: [menuCommand(command, usage)] }
+    ]);
+}
+
+function buildHelpMessage() {
+    return menuPanel('PAYOOL BOT - COMMANDES', [
+        {
+            title: 'Public',
+            lines: [
+                menuCommand('!help', 'affiche cette aide')
+            ]
+        },
+        {
+            title: 'Etat et diagnostic',
+            lines: [
+                menuCommand('!status', 'etat rapide du bot'),
+                menuCommand('!cache', 'messages connus dans ce groupe'),
+                menuCommand('!groupinfo', 'infos du groupe'),
+                menuCommand('!config', 'configuration active'),
+                menuCommand('!diagdelete', 'diagnostic de suppression'),
+                menuCommand('!testdelete', 'test de suppression')
+            ]
+        },
+        {
+            title: 'Scan et moderation',
+            lines: [
+                menuCommand('!scan', 'scanner ce groupe'),
+                menuCommand('!scanstatus', 'supprimer seulement les notifications de statut'),
+                menuCommand('!scanall', 'scanner tous les groupes admin'),
+                menuCommand('!excludehere', 'exclure ce groupe'),
+                menuCommand('!includehere', 'reactiver ce groupe')
+            ]
+        },
+        {
+            title: 'Utilisateurs',
+            lines: [
+                menuCommand('!warnings @membre', 'voir les avertissements'),
+                menuCommand('!resetwarn @membre', 'effacer les avertissements'),
+                menuCommand('!blocked', 'voir les numeros bloques'),
+                menuCommand('!unblock numero', 'debloquer un numero'),
+                menuCommand('!allowcalls numero', 'autoriser les appels')
+            ]
+        }
+    ]);
+}
+
+function buildStatusMessage(sock, chat, sessionData, botP) {
+    const cacheCount = getCachedMessages(sock, chat.jid, sessionData.config.SCAN_LIMIT || CONFIG.SCAN_LIMIT).length;
+    return menuPanel('ETAT DU BOT', [
+        {
+            title: 'Connexion',
+            lines: [
+                menuLine('Session WhatsApp', sock?.isReady ? 'connectee' : 'non connectee'),
+                menuLine('Groupe', chat.name || 'Nom non disponible'),
+                menuLine('Bot admin', yesNo(botP?.isAdmin)),
+                menuLine('Groupe exclu', yesNo(sessionData.isGroupExcluded(chat)))
+            ]
+        },
+        {
+            title: 'Fonctions',
+            lines: [
+                menuLine('Scan automatique', yesNo(sessionData.config.AUTO_SCAN_ENABLED !== false)),
+                menuLine('Notifications de statut', yesNo(sessionData.config.DELETE_STATUS_MENTIONS !== false)),
+                menuLine('Message bienvenue', yesNo(sessionData.config.WELCOME_ENABLED !== false))
+            ]
+        },
+        {
+            title: 'Donnees',
+            lines: [
+                menuLine('Messages connus ici', cacheCount),
+                menuLine('Utilisateurs bloques', Object.keys(sessionData.blockedUsers || {}).length)
+            ]
+        }
+    ]);
+}
+
+function buildGroupInfoMessage(sock, chat, sessionData, botP) {
+    return menuPanel('INFOS DU GROUPE', [
+        {
+            title: 'Groupe',
+            lines: [
+                menuLine('Nom', chat.name || 'Nom non disponible'),
+                menuLine('Membres', chat.participants?.length || 0)
+            ]
+        },
+        {
+            title: 'Bot',
+            lines: [
+                menuLine('Admin', yesNo(botP?.isAdmin)),
+                menuLine('Super admin', yesNo(botP?.isSuperAdmin)),
+                menuLine('Messages en cache', getCachedMessages(sock, chat.jid, sessionData.config.SCAN_LIMIT || CONFIG.SCAN_LIMIT).length)
+            ]
+        },
+        {
+            title: 'Regles',
+            lines: [
+                menuLine('Moderation exclue', yesNo(sessionData.isGroupExcluded(chat))),
+                menuLine('Bienvenue exclue', yesNo(sessionData.groupExceptions.excludedWelcome.includes(chat.jid)))
+            ]
+        }
+    ]);
+}
+
+function buildConfigMessage(sessionData) {
+    const c = sessionData.config;
+    return menuPanel('CONFIGURATION ACTIVE', [
+        {
+            title: 'Moderation',
+            lines: [
+                menuLine('Avertissements max', c.MAX_WARNINGS),
+                menuLine('Expiration avertissements', c.WARNING_EXPIRY_HOURS + 'h'),
+                menuLine('Limite scan', c.SCAN_LIMIT + ' messages'),
+                menuLine('Notifications de statut', yesNo(c.DELETE_STATUS_MENTIONS !== false)),
+                menuLine('Bienvenue', yesNo(c.WELCOME_ENABLED !== false))
+            ]
+        },
+        {
+            title: 'Scan automatique',
+            lines: [
+                menuLine('Actif', yesNo(c.AUTO_SCAN_ENABLED !== false)),
+                menuLine('Intervalle', c.AUTO_SCAN_INTERVAL_HOURS + 'h')
+            ]
+        },
+        {
+            title: 'Delais',
+            lines: [
+                menuLine('Entre actions', `${c.DELAY_BETWEEN_ACTIONS_MIN}-${c.DELAY_BETWEEN_ACTIONS_MAX}ms`),
+                menuLine('Entre groupes', `${c.DELAY_BETWEEN_GROUPS_MIN}-${c.DELAY_BETWEEN_GROUPS_MAX}ms`)
+            ]
+        },
+        {
+            title: 'Appels',
+            lines: [
+                menuLine('Rejet appels', yesNo(c.CALL_REJECT_ENABLED !== false)),
+                menuLine('Seuil spam', c.CALL_SPAM_THRESHOLD),
+                menuLine('Fenetre spam', c.CALL_SPAM_WINDOW_MIN + 'min'),
+                menuLine('Duree blocage', c.CALL_BLOCK_DURATION_MIN + 'min')
+            ]
+        }
+    ]);
+}
+
+function cacheLidPnMapping(sock, lid, pn) {
+    if (!sock || !lid || !pn) return;
+    const lidJid = normalizeJid(lid);
+    const pnJid = normalizeJid(pn);
+    cacheContactInfo(sock, { id: lidJid, lid: lidJid, phoneNumber: pnJid }, [pnJid]);
+    cacheContactInfo(sock, { id: pnJid, jid: pnJid, lid: lidJid, phoneNumber: pnJid }, [lidJid]);
+}
+
+async function resolveUserAliases(sock, userId) {
+    const aliases = new Set(buildUserMatchValues(userId));
+    const digits = digitsOnly(userId);
+    const jid = userId && String(userId).includes('@') ? normalizeJid(userId) : null;
+    if (sock?.onWhatsApp && digits) {
+        try {
+            const results = await sock.onWhatsApp(`${digits}@s.whatsapp.net`);
+            for (const result of results || []) {
+                if (result?.jid) buildUserMatchValues(result.jid).forEach(v => aliases.add(v));
+            }
+        } catch (e) {}
+    }
+    if (sock?.signalRepository?.lidMapping) {
+        try {
+            if (digits) {
+                const lid = await sock.signalRepository.lidMapping.getLIDForPN(`${digits}@s.whatsapp.net`);
+                if (lid) buildUserMatchValues(lid).forEach(v => aliases.add(v));
+            }
+            if (jid?.endsWith('@lid')) {
+                const pn = await sock.signalRepository.lidMapping.getPNForLID(jid);
+                if (pn) buildUserMatchValues(pn).forEach(v => aliases.add(v));
+            }
+        } catch (e) {}
+    }
+    return Array.from(aliases);
+}
+
+async function findCallExceptionForValues(sock, exceptions, values) {
+    const candidates = buildUserMatchValues(values);
+    let entry = findUserException(exceptions.excludedUsers, candidates, 'call');
+    if (entry) return entry;
+
+    for (const candidate of exceptions.excludedUsers || []) {
+        if (!userExceptionEnabled(candidate, 'call')) continue;
+        const id = typeof candidate === 'object' ? candidate.id : candidate;
+        const aliases = await resolveUserAliases(sock, id);
+        const enriched = typeof candidate === 'object'
+            ? { ...candidate, aliases: Array.from(new Set([...(candidate.aliases || []), ...aliases])) }
+            : { id: candidate, aliases, linkException: true, callException: true };
+
+        if (userExceptionMatches(enriched, candidates)) {
+            if (typeof candidate === 'object') candidate.aliases = enriched.aliases;
+            return candidate;
+        }
+    }
+
+    return null;
+}
+
+function clearSessionCallBlockKey(sessionData, key) {
+    if (!sessionData || !key) return false;
+    if (sessionData.unblockTimers[key]) {
+        clearTimeout(sessionData.unblockTimers[key]);
+        delete sessionData.unblockTimers[key];
+    }
+    const existed = !!(sessionData.blockedUsers?.[key] || sessionData.callSpamTracker?.[key]);
+    delete sessionData.blockedUsers[key];
+    delete sessionData.callSpamTracker[key];
+    return existed;
+}
+
+function findSessionCallStateKeysForValues(sessionData, values) {
+    const candidates = buildUserMatchValues(values);
+    return Array.from(new Set([
+        ...Object.keys(sessionData?.blockedUsers || {}),
+        ...Object.keys(sessionData?.callSpamTracker || {})
+    ])).filter(key => candidates.some(value => valuesMatchUser(key, value)));
+}
+
+function clearSessionCallStateForValues(sessionData, values) {
+    const matchedKeys = findSessionCallStateKeysForValues(sessionData, values);
+    for (const key of matchedKeys) clearSessionCallBlockKey(sessionData, key);
+    if (matchedKeys.length) sessionData.saveCallSpamData();
+    return matchedKeys.length;
+}
+
+async function clearCallBlocksForValues(sock, sessionData, values) {
+    const candidates = buildUserMatchValues(values);
+    const matchedCount = clearSessionCallStateForValues(sessionData, candidates);
+
+    const unblockJids = new Set();
+    for (const value of candidates) {
+        if (isGroupJid(value)) continue;
+        if (String(value).includes('@') || digitsOnly(value)) unblockJids.add(normalizeJid(value));
+    }
+
+    for (const jid of unblockJids) {
+        try {
+            await sock?.updateBlockStatus?.(jid, 'unblock');
+            if (sock) ensureRuntime(sock).blocklist.delete(jid);
+        } catch (e) {}
+    }
+
+    return matchedCount;
+}
+
+function makeMediaPayload(mimetype, base64Data, filename = 'media') {
+    return { mimetype, data: base64Data, filename };
+}
+
+async function mediaFromUrl(url, filename = 'media') {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Telechargement media impossible (${response.status})`);
+    const buffer = Buffer.from(await response.arrayBuffer());
+    return makeMediaPayload(response.headers.get('content-type') || 'application/octet-stream', buffer.toString('base64'), filename);
+}
+
+function toBaileysContent(content, options = {}, sock = null) {
+    const mentions = (options.mentions || []).map(normalizeJid);
+    const contextInfo = mentions.length ? { mentionedJid: mentions } : undefined;
+    const quoted = options.quotedMessage || (options.quotedMessageId && sock ? getCachedMessage(sock, options.quotedMessageId) : undefined);
+    const sendOptions = quoted ? { quoted } : {};
+
+    if (content && content.data && content.mimetype) {
+        const buffer = Buffer.from(content.data, 'base64');
+        const common = { mimetype: content.mimetype };
+        if (options.caption) common.caption = options.caption;
+        if (mentions.length) common.mentions = mentions;
+        if (content.mimetype.startsWith('image/')) return { payload: { image: buffer, ...common }, sendOptions };
+        if (content.mimetype.startsWith('video/')) return { payload: { video: buffer, ...common }, sendOptions };
+        if (content.mimetype.startsWith('audio/')) return { payload: { audio: buffer, ...common }, sendOptions };
+        return { payload: { document: buffer, fileName: content.filename || 'document', ...common }, sendOptions };
+    }
+
+    const payload = { text: String(content ?? '') };
+    if (mentions.length) payload.mentions = mentions;
+    if (contextInfo) payload.contextInfo = contextInfo;
+    if (options.linkPreview === false) payload.linkPreview = null;
+    return { payload, sendOptions };
+}
+
+async function sendNativeMessage(sock, jid, content, options = {}) {
+    const { payload, sendOptions } = toBaileysContent(content, options, sock);
+    const sent = await sock.sendMessage(normalizeJid(jid), payload, sendOptions);
+    if (sent) cacheMessage(sock, sent);
+    return sent;
+}
+
+async function markChatRead(sock, chatId) {
+    const latest = getLatestMessageKey(sock, chatId);
+    if (latest) await sock.readMessages([latest]);
+}
+
+async function fetchMoreHistory(sock, chatId, limit = 50, options = {}) {
+    let cached = getCachedMessages(sock, chatId, limit);
+    if (!cached.length && options.anchorMessage?.key?.remoteJid === normalizeJid(chatId)) {
+        cacheMessage(sock, options.anchorMessage);
+        cached = getCachedMessages(sock, chatId, limit);
+    }
+
+    if (cached.length >= limit || !sock.fetchMessageHistory) {
+        return cached;
+    }
+
+    let attempts = 0;
+    while (cached.length < limit && attempts < 4) {
+        const oldest = cached[0];
+        if (!oldest?.key || !oldest.messageTimestamp) break;
+
+        try {
+            const count = Math.min(50, Math.max(1, limit - cached.length));
+            await sock.fetchMessageHistory(count, oldest.key, oldest.messageTimestamp);
+            await new Promise(resolve => setTimeout(resolve, 2500));
+        } catch (e) {
+            break;
+        }
+
+        const next = getCachedMessages(sock, chatId, limit);
+        if (next.length <= cached.length) break;
+        cached = next;
+        attempts++;
+    }
+
+    const messages = getCachedMessages(sock, chatId, limit);
+
+    return messages;
+}
+
+function getCallFrom(call) {
+    return normalizeJid(call?.from || call?.chatId || call?.creator || call?.participant || '');
+}
+
+function isVideoCall(call) {
+    return call?.isVideo === true || call?.type === 'video' || call?.callType === 'video';
+}
+
+async function rejectBaileysCall(sock, call) {
+    const callerId = getCallFrom(call);
+    if (!sock?.rejectCall || !call?.id || !callerId) return false;
+    await sock.rejectCall(call.id, callerId);
+    return true;
+}
+
+async function deleteChatLocal(sock, chatId) {
+    const jid = normalizeJid(chatId);
+    const latest = getCachedMessages(sock, jid, 1)[0];
+    try {
+        if (latest) await sock.chatModify({ delete: true, lastMessages: [latest] }, jid);
+    } catch (e) {}
+    ensureRuntime(sock).chats.delete(jid);
+}
 
 // ============================================================
 // 📁 FICHIERS DE STOCKAGE
@@ -80,12 +1901,26 @@ const HumanBehavior = {
         return this.gaussianRandom(800, 300);
     },
 
-    interActionDelay() {
-        return this.gaussianRandom(1500, 500);
+    interActionDelay(config = CONFIG) {
+        const configuredMin = Number(config?.DELAY_BETWEEN_ACTIONS_MIN);
+        const configuredMax = Number(config?.DELAY_BETWEEN_ACTIONS_MAX);
+        const min = Number.isFinite(configuredMin) ? configuredMin : 1500;
+        const max = Number.isFinite(configuredMax) ? configuredMax : 5000;
+        const safeMin = Math.max(0, Math.min(min, max));
+        const safeMax = Math.max(safeMin, Math.max(min, max));
+        const delay = this.gaussianRandom((safeMin + safeMax) / 2, Math.max(1, (safeMax - safeMin) / 4));
+        return Math.max(safeMin, Math.min(safeMax, delay));
     },
 
-    interGroupDelay() {
-        return this.gaussianRandom(4000, 1500);
+    interGroupDelay(config = CONFIG) {
+        const configuredMin = Number(config?.DELAY_BETWEEN_GROUPS_MIN);
+        const configuredMax = Number(config?.DELAY_BETWEEN_GROUPS_MAX);
+        const min = Number.isFinite(configuredMin) ? configuredMin : 4000;
+        const max = Number.isFinite(configuredMax) ? configuredMax : 15000;
+        const safeMin = Math.max(0, Math.min(min, max));
+        const safeMax = Math.max(safeMin, Math.max(min, max));
+        const delay = this.gaussianRandom((safeMin + safeMax) / 2, Math.max(1, (safeMax - safeMin) / 4));
+        return Math.max(safeMin, Math.min(safeMax, delay));
     },
 
     callRejectDelay() {
@@ -161,31 +1996,31 @@ const MessagePool = {
     callRejections: [
         (remaining) =>
             `🚫 Les appels ne sont pas autorisés. Merci de me contacter par message.\n⚠️ ${remaining} appel(s) restant(s) avant blocage.`,
-        (remaining) =>
-            `Désolé, je ne prends pas les appels. Envoyez-moi un message svp.\n⚠️ Attention : encore ${remaining} appel(s) et vous serez bloqué(e) pendant 30 min.`,
+        (remaining, blockDurationText) =>
+            `Désolé, je ne prends pas les appels. Envoyez-moi un message svp.\n⚠️ Attention : encore ${remaining} appel(s) et vous serez bloqué(e) pendant ${blockDurationText}.`,
         (remaining) =>
             `❌ Appels non acceptés. Écrivez-moi plutôt.\n🚫 ${remaining} tentative(s) restante(s) avant blocage temporaire.`,
-        (remaining) =>
-            `📵 Je ne réponds pas aux appels. Écrivez-moi un message.\n⏳ Plus que ${remaining} tentative(s) avant un blocage de 30 min.`,
+        (remaining, blockDurationText) =>
+            `📵 Je ne réponds pas aux appels. Écrivez-moi un message.\n⏳ Plus que ${remaining} tentative(s) avant un blocage de ${blockDurationText}.`,
         (remaining) =>
             `🔇 Appel refusé automatiquement. Contactez-moi par écrit.\n⚠️ ${remaining} essai(s) restant(s) avant blocage.`,
         (remaining) =>
             `❌ Les appels ne sont pas pris en charge ici.\n📩 Envoyez un message. ${remaining} appel(s) avant blocage temporaire.`,
-        (remaining) =>
-            `🚫 Appel rejeté. Merci d'utiliser les messages.\n🔒 Encore ${remaining} appel(s) et votre contact sera bloqué 30 min.`,
+        (remaining, blockDurationText) =>
+            `🚫 Appel rejeté. Merci d'utiliser les messages.\n🔒 Encore ${remaining} appel(s) et votre contact sera bloqué pendant ${blockDurationText}.`,
         (remaining) =>
             `📞❌ Les appels sont désactivés. Préférez un message texte svp.\n⚠️ ${remaining} tentative(s) restante(s) avant suspension temporaire.`,
     ],
 
     callBlocked: [
-        `🔒 Vous avez été bloqué(e) pendant 30 minutes suite à des appels répétés. Merci de patienter.`,
-        `⛔ Blocage temporaire de 30 minutes pour spam d'appels. Envoyez un message après.`,
-        `🚫 Trop d'appels. Vous êtes bloqué(e) pour 30 minutes.`,
-        `📵 Votre contact a été temporairement bloqué (30 min) à cause d'appels répétés. Revenez plus tard.`,
-        `🔇 Blocage automatique activé pour 30 minutes. Raison : appels en excès.`,
-        `⏳ Suite à vos appels répétés, vous êtes bloqué(e) pendant 30 minutes. Envoyez un message ensuite.`,
-        `🚫 Appels excessifs détectés. Blocage temporaire de 30 min en cours. Merci de patienter.`,
-        `⛔ Vous avez dépassé la limite d'appels autorisée. Contact bloqué pour 30 minutes.`,
+        (blockDurationText) => `🔒 Vous avez été bloqué(e) pendant ${blockDurationText} suite à des appels répétés. Merci de patienter.`,
+        (blockDurationText) => `⛔ Blocage temporaire de ${blockDurationText} pour spam d'appels. Envoyez un message après.`,
+        (blockDurationText) => `🚫 Trop d'appels. Vous êtes bloqué(e) pour ${blockDurationText}.`,
+        (blockDurationText) => `📵 Votre contact a été temporairement bloqué (${blockDurationText}) à cause d'appels répétés. Revenez plus tard.`,
+        (blockDurationText) => `🔇 Blocage automatique activé pour ${blockDurationText}. Raison : appels en excès.`,
+        (blockDurationText) => `⏳ Suite à vos appels répétés, vous êtes bloqué(e) pendant ${blockDurationText}. Envoyez un message ensuite.`,
+        (blockDurationText) => `🚫 Appels excessifs détectés. Blocage temporaire de ${blockDurationText} en cours. Merci de patienter.`,
+        (blockDurationText) => `⛔ Vous avez dépassé la limite d'appels autorisée. Contact bloqué pour ${blockDurationText}.`,
     ],
 
     pick(pool, ...args) {
@@ -232,36 +2067,41 @@ const rateLimiter = new RateLimiter();
 // 📨 ENVOI DE MESSAGE HUMANISÉ
 // ============================================================
 
-async function sendMessageHumanized(chat, text, options = {}, triggerMessageLength = 0, sessionData = null) {
+async function sendMessageHumanized(sock, chatId, text, options = {}, triggerMessageLength = 0, sessionData = null) {
     try {
-        await rateLimiter.waitUntilAllowed();
+        const immediate = options.immediate === true;
+        const bypassRateLimit = immediate || options.bypassRateLimit === true;
+        if (!bypassRateLimit) await rateLimiter.waitUntilAllowed();
 
-        if (triggerMessageLength > 0) {
-            const readDelay = HumanBehavior.readingDelay(triggerMessageLength);
-            await HumanBehavior.naturalDelay(readDelay);
+        if (!immediate) {
+            if (triggerMessageLength > 0) {
+                const readDelay = HumanBehavior.readingDelay(triggerMessageLength);
+                await HumanBehavior.naturalDelay(readDelay);
+            }
+
+            await HumanBehavior.naturalDelay(HumanBehavior.thinkingDelay());
+
+            try {
+                await sock.presenceSubscribe(normalizeJid(chatId)).catch(() => {});
+                await sock.sendPresenceUpdate('composing', normalizeJid(chatId));
+            } catch (e) {}
+
+            const typingTime = HumanBehavior.typingDuration(typeof text === 'string' ? text.length : (options.caption?.length || 20));
+            await HumanBehavior.naturalDelay(typingTime);
+
+            try {
+                await sock.sendPresenceUpdate('paused', normalizeJid(chatId));
+            } catch (e) {}
+
+            if (Math.random() < 0.3) {
+                await HumanBehavior.naturalDelay(
+                    HumanBehavior.gaussianRandom(800, 400)
+                );
+            }
         }
 
-        await HumanBehavior.naturalDelay(HumanBehavior.thinkingDelay());
-
-        try {
-            await chat.sendStateTyping();
-        } catch (e) {}
-
-        const typingTime = HumanBehavior.typingDuration(typeof text === 'string' ? text.length : (options.caption?.length || 20));
-        await HumanBehavior.naturalDelay(typingTime);
-
-        try {
-            await chat.clearState();
-        } catch (e) {}
-
-        if (Math.random() < 0.3) {
-            await HumanBehavior.naturalDelay(
-                HumanBehavior.gaussianRandom(800, 400)
-            );
-        }
-
-        const sent = await chat.sendMessage(text, options);
-        rateLimiter.recordAction();
+        const sent = await sendNativeMessage(sock, chatId, text, options);
+        if (!bypassRateLimit) rateLimiter.recordAction();
         return sent;
 
     } catch (error) {
@@ -279,365 +2119,34 @@ async function sendMessageHumanized(chat, text, options = {}, triggerMessageLeng
 // Chaque tentative est VÉRIFIÉE avant de déclarer le succès
 // ============================================================
 
-async function deleteMessageHumanized(message) {
+async function deleteMessageHumanized(sock, message) {
     try {
         await rateLimiter.waitUntilAllowed();
         await HumanBehavior.naturalDelay(HumanBehavior.deletionDelay());
 
-        const msgId = message.id._serialized;
+        const msgId = getMessageId(message);
 
-        // ⚠️ Multi-session : récupérer le client de la session du message
-        // (la variable globale `client` peut être null ou pointer vers une autre session)
-        const msgClient = message.client || client;
-        if (!msgClient || !msgClient.pupPage) {
-            addLog(`[X] deleteMessageHumanized: client/pupPage indisponible pour ${msgId}`);
+        if (!sock || !sock.sendMessage) {
+            addLog(`[X] deleteMessageHumanized: client Baileys indisponible pour ${msgId}`);
             return false;
         }
 
-        // ──────────────────────────────────────────────
-        // DIAGNOSTIC (une seule fois au 1er appel)
-        // Trouve les VRAIES méthodes de suppression
-        // ──────────────────────────────────────────────
-        if (!global.__deleteMethodsDiag) {
-            global.__deleteMethodsDiag = true;
-            try {
-                const diag = await msgClient.pupPage.evaluate(() => {
-                    const result = { store: {}, chat: [], msg: [], wwebjs: [] };
-
-                    for (const key of Object.keys(window.Store || {})) {
-                        try {
-                            const mod = window.Store[key];
-                            if (!mod || typeof mod !== 'object') continue;
-                            const fns = [];
-                            for (const p of Object.getOwnPropertyNames(mod)) {
-                                try {
-                                    if (typeof mod[p] === 'function' && /revoke|delete|remove/i.test(p)) {
-                                        fns.push(p);
-                                    }
-                                } catch (e) {}
-                            }
-                            if (fns.length > 0) result.store[key] = fns;
-                        } catch (e) {}
-                    }
-
-                    try {
-                        const c = window.Store.Chat.getModelsArray()[0];
-                        if (c) {
-                            let proto = Object.getPrototypeOf(c);
-                            while (proto && proto !== Object.prototype) {
-                                for (const p of Object.getOwnPropertyNames(proto)) {
-                                    try {
-                                        if (typeof proto[p] === 'function' && /revoke|delete|send/i.test(p)) {
-                                            result.chat.push(p);
-                                        }
-                                    } catch (e) {}
-                                }
-                                proto = Object.getPrototypeOf(proto);
-                            }
-                            result.chat = [...new Set(result.chat)];
-                        }
-                    } catch (e) {}
-
-                    try {
-                        const m = window.Store.Msg.getModelsArray()[0];
-                        if (m) {
-                            let proto = Object.getPrototypeOf(m);
-                            while (proto && proto !== Object.prototype) {
-                                for (const p of Object.getOwnPropertyNames(proto)) {
-                                    try {
-                                        if (typeof proto[p] === 'function' && /revoke|delete|canRevoke|canAdmin/i.test(p)) {
-                                            result.msg.push(p);
-                                        }
-                                    } catch (e) {}
-                                }
-                                proto = Object.getPrototypeOf(proto);
-                            }
-                            result.msg = [...new Set(result.msg)];
-                        }
-                    } catch (e) {}
-
-                    if (window.WWebJS) {
-                        result.wwebjs = Object.keys(window.WWebJS).filter(k => /revoke|delete/i.test(k));
-                    }
-
-                    return result;
-                });
-
-                addLog(`DIAGNOSTIC SUPPRESSION`);
-                addLog(`Store: ${JSON.stringify(diag.store)}`);
-                addLog(`Chat proto: ${JSON.stringify(diag.chat)}`);
-                addLog(`Msg proto: ${JSON.stringify(diag.msg)}`);
-                addLog(`WWebJS: ${JSON.stringify(diag.wwebjs)}`);
-                addLog(`==========================================`);
-            } catch (e) {
-                addLog(`Diagnostic echoue: ${e.message}`);
-            }
-        }
-
-        // Helper : vérifier si le message est réellement supprimé
-        const isMessageRevoked = async () => {
-            try {
-                const status = await msgClient.pupPage.evaluate((id) => {
-                    const m = window.Store.Msg.get(id);
-                    if (!m) return 'GONE';
-                    if (m.isRevoked) return 'REVOKED';
-                    if (m.type === 'revoked') return 'REVOKED';
-                    if (m.body === '') return 'EMPTY';
-                    return 'EXISTS';
-                }, msgId);
-                return status !== 'EXISTS';
-            } catch (e) {
-                return false;
-            }
-        };
-
-        // ══════════════════════════════════════════════
-        // TENTATIVE 1 : message.delete(true) — API lib
-        // ══════════════════════════════════════════════
         try {
-            addLog(`T1: message.delete(true)...`);
-            await message.delete(true);
-            await new Promise(r => setTimeout(r, 2000));
-
-            if (await isMessageRevoked()) {
-                addLog(`[OK] Supprime pour TOUS via message.delete(true)`);
-                rateLimiter.recordAction();
-                return true;
-            }
-            addLog(`[!] T1: message.delete(true) execute mais message toujours la`);
+            await sock.sendMessage(getMessageChatId(message), { delete: message.key });
+            rateLimiter.recordAction();
+            addLog(`[OK] Demande de suppression envoyee via Baileys pour ${msgId}`);
+            return true;
         } catch (e) {
-            addLog(`[!] T1 erreur: ${e.message}`);
+            addLog(`[X] Suppression Baileys echouee pour ${msgId}: ${e.message}`);
+            return false;
         }
-
-        // ══════════════════════════════════════════════
-        // TENTATIVE 2 : Evaluate direct avec TOUTES
-        // les signatures connues + vérification
-        // ══════════════════════════════════════════════
-        try {
-            addLog(`T2: evaluate multi-methodes...`);
-
-            const result = await msgClient.pupPage.evaluate(async (id) => {
-                const msg = window.Store.Msg.get(id);
-                if (!msg) return { status: 'MSG_NOT_FOUND' };
-
-                let chat;
-                try { chat = await window.Store.Chat.find(msg.id.remote); } catch (e) {}
-                if (!chat) try { chat = window.Store.Chat.get(msg.id.remote); } catch (e) {}
-                if (!chat) return { status: 'CHAT_NOT_FOUND' };
-
-                const S = window.Store;
-                const log = [];
-
-                const attempt = async (name, fn) => {
-                    try {
-                        await fn();
-                        await new Promise(r => setTimeout(r, 1500));
-                        const m = S.Msg.get(id);
-                        const revoked = !m || m.isRevoked || m.type === 'revoked';
-                        log.push({ name, ok: true, revoked });
-                        return revoked;
-                    } catch (e) {
-                        log.push({ name, ok: false, err: (e.message || '').substring(0, 50) });
-                        return false;
-                    }
-                };
-
-                // A) Cmd.sendRevokeMsgs(chat, msgs, {type:'admin'})
-                if (S.Cmd?.sendRevokeMsgs) {
-                    if (await attempt('Cmd.sendRevokeMsgs(chat,admin)',
-                        () => S.Cmd.sendRevokeMsgs(chat, [msg], { clearMedia: true, type: 'admin' })
-                    )) return { status: 'OK', method: 'Cmd.sendRevokeMsgs(chat,admin)', log };
-                }
-
-                // B) Cmd.sendRevokeMsgs avec type par défaut
-                if (S.Cmd?.sendRevokeMsgs) {
-                    if (await attempt('Cmd.sendRevokeMsgs(chat,default)',
-                        () => S.Cmd.sendRevokeMsgs(chat, [msg], { clearMedia: true })
-                    )) return { status: 'OK', method: 'Cmd.sendRevokeMsgs(chat,default)', log };
-                }
-
-                // C) Cmd.sendRevokeMsgs avec jid
-                if (S.Cmd?.sendRevokeMsgs) {
-                    if (await attempt('Cmd.sendRevokeMsgs(jid)',
-                        () => S.Cmd.sendRevokeMsgs(msg.id.remote, [msg], { clearMedia: true, type: 'admin' })
-                    )) return { status: 'OK', method: 'Cmd.sendRevokeMsgs(jid)', log };
-                }
-
-                // D) Cmd.revokeMsgs (certaines versions renomment)
-                if (S.Cmd?.revokeMsgs) {
-                    if (await attempt('Cmd.revokeMsgs',
-                        () => S.Cmd.revokeMsgs(chat, [msg], { clearMedia: true, type: 'admin' })
-                    )) return { status: 'OK', method: 'Cmd.revokeMsgs', log };
-                }
-
-                // E) chat.sendRevokeMsgs
-                if (typeof chat.sendRevokeMsgs === 'function') {
-                    for (const args of [
-                        [[msg], { type: 'admin' }],
-                        [[msg], false],
-                        [[msg]]
-                    ]) {
-                        if (await attempt(`chat.sendRevokeMsgs(${JSON.stringify(args[1])})`,
-                            () => chat.sendRevokeMsgs(...args)
-                        )) return { status: 'OK', method: 'chat.sendRevokeMsgs', log };
-                    }
-                }
-
-                // F) chat.revokeMsgs
-                if (typeof chat.revokeMsgs === 'function') {
-                    if (await attempt('chat.revokeMsgs',
-                        () => chat.revokeMsgs([msg])
-                    )) return { status: 'OK', method: 'chat.revokeMsgs', log };
-                }
-
-                // G) MsgAction
-                if (S.MsgAction?.sendRevokeMsgs) {
-                    if (await attempt('MsgAction.sendRevokeMsgs',
-                        () => S.MsgAction.sendRevokeMsgs(chat, [msg], { type: 'admin' })
-                    )) return { status: 'OK', method: 'MsgAction.sendRevokeMsgs', log };
-                }
-
-                // H) SendDelete avec revoke=true
-                if (S.SendDelete?.sendDeleteMsgs) {
-                    if (await attempt('SendDelete.sendDeleteMsgs(revoke)',
-                        () => S.SendDelete.sendDeleteMsgs(msg.id.remote, [msg], true)
-                    )) return { status: 'OK', method: 'SendDelete', log };
-                }
-
-                // I) GroupUtils
-                if (S.GroupUtils?.sendRevokeAdminMsgs) {
-                    if (await attempt('GroupUtils.sendRevokeAdminMsgs',
-                        () => S.GroupUtils.sendRevokeAdminMsgs(chat, [msg])
-                    )) return { status: 'OK', method: 'GroupUtils', log };
-                }
-
-                // J) Scan dynamique
-                for (const key of Object.keys(S)) {
-                    if (['Cmd', 'MsgAction', 'GroupUtils', 'SendDelete'].includes(key)) continue;
-                    try {
-                        const mod = S[key];
-                        if (!mod || typeof mod !== 'object') continue;
-                        for (const prop of Object.getOwnPropertyNames(mod)) {
-                            if (typeof mod[prop] !== 'function') continue;
-                            if (!/revoke/i.test(prop)) continue;
-                            if (await attempt(`${key}.${prop}`,
-                                () => mod[prop](chat, [msg], { clearMedia: true, type: 'admin' })
-                            )) return { status: 'OK', method: `${key}.${prop}`, log };
-                        }
-                    } catch (e) {}
-                }
-
-                return { status: 'FAILED', log };
-            }, msgId);
-
-            addLog(`T2 resultat: ${JSON.stringify(result)}`);
-
-            if (result.status === 'OK') {
-                addLog(`[OK] Supprime pour TOUS via ${result.method}`);
-                rateLimiter.recordAction();
-                return true;
-            }
-
-            if (result.log) {
-                for (const entry of result.log) {
-                    addLog(`   |- ${entry.name}: ${entry.ok ? 'appele' : 'erreur'} -> ${entry.revoked ? 'REVOQUE [OK]' : entry.err || 'pas revoque'}`);
-                }
-            }
-        } catch (e) {
-            addLog(`[!] T2 erreur: ${e.message}`);
-        }
-
-        // ══════════════════════════════════════════════
-        // TENTATIVE 3 : Re-fetch message + delete
-        // ══════════════════════════════════════════════
-        try {
-            addLog(`T3: re-fetch + delete...`);
-            const chat = await message.getChat();
-            const messages = await chat.fetchMessages({ limit: 50 });
-            const target = messages.find(m => m.id._serialized === msgId);
-
-            if (target) {
-                await target.delete(true);
-                await new Promise(r => setTimeout(r, 2000));
-
-                if (await isMessageRevoked()) {
-                    addLog(`[OK] Supprime pour TOUS via re-fetch + delete`);
-                    rateLimiter.recordAction();
-                    return true;
-                }
-                addLog(`[!] T3: re-fetch delete execute mais message toujours la`);
-            } else {
-                addLog(`[!] T3: message non trouve dans les 50 derniers`);
-            }
-        } catch (e) {
-            addLog(`[!] T3 erreur: ${e.message}`);
-        }
-
-        // ══════════════════════════════════════════════
-        // TENTATIVE 4 : Protocole brut via sendRevoke
-        // ══════════════════════════════════════════════
-        try {
-            addLog(`T4: protocole brut...`);
-
-            const result4 = await msgClient.pupPage.evaluate(async (id) => {
-                const msg = window.Store.Msg.get(id);
-                if (!msg) return { methods: [], revoked: false, err: 'MSG_NOT_FOUND' };
-
-                const chatJid = msg.id.remote;
-                const methods = [];
-
-                // Via WWebJS.sendRevokeMsgs si disponible
-                if (window.WWebJS?.sendRevokeMsgs) {
-                    try {
-                        await window.WWebJS.sendRevokeMsgs(chatJid, [msg]);
-                        methods.push('WWebJS.sendRevokeMsgs');
-                    } catch (e) { methods.push('WWebJS.ERR:' + (e.message || '').substring(0, 30)); }
-                }
-
-                // Via msg.collection.revoke
-                try {
-                    if (msg.collection?.revokeMsgs) {
-                        await msg.collection.revokeMsgs([msg]);
-                        methods.push('collection.revokeMsgs');
-                    }
-                } catch (e) {}
-
-                // Via Cmd.sendDeleteMsgs avec forEveryone=true
-                try {
-                    const chat = window.Store.Chat.get(chatJid);
-                    if (window.Store.Cmd?.sendDeleteMsgs) {
-                        await window.Store.Cmd.sendDeleteMsgs(chat, [msg], true);
-                        methods.push('Cmd.sendDeleteMsgs(true)');
-                    }
-                } catch (e) {}
-
-                // Vérif
-                await new Promise(r => setTimeout(r, 1500));
-                const check = window.Store.Msg.get(id);
-                const revoked = !check || check.isRevoked || check.type === 'revoked';
-
-                return { methods, revoked };
-            }, msgId);
-
-            addLog(`T4 resultat: ${JSON.stringify(result4)}`);
-
-            if (result4.revoked) {
-                addLog(`[OK] Supprime pour TOUS via protocole brut`);
-                rateLimiter.recordAction();
-                return true;
-            }
-        } catch (e) {
-            addLog(`[!] T4 erreur: ${e.message}`);
-        }
-
-        addLog(`[X] ECHEC TOTAL: message ${msgId} NON supprime pour les autres`);
-        return false;
 
     } catch (error) {
         addLog(`[X] Erreur suppression: ${error.message}`);
         return false;
     }
 }
+
 
 // ============================================================
 // 🔧 CONFIGURATION
@@ -824,9 +2333,9 @@ async function checkSubscriptions() {
                 const daysLeft = Math.ceil((sub.expiresAt - Date.now()) / (24 * 60 * 60 * 1000));
                 if (daysLeft <= 5 && daysLeft > 0 && !expiryReminderSent[sessionId]) {
                     const session = sessionManager.sessions.get(sessionId);
-                    const phoneNumber = sessionInfo.phoneNumber || (session && session.client && session.client.info?.wid?.user);
+                    const phoneNumber = sessionInfo.phoneNumber || (session && session.client && (session.client.info?.phoneNumber || session.client.info?.wid?.user));
                     // Garde : session doit être prête (ready event émis + WWebJS injecté)
-                    const isReady = session && session.client && session.client.pupPage && session.data?.status === 'connected' && session.client.info;
+                    const isReady = session && session.client && session.client.isReady && session.data?.status === 'connected' && session.client.info;
                     if (isReady && phoneNumber) {
                         const botNumber = phoneNumber.includes('@') ? phoneNumber : phoneNumber + '@c.us';
                         const pushName = sessionInfo.pushName || owner;
@@ -842,7 +2351,7 @@ async function checkSubscriptions() {
                             (dashboardUrl ? `👉 *Renouveler :* ${dashboardUrl}\n\n` : '') +
                             `Merci de votre fidélité ! 🙏`;
                         try {
-                            await session.client.sendMessage(botNumber, message);
+                            await sendNativeMessage(session.client, botNumber, message);
                             expiryReminderSent[sessionId] = Date.now();
                             reminders++;
                             addLog(`[SUB] Rappel expiration envoyé à ${owner} (${daysLeft}j restants)`);
@@ -860,11 +2369,11 @@ async function checkSubscriptions() {
 
         // Garde : ne tenter l'envoi que si la session est réellement prête
         // (WWebJS injecté, ready émis) — évite "undefined.getChat" au démarrage
-        if (!session.client.pupPage || !session.client.info || session.data?.status !== 'connected') {
+        if (!session.client.isReady || !session.client.info || session.data?.status !== 'connected') {
             skipped++; continue;
         }
 
-        const phoneNumber = sessionInfo.phoneNumber || session.client.info?.wid?.user;
+        const phoneNumber = sessionInfo.phoneNumber || session.client.info?.phoneNumber || session.client.info?.wid?.user;
         if (!phoneNumber) { skipped++; continue; }
         const botNumber = phoneNumber.includes('@') ? phoneNumber : phoneNumber + '@c.us';
         
@@ -886,7 +2395,7 @@ async function checkSubscriptions() {
                 (dashboardUrl ? `👉 *Payer maintenant :* ${dashboardUrl}\n\n` : '') +
                 `Merci de votre confiance ! 🙏`;
             try {
-                await session.client.sendMessage(botNumber, message);
+                await sendNativeMessage(session.client, botNumber, message);
                 subWarningState[sessionId] = 1;
                 notified++;
                 addLog(`[SUB] Notification envoyée à ${owner} (étape 1/3)`);
@@ -902,7 +2411,7 @@ async function checkSubscriptions() {
                 (dashboardUrl ? `👉 *Payer maintenant :* ${dashboardUrl}\n\n` : '') +
                 `⏳ Il vous reste *5 minutes*.`;
             try {
-                await session.client.sendMessage(botNumber, message);
+                await sendNativeMessage(session.client, botNumber, message);
                 subWarningState[sessionId] = 2;
                 warned++;
                 addLog(`[SUB] Avertissement final envoyé à ${owner} (étape 2/3)`);
@@ -911,7 +2420,7 @@ async function checkSubscriptions() {
         } else if (state === 2) {
             // Étape 3: Déconnexion (5 min après l'avertissement)
             try {
-                await session.client.sendMessage(botNumber, `❌ *Session déconnectée — PayOol™ Bot*\n\nVotre session a été déconnectée car votre abonnement n'a pas été renouvelé.\n\n` +
+                await sendNativeMessage(session.client, botNumber, `❌ *Session déconnectée — PayOol™ Bot*\n\nVotre session a été déconnectée car votre abonnement n'a pas été renouvelé.\n\n` +
                     (dashboardUrl ? `Pour réactiver, rendez-vous sur : ${dashboardUrl}` : 'Rendez-vous sur votre tableau de bord pour réactiver.'));
                 await new Promise(resolve => setTimeout(resolve, 5000));
             } catch (e) {}
@@ -1117,7 +2626,7 @@ async function publishAnnouncement(sessionId, announcement) {
     
     for (const groupId of groups) {
         try {
-            const chat = await sessionClient.getChatById(groupId);
+            const chat = await getChatInfo(sessionClient, groupId, true);
             
             if (!chat || !chat.isGroup) {
                 failedGroups.push({ id: groupId, reason: 'Groupe non trouvé' });
@@ -1125,7 +2634,7 @@ async function publishAnnouncement(sessionId, announcement) {
             }
             
             // Vérifier que le bot est admin dans ce groupe
-            const botParticipant = chat.participants?.find(p => p.id._serialized === sessionClient.info.wid._serialized);
+            const botParticipant = findBotParticipant(sessionClient, chat.participants || []);
             if (!botParticipant?.isAdmin) {
                 failedGroups.push({ id: groupId, reason: 'Bot non admin' });
                 continue;
@@ -1133,7 +2642,7 @@ async function publishAnnouncement(sessionId, announcement) {
             
             // Délai humanisé entre les groupes
             if (publishedGroups.length > 0) {
-                const interGroupDelay = HumanBehavior.interGroupDelay();
+                const interGroupDelay = HumanBehavior.interGroupDelay(sessionData?.config || CONFIG);
                 if (sessionData) sessionData.addLog(`[ANNONCE] Pause ${Math.round(interGroupDelay/1000)}s avant prochain groupe`);
                 else addLog(`[ANNONCE] Pause ${Math.round(interGroupDelay/1000)}s avant prochain groupe`);
                 await HumanBehavior.naturalDelay(interGroupDelay);
@@ -1146,25 +2655,25 @@ async function publishAnnouncement(sessionId, announcement) {
                     const base64Data = announcement.image.replace(/^data:image\/\w+;base64,/, '');
                     const mimeMatch = announcement.image.match(/^data:(image\/\w+);base64,/);
                     const mimetype = mimeMatch ? mimeMatch[1] : 'image/jpeg';
-                    const media = new MessageMedia(mimetype, base64Data, 'announcement.jpg');
+                    const media = makeMediaPayload(mimetype, base64Data, 'announcement.jpg');
                     const mediaOptions = { caption: content };
                     if (!linkPreview) mediaOptions.linkPreview = false;
                     if (announcement.sendAsHd) mediaOptions.sendMediaAsHd = true;
-                    await sendMessageHumanized(chat, media, mediaOptions, 0, sessionData);
+                    await sendMessageHumanized(sessionClient, chat.jid, media, mediaOptions, 0, sessionData);
                 } catch (imgErr) {
                     // Fallback: envoyer le texte seul si l'image échoue
                     if (sessionData) sessionData.addLog(`[ANNONCE] Erreur image pour ${chat.name}: ${imgErr.message}, envoi texte seul`);
                     else addLog(`[ANNONCE] Erreur image pour ${chat.name}: ${imgErr.message}, envoi texte seul`);
                     const options = {};
                     if (!linkPreview) options.linkPreview = false;
-                    await sendMessageHumanized(chat, content, options, 0, sessionData);
+                    await sendMessageHumanized(sessionClient, chat.jid, content, options, 0, sessionData);
                 }
             } else {
                 const options = {};
                 if (!linkPreview) {
                     options.linkPreview = false;
                 }
-                await sendMessageHumanized(chat, content, options, 0, sessionData);
+                await sendMessageHumanized(sessionClient, chat.jid, content, options, 0, sessionData);
             }
             
             publishedGroups.push(groupId);
@@ -1728,6 +3237,8 @@ function requireAdmin(req, res, next) {
 // 🗂️ SESSION DATA MANAGER - Données isolées par session
 // ============================================================
 
+const MENU_SESSION_TTL_MS = 60 * 60 * 1000;
+
 class SessionDataManager {
     constructor(sessionId) {
         this.sessionId = sessionId;
@@ -1851,7 +3362,7 @@ class SessionDataManager {
     
     isGroupExcluded(chat) {
         if (!chat || !chat.id) return false;
-        if (this.groupExceptions.excludedGroups.includes(chat.id._serialized)) return true;
+        if (this.groupExceptions.excludedGroups.includes(chat.jid)) return true;
         if (!chat.name) return false;
         const name = chat.name.toLowerCase();
         return this.groupExceptions.excludedPatterns.some(p => name.includes(p.toLowerCase()));
@@ -1873,29 +3384,16 @@ class SessionDataManager {
     }
     
     isUserExcluded(userId, participants = []) {
-        const userNumber = userId.split('@')[0];
-        const userException = this.userExceptions.excludedUsers.find(u => {
-            const exceptionId = typeof u === 'object' ? u.id : u;
-            const exceptionNumber = exceptionId.split('@')[0];
-            return exceptionId === userId || exceptionNumber === userNumber || exceptionId === userNumber;
-        });
-        
-        if (userException) {
-            const hasLinkException = typeof userException === 'object' ? userException.linkException : true;
-            if (hasLinkException) return true;
-        }
-        
+        const userException = findUserException(this.userExceptions.excludedUsers, [userId], 'link');
+        if (userException) return true;
+
         if (this.userExceptions.excludedAdmins) {
-            // Matcher par numéro de téléphone car WhatsApp utilise différents formats d'ID (@lid, @c.us)
-            const p = participants.find(part => {
-                const partNumber = part.id._serialized?.split('@')[0];
-                return partNumber === userNumber || part.id._serialized === userId;
-            });
+            const p = participants.find(part => participantMatches(part, userId));
             if (p && (p.isAdmin || p.isSuperAdmin)) return true;
         }
         return false;
     }
-    
+
     // === LOGS ===
     loadLogs() {
         const file = path.join(this.sessionDir, 'logs.json');
@@ -2011,12 +3509,7 @@ class SessionDataManager {
             if (fs.existsSync(file1)) this.interactiveMenus = JSON.parse(fs.readFileSync(file1, 'utf8'));
             if (fs.existsSync(file2)) {
                 this.menuSessions = JSON.parse(fs.readFileSync(file2, 'utf8'));
-                const now = Date.now();
-                for (const sessId in this.menuSessions) {
-                    if (now - this.menuSessions[sessId].createdAt > 3600000) {
-                        delete this.menuSessions[sessId];
-                    }
-                }
+                cleanupMenuSessions(this.menuSessions);
             }
         } catch (e) {}
     }
@@ -2055,7 +3548,7 @@ function getSessionData(sessionId) {
     return sessionDataManagers.get(sessionId);
 }
 
-// Fichiers legacy pour la session par défaut (rétrocompatibilité)
+// Fichiers globaux historiques pour la session par defaut
 const WARNINGS_FILE = path.join(DATA_DIR, 'warnings.json');
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
 const LOGS_FILE = path.join(DATA_DIR, 'logs.json');
@@ -2122,6 +3615,7 @@ let unblockTimers = {};
 
 let interactiveMenus = {};
 let menuSessions = {};
+const MENU_TRIGGER_MODES = new Set(['exact', 'contains']);
 
 function loadMenus() {
     try {
@@ -2130,16 +3624,89 @@ function loadMenus() {
         }
         if (fs.existsSync(MENU_SESSIONS_FILE)) {
             menuSessions = JSON.parse(fs.readFileSync(MENU_SESSIONS_FILE, 'utf8'));
-            const now = Date.now();
-            for (const sessionId in menuSessions) {
-                if (now - menuSessions[sessionId].createdAt > 3600000) {
-                    delete menuSessions[sessionId];
-                }
-            }
+            cleanupMenuSessions(menuSessions);
         }
     } catch (error) {
         console.error('Erreur chargement menus:', error);
     }
+}
+
+function normalizeMenuText(value) {
+    return String(value || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[\u2018\u2019\u201A\u201B\u0060\u00B4]/g, "'")
+        .replace(/&/g, ' et ')
+        .replace(/[^a-z0-9]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function splitMenuTriggers(trigger) {
+    return String(trigger || '')
+        .split(/[,;\n|]+/)
+        .map(t => t.trim())
+        .filter(Boolean);
+}
+
+function normalizeMenuTriggerMode(value) {
+    return MENU_TRIGGER_MODES.has(value) ? value : 'exact';
+}
+
+function normalizeMenuTriggerString(trigger) {
+    const unique = [];
+    const seen = new Set();
+    for (const raw of splitMenuTriggers(trigger)) {
+        const normalized = normalizeMenuText(raw);
+        if (!normalized || seen.has(normalized)) continue;
+        seen.add(normalized);
+        unique.push(raw.trim());
+    }
+    return unique.join(', ');
+}
+
+function normalizeMenuItems(items = [], kind = 'button') {
+    return (items || [])
+        .map((item, index) => ({
+            ...item,
+            id: String(item.id || `${kind}_${index}`),
+            text: item.text !== undefined ? String(item.text).trim() : item.text,
+            title: item.title !== undefined ? String(item.title).trim() : item.title,
+            response: item.response !== undefined ? String(item.response) : item.response,
+            nextMenu: item.nextMenu ? String(item.nextMenu).trim() : null
+        }))
+        .filter(item => (item.text || item.title));
+}
+
+function normalizeMenuSections(sections = []) {
+    return (sections || [])
+        .map((section, sectionIndex) => ({
+            ...section,
+            title: String(section.title || `Section ${sectionIndex + 1}`).trim(),
+            rows: normalizeMenuItems(section.rows || [], `row_${sectionIndex}`)
+        }))
+        .filter(section => section.rows.length > 0);
+}
+
+function normalizeMenuConfig(config = {}, previous = {}) {
+    const type = config.type === 'list' ? 'list' : 'buttons';
+    const trigger = normalizeMenuTriggerString(config.trigger ?? previous.trigger);
+    return {
+        ...previous,
+        ...config,
+        id: String(config.id || previous.id || `menu_${Date.now()}`),
+        title: String(config.title || previous.title || 'Menu').trim(),
+        description: String(config.description ?? previous.description ?? ''),
+        trigger: trigger || null,
+        triggerMode: normalizeMenuTriggerMode(config.triggerMode || previous.triggerMode),
+        type,
+        buttons: normalizeMenuItems(config.buttons || previous.buttons || [], 'btn').slice(0, 10),
+        listSections: normalizeMenuSections(config.listSections || previous.listSections || []),
+        image: config.image !== undefined ? config.image : (previous.image || null),
+        groupId: config.groupId || previous.groupId || null,
+        enabled: config.enabled !== false
+    };
 }
 
 function saveMenus() {
@@ -2157,18 +3724,7 @@ function saveMenus() {
 function createMenu(config, sessionData = null) {
     const menuId = config.id || `menu_${Date.now()}`;
     const menus = sessionData ? sessionData.interactiveMenus : interactiveMenus;
-    menus[menuId] = {
-        id: menuId,
-        title: config.title || 'Menu',
-        description: config.description || '',
-        trigger: config.trigger || null,
-        type: config.type || 'buttons',
-        buttons: config.buttons || [],
-        listSections: config.listSections || [],
-        image: config.image || null,
-        groupId: config.groupId || null,
-        enabled: config.enabled !== false
-    };
+    menus[menuId] = normalizeMenuConfig({ ...config, id: menuId });
     if (sessionData) sessionData.saveMenus(); else saveMenus();
     return menus[menuId];
 }
@@ -2212,25 +3768,155 @@ async function canUseInteractiveMenusInChat(chat, sessionData = null) {
     if (!botWid) return false;
 
     let participants = chat.participants || [];
-    if ((!participants || participants.length === 0) && chat.id?._serialized) {
+    if ((!participants || participants.length === 0) && chat?.jid) {
         try {
-            const freshChat = await sessionClient.getChatById(chat.id._serialized);
+            const freshChat = await getChatInfo(sessionClient, chat.jid, true);
             participants = freshChat?.participants || [];
         } catch (e) {}
     }
 
-    const botId = botWid._serialized;
-    const botNumber = botWid.user || botId?.split('@')[0];
-    const botParticipant = participants.find(p => {
-        const participantId = p.id?._serialized;
-        const participantNumber = p.id?.user || participantId?.split('@')[0];
-        return participantId === botId || participantNumber === botNumber;
-    });
+    const botParticipant = findBotParticipant(sessionClient, participants);
 
     return !!(botParticipant?.isAdmin || botParticipant?.isSuperAdmin);
 }
 
-async function sendInteractiveMenu(chat, menuId, sessionData = null, quotedMsg = null) {
+function cleanupMenuSessions(sessions = {}) {
+    const now = Date.now();
+    let changed = false;
+    for (const sessionId of Object.keys(sessions)) {
+        const session = sessions[sessionId];
+        if (!session?.expiresAt || session.expiresAt < now) {
+            delete sessions[sessionId];
+            changed = true;
+        }
+    }
+    return changed;
+}
+
+function makeMenuSessionKey(chatId, userId = null) {
+    return `${normalizeJid(chatId)}::${userId ? normalizeJid(userId) : 'all'}`;
+}
+
+function storeMenuSession(sessions, chat, userId, menuId, sessionItems) {
+    const key = makeMenuSessionKey(chat.jid, userId);
+    sessions[key] = {
+        key,
+        chatId: chat.jid,
+        userId: userId ? normalizeJid(userId) : null,
+        menuId,
+        buttons: sessionItems.buttons || null,
+        rows: sessionItems.rows || null,
+        createdAt: Date.now(),
+        expiresAt: Date.now() + MENU_SESSION_TTL_MS
+    };
+    return sessions[key];
+}
+
+function getActiveMenuSession(sessions, chatId, userId) {
+    cleanupMenuSessions(sessions);
+    const normalizedChatId = normalizeJid(chatId);
+    const normalizedUserId = userId ? normalizeJid(userId) : null;
+    const exact = sessions[makeMenuSessionKey(normalizedChatId, normalizedUserId)];
+    if (exact) return exact;
+    const shared = sessions[makeMenuSessionKey(normalizedChatId, null)];
+    if (shared) return shared;
+    return Object.values(sessions)
+        .filter(session => session.chatId === normalizedChatId && (!session.userId || !normalizedUserId || valuesMatchUser(session.userId, normalizedUserId)))
+        .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0] || null;
+}
+
+function getMenuItemLabel(item = {}) {
+    return item.text || item.title || '';
+}
+
+function getMenuItemResponse(item = {}) {
+    return item.response || null;
+}
+
+function getMenuSessionItems(session) {
+    if (!session) return [];
+    return session.buttons || session.rows || [];
+}
+
+function findMenuSessionSelection(session, messageText) {
+    const items = getMenuSessionItems(session);
+    if (!items.length) return null;
+
+    const trimmed = String(messageText || '').trim();
+    if (/^\d+$/.test(trimmed)) {
+        const index = parseInt(trimmed, 10) - 1;
+        if (index >= 0 && index < items.length) return { item: items[index], index, method: 'number' };
+        return { invalidNumber: true, itemsCount: items.length };
+    }
+
+    const normalizedInput = normalizeMenuText(trimmed);
+    if (!normalizedInput) return null;
+
+    const matches = items
+        .map((item, index) => ({ item, index, label: normalizeMenuText(getMenuItemLabel(item)) }))
+        .filter(candidate => candidate.label && candidate.label === normalizedInput);
+
+    if (!matches.length) return null;
+    return { item: matches[0].item, index: matches[0].index, method: 'label' };
+}
+
+function normalizedTextContainsPhrase(messageNorm, triggerNorm) {
+    if (!messageNorm || !triggerNorm) return false;
+    return ` ${messageNorm} `.includes(` ${triggerNorm} `);
+}
+
+function menuMatchesMessage(menu, chat, messageText) {
+    if (!menu?.enabled || !menu.trigger) return null;
+    if (menu.groupId && chat.jid !== menu.groupId) return null;
+
+    const messageNorm = normalizeMenuText(messageText);
+    if (!messageNorm) return null;
+
+    const mode = normalizeMenuTriggerMode(menu.triggerMode);
+    const triggers = splitMenuTriggers(menu.trigger)
+        .map(raw => ({ raw, normalized: normalizeMenuText(raw) }))
+        .filter(trigger => trigger.normalized);
+
+    for (const trigger of triggers) {
+        const matched = mode === 'contains'
+            ? normalizedTextContainsPhrase(messageNorm, trigger.normalized)
+            : messageNorm === trigger.normalized;
+        if (!matched) continue;
+        return {
+            menu,
+            rawTrigger: trigger.raw,
+            normalizedTrigger: trigger.normalized,
+            mode,
+            score: (mode === 'exact' ? 100000 : 50000) + trigger.normalized.length
+        };
+    }
+
+    return null;
+}
+
+function findTriggeredMenu(menus, chat, messageText) {
+    return Object.values(menus || {})
+        .map(menu => menuMatchesMessage(menu, chat, messageText))
+        .filter(Boolean)
+        .sort((a, b) => b.score - a.score || String(a.menu.id).localeCompare(String(b.menu.id)))[0] || null;
+}
+
+async function runMenuItem(sock, chat, senderId, selectedItem, sourceMenu, sessionData, message, messageLength = 0) {
+    const quoteOpts = makeReplyOptions(message);
+    if (selectedItem.action) {
+        return await executeMenuAction(sock, chat, senderId, selectedItem.action, sourceMenu, sessionData, message);
+    }
+    if (selectedItem.nextMenu) {
+        return await sendInteractiveMenu(sock, chat, selectedItem.nextMenu, sessionData, message);
+    }
+    const response = getMenuItemResponse(selectedItem);
+    if (response) {
+        return await sendMessageHumanized(sock, chat.jid, response, quoteOpts, messageLength, sessionData);
+    }
+    return await sendMessageHumanized(sock, chat.jid, '[OK] Vous avez selectionne: ' + getMenuItemLabel(selectedItem), quoteOpts, messageLength, sessionData);
+}
+
+async function sendInteractiveMenu(sock, chat, menuId, sessionData = null, quotedMsg = null) {
     const menus = sessionData ? sessionData.interactiveMenus : interactiveMenus;
     const sessions = sessionData ? sessionData.menuSessions : menuSessions;
     const menu = menus[menuId];
@@ -2238,7 +3924,7 @@ async function sendInteractiveMenu(chat, menuId, sessionData = null, quotedMsg =
 
     try {
         if (!(await canUseInteractiveMenusInChat(chat, sessionData))) {
-            const logMessage = `[MENU] Envoi bloque: bot non admin dans ${chat?.name || chat?.id?._serialized || 'chat inconnu'}`;
+            const logMessage = `[MENU] Envoi bloque: bot non admin dans ${chat?.name || chat?.jid || 'chat inconnu'}`;
             if (sessionData) sessionData.addLog(logMessage);
             else addLog(logMessage);
             return null;
@@ -2280,22 +3966,23 @@ async function sendInteractiveMenu(chat, menuId, sessionData = null, quotedMsg =
         }
 
         if (sessionItems) {
-            const sessKey = `${chat.id._serialized}_${Date.now()}`;
-            sessions[sessKey] = { menuId, ...sessionItems, createdAt: Date.now(), expiresAt: Date.now() + 3600000 };
+            cleanupMenuSessions(sessions);
+            const targetUserId = quotedMsg ? getMessageSender(quotedMsg) : null;
+            storeMenuSession(sessions, chat, targetUserId, menuId, sessionItems);
             if (sessionData) sessionData.saveMenus(); else saveMenus();
         }
 
-        const sendOpts = quotedMsg ? { quotedMessageId: quotedMsg.id._serialized } : {};
+        const sendOpts = quotedMsg ? makeReplyOptions(quotedMsg) : {};
 
         if (menu.image) {
             const base64Data = menu.image.replace(/^data:image\/\w+;base64,/, '');
             const mimeMatch = menu.image.match(/^data:(image\/\w+);base64,/);
             const mimetype = mimeMatch ? mimeMatch[1] : 'image/jpeg';
-            const media = new MessageMedia(mimetype, base64Data, 'menu.jpg');
-            const sent = await sendMessageHumanized(chat, media, { caption: menuText, ...sendOpts });
+            const media = makeMediaPayload(mimetype, base64Data, 'menu.jpg');
+            const sent = await sendMessageHumanized(sock, chat.jid, media, { caption: menuText, ...sendOpts }, 0, sessionData);
             return sent;
         } else {
-            const sent = await sendMessageHumanized(chat, menuText, sendOpts);
+            const sent = await sendMessageHumanized(sock, chat.jid, menuText, sendOpts, 0, sessionData);
             return sent;
         }
     } catch (error) {
@@ -2305,32 +3992,33 @@ async function sendInteractiveMenu(chat, menuId, sessionData = null, quotedMsg =
     }
 }
 
-async function handleMenuResponse(message, responseId, sessionData = null) {
-    const chat = await message.getChat();
-    const senderId = message.author || message.from;
+async function handleMenuResponse(sock, message, responseId, sessionData = null) {
+    const chat = await getChatInfo(sock, getMessageChatId(message));
+    const senderId = getMessageSender(message);
     const menus = sessionData ? sessionData.interactiveMenus : interactiveMenus;
 
     if (!(await canUseInteractiveMenusInChat(chat, sessionData))) return null;
+
+    const sessions = sessionData ? sessionData.menuSessions : menuSessions;
+    const activeSession = getActiveMenuSession(sessions, chat.jid, senderId);
+    if (activeSession) {
+        const sourceMenu = menus[activeSession.menuId] || {};
+        const selectedItem = getMenuSessionItems(activeSession).find(item => item.id === responseId);
+        if (selectedItem) {
+            return await runMenuItem(sock, chat, senderId, selectedItem, sourceMenu, sessionData, message, getMessageBody(message)?.length || 0);
+        }
+    }
 
     for (const menuId in menus) {
         const menu = menus[menuId];
         if (!menu.enabled) continue;
 
-        if (menu.groupId && chat.id._serialized !== menu.groupId) continue;
+        if (menu.groupId && chat.jid !== menu.groupId) continue;
 
-        const quoteOpts = { quotedMessageId: message.id._serialized };
         if (menu.type === 'buttons') {
             const button = menu.buttons.find(b => b.id === responseId);
             if (button) {
-                if (button.action) {
-                    return await executeMenuAction(chat, senderId, button.action, menu, sessionData, message);
-                }
-                if (button.nextMenu) {
-                    return await sendInteractiveMenu(chat, button.nextMenu, sessionData, message);
-                }
-                if (button.response) {
-                    return await sendMessageHumanized(chat, button.response, quoteOpts, message.body?.length || 0, sessionData);
-                }
+                return await runMenuItem(sock, chat, senderId, button, menu, sessionData, message, getMessageBody(message)?.length || 0);
             }
         }
 
@@ -2338,15 +4026,7 @@ async function handleMenuResponse(message, responseId, sessionData = null) {
             for (const section of menu.listSections) {
                 const row = section.rows.find(r => r.id === responseId);
                 if (row) {
-                    if (row.action) {
-                        return await executeMenuAction(chat, senderId, row.action, menu, sessionData, message);
-                    }
-                    if (row.nextMenu) {
-                        return await sendInteractiveMenu(chat, row.nextMenu, sessionData, message);
-                    }
-                    if (row.response) {
-                        return await sendMessageHumanized(chat, row.response, quoteOpts, message.body?.length || 0, sessionData);
-                    }
+                    return await runMenuItem(sock, chat, senderId, row, menu, sessionData, message, getMessageBody(message)?.length || 0);
                 }
             }
         }
@@ -2355,29 +4035,29 @@ async function handleMenuResponse(message, responseId, sessionData = null) {
     return null;
 }
 
-async function executeMenuAction(chat, userId, action, menu, sessionData = null, quotedMsg = null) {
-    const quoteOpts = quotedMsg ? { quotedMessageId: quotedMsg.id._serialized } : {};
+async function executeMenuAction(sock, chat, userId, action, menu, sessionData = null, quotedMsg = null) {
+    const quoteOpts = quotedMsg ? makeReplyOptions(quotedMsg) : {};
     switch (action.type) {
         case 'message':
-            return await sendMessageHumanized(chat, action.content, quoteOpts, 0, sessionData);
+            return await sendMessageHumanized(sock, chat.jid, action.content, quoteOpts, 0, sessionData);
 
         case 'link':
             if (action.whitelist) {
                 addLog(`[OK] Lien autorise via menu: ${action.whitelist}`);
-                return await sendMessageHumanized(chat,
-                    `✅ Voici le lien autorisé: ${action.whitelist}`, quoteOpts, 0);
+                return await sendMessageHumanized(sock, chat.jid,
+                    `✅ Voici le lien autorisé: ${action.whitelist}`, quoteOpts, 0, sessionData);
             }
             break;
 
         case 'contact':
             if (action.contactId) {
                 try {
-                    const contact = await client.getContactById(action.contactId);
-                    return await sendMessageHumanized(chat,
+                    const contact = await getContactInfo(sock, action.contactId);
+                    return await sendMessageHumanized(sock, chat.jid,
                         `👤 Contact demandé: @${contact.number}`,
-                        { mentions: [contact.id._serialized], ...quoteOpts }, 0);
+                        { mentions: [contact.jid], ...quoteOpts }, 0, sessionData);
                 } catch (e) {
-                    return await sendMessageHumanized(chat, '❌ Contact non disponible', quoteOpts, 0);
+                    return await sendMessageHumanized(sock, chat.jid, '❌ Contact non disponible', quoteOpts, 0, sessionData);
                 }
             }
             break;
@@ -2385,19 +4065,18 @@ async function executeMenuAction(chat, userId, action, menu, sessionData = null,
         case 'submenu':
             const subMenus = sessionData ? sessionData.interactiveMenus : interactiveMenus;
             if (action.menuId && subMenus[action.menuId]) {
-                return await sendInteractiveMenu(chat, action.menuId, sessionData, quotedMsg);
+                return await sendInteractiveMenu(sock, chat, action.menuId, sessionData, quotedMsg);
             }
             break;
         case 'external':
             if (action.webhook) {
                 try {
-                    const fetch = (await import('node-fetch')).default;
                     await fetch(action.webhook, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             userId,
-                            chatId: chat.id._serialized,
+                            chatId: chat.jid,
                             action: action.name,
                             timestamp: Date.now()
                         })
@@ -2451,14 +4130,57 @@ function addCall(userId) {
     return callSpamTracker[userId].length;
 }
 
-function restoreUnblockTimers() {
+function scheduleSessionUnblock(sessionId, userId, delay) {
+    const sessionData = getSessionData(sessionId);
+    if (sessionData.unblockTimers[userId]) clearTimeout(sessionData.unblockTimers[userId]);
+
+    sessionData.unblockTimers[userId] = setTimeout(async () => {
+        if (sessionData.blockedUsers[userId] && sessionData.blockedUsers[userId].autoUnblock) {
+            try {
+                const activeClient = sessionManager.sessions.get(sessionId)?.client;
+                if (!activeClient) throw new Error('Client non disponible');
+
+                await HumanBehavior.naturalDelay(
+                    HumanBehavior.gaussianRandom(3000, 1500)
+                );
+
+                await activeClient.updateBlockStatus(normalizeJid(userId), 'unblock');
+                ensureRuntime(activeClient).blocklist.delete(normalizeJid(userId));
+                delete sessionData.blockedUsers[userId];
+                delete sessionData.callSpamTracker[userId];
+                delete sessionData.unblockTimers[userId];
+                sessionData.saveCallSpamData();
+                sessionData.addLog(`[UNBLOCK] ${userId} debloque automatiquement`);
+            } catch (error) {
+                sessionData.addLog(`[X] Erreur deblocage auto ${userId}: ${error.message}`);
+            }
+        }
+    }, delay);
+}
+
+function restoreUnblockTimers(sessionId = null) {
+    if (sessionId) {
+        const sessionData = getSessionData(sessionId);
+        const now = Date.now();
+        for (const userId in sessionData.blockedUsers) {
+            const entry = sessionData.blockedUsers[userId];
+            if (!entry.autoUnblock) continue;
+
+            const elapsed = now - entry.blockedAt;
+            const blockDuration = getCallBlockDurationMin(sessionData.config) * 60 * 1000;
+            const remaining = blockDuration - elapsed;
+            scheduleSessionUnblock(sessionId, userId, remaining <= 0 ? 5000 : remaining);
+        }
+        return;
+    }
+
     const now = Date.now();
     for (const userId in blockedUsers) {
         const entry = blockedUsers[userId];
         if (!entry.autoUnblock) continue;
 
         const elapsed = now - entry.blockedAt;
-        const blockDuration = CONFIG.CALL_BLOCK_DURATION_MIN * 60 * 1000;
+        const blockDuration = getCallBlockDurationMin(CONFIG) * 60 * 1000;
         const remaining = blockDuration - elapsed;
 
         if (remaining <= 0) {
@@ -2475,13 +4197,14 @@ function scheduleUnblock(userId, delay) {
     unblockTimers[userId] = setTimeout(async () => {
         if (blockedUsers[userId] && blockedUsers[userId].autoUnblock) {
             try {
-                const contact = await client.getContactById(userId);
+                const activeClient = sessionManager.getActiveClient() || client;
+                if (!activeClient) throw new Error('Client non disponible');
 
                 await HumanBehavior.naturalDelay(
                     HumanBehavior.gaussianRandom(3000, 1500)
                 );
 
-                await contact.unblock();
+                await activeClient.updateBlockStatus(normalizeJid(userId), 'unblock');
                 delete blockedUsers[userId];
                 delete callSpamTracker[userId];
                 delete unblockTimers[userId];
@@ -2589,7 +4312,7 @@ function saveGroupExceptions() {
 
 function isGroupExcluded(chat) {
     if (!chat || !chat.id) return false;
-    if (GROUP_EXCEPTIONS.excludedGroups.includes(chat.id._serialized)) return true;
+    if (GROUP_EXCEPTIONS.excludedGroups.includes(chat.jid)) return true;
     if (!chat.name) return false;
     const name = chat.name.toLowerCase();
     return GROUP_EXCEPTIONS.excludedPatterns.some(p => name.includes(p.toLowerCase()));
@@ -2606,44 +4329,18 @@ function saveUserExceptions() {
 }
 
 function isUserExcludedFromLinks(userId, participants = []) {
-    const userNumber = userId.split('@')[0];
-
-    const userException = USER_EXCEPTIONS.excludedUsers.find(u => {
-        const exceptionId = typeof u === 'object' ? u.id : u;
-        const exceptionNumber = exceptionId.split('@')[0];
-        return exceptionId === userId || exceptionNumber === userNumber || exceptionId === userNumber;
-    });
-
-    if (userException) {
-        const hasLinkException = typeof userException === 'object' ? userException.linkException : true;
-        if (hasLinkException) return true;
-    }
+    const userException = findUserException(USER_EXCEPTIONS.excludedUsers, [userId], 'link');
+    if (userException) return true;
 
     if (USER_EXCEPTIONS.excludedAdmins) {
-        // Matcher par numéro de téléphone car WhatsApp utilise différents formats d'ID (@lid, @c.us)
-        const p = participants.find(part => {
-            const partNumber = part.id._serialized?.split('@')[0];
-            return partNumber === userNumber || part.id._serialized === userId;
-        });
+        const p = participants.find(part => participantMatches(part, userId));
         if (p && (p.isAdmin || p.isSuperAdmin)) return true;
     }
     return false;
 }
 
 function isUserExcludedFromCalls(userId, phoneNumber = null) {
-    const callerNumber = userId.split('@')[0];
-
-    const userException = USER_EXCEPTIONS.excludedUsers.find(u => {
-        const exceptionId = typeof u === 'object' ? u.id : u;
-        const exceptionNumber = exceptionId.split('@')[0];
-        return exceptionId === userId ||
-            exceptionNumber === callerNumber ||
-            exceptionId === callerNumber ||
-            (phoneNumber && exceptionNumber === phoneNumber) ||
-            (phoneNumber && exceptionId === phoneNumber);
-    });
-
-    return userException && (typeof userException === 'object' ? userException.callException : false);
+    return !!findUserException(USER_EXCEPTIONS.excludedUsers, [userId, phoneNumber], 'call');
 }
 
 function isUserExcluded(userId, participants = []) {
@@ -2738,7 +4435,7 @@ const EMAIL_CONTEXT_WORDS = [
 ];
 
 function containsLink(message) {
-    const text = message.body;
+    const text = typeof message === 'string' ? message : getMessageBody(message);
     if (!text || text.length < 5) return false;
 
     const emailPattern = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/gi;
@@ -2799,7 +4496,7 @@ function containsLink(message) {
 // 🤖 CLIENT WHATSAPP
 // ============================================================
 
-const authPath = path.join(__dirname, '.wwebjs_auth');
+const authPath = path.join(__dirname, '.baileys_auth');
 try {
     const cleanLockFiles = (dir) => {
         if (!fs.existsSync(dir)) return;
@@ -2844,29 +4541,6 @@ class SessionManager {
             this.activeSessionId = null;
         }
     }
-    
-    // Nettoyer les sessions orphelines (sans propriétaire existant)
-    cleanupOrphanSessions() {
-        const orphanSessions = [];
-        
-        for (const [sessionId, session] of Object.entries(this.sessionsList)) {
-            const owner = session.ownerUsername;
-            // Si la session a un propriétaire mais qu'il n'existe plus
-            if (owner && !authManager.users[owner]) {
-                orphanSessions.push(sessionId);
-            }
-        }
-        
-        if (orphanSessions.length > 0) {
-            console.log(`[CLEANUP] ${orphanSessions.length} session(s) orpheline(s) trouvée(s)`);
-            for (const sessionId of orphanSessions) {
-                this.deleteSession(sessionId);
-                console.log(`[CLEANUP] Session orpheline supprimée: ${sessionId}`);
-            }
-        }
-        
-        return orphanSessions.length;
-    }
 
     saveSessionsList() {
         try {
@@ -2883,13 +4557,24 @@ class SessionManager {
         return 'session_' + Date.now() + '_' + crypto.randomBytes(4).toString('hex');
     }
 
-    createSession(sessionId = null, name = 'Default', ownerUsername = null) {
-        const id = sessionId || this.generateSessionId();
-        const authPath = path.join(__dirname, '.wwebjs_auth', id);
-        
-        if (!fs.existsSync(authPath)) {
-            fs.mkdirSync(authPath, { recursive: true });
+    cleanupOrphanSessions() {
+        const orphanSessions = [];
+        for (const [sessionId, session] of Object.entries(this.sessionsList)) {
+            const owner = session.ownerUsername;
+            if (owner && !authManager.users[owner]) orphanSessions.push(sessionId);
         }
+
+        for (const sessionId of orphanSessions) {
+            addLog('[CLEANUP] Session orpheline supprimee: ' + sessionId);
+            this.deleteSession(sessionId).catch(e => addLog('[CLEANUP] Erreur suppression ' + sessionId + ': ' + e.message));
+        }
+        return orphanSessions.length;
+    }
+
+    async createSession(sessionId = null, name = 'Default', ownerUsername = null) {
+        const id = sessionId || this.generateSessionId();
+        const authPath = path.join(__dirname, '.baileys_auth', id);
+        if (!fs.existsSync(authPath)) fs.mkdirSync(authPath, { recursive: true });
 
         const sessionData = {
             id,
@@ -2899,282 +4584,319 @@ class SessionManager {
             status: 'pending',
             phoneNumber: null,
             pushName: null,
-            ownerUsername: ownerUsername // Associer à un utilisateur
+            ownerUsername
         };
 
         this.sessionsList[id] = sessionData;
         this.saveSessionsList();
 
-        const client = this.initClient(id);
+        const client = await this.initClient(id);
         this.sessions.set(id, { client, data: sessionData });
-
         return sessionData;
     }
 
-    // Vérifier si l'utilisateur peut démarrer une session
     canUserStartSession(username) {
         const user = authManager.users[username];
-        if (!user) return { allowed: false, reason: 'Utilisateur non trouvé' };
-        
+        if (!user) return { allowed: false, reason: 'Utilisateur non trouve' };
         if (subscriptionSettings.enabled && !user.isAdmin && !isSubscriptionActive(username)) {
             return { allowed: false, reason: 'SUBSCRIPTION_REQUIRED', requireSubscription: true };
         }
-        
         return { allowed: true, user };
     }
 
-    // Obtenir les sessions d'un utilisateur
     getUserSessions(username) {
         return Object.values(this.sessionsList).filter(s => s.ownerUsername === username);
     }
 
-    // Vérifier et nettoyer les sessions d'un utilisateur supprimé
     cleanupUserSessions(username) {
         const sessionsToRemove = [];
         for (const [id, session] of Object.entries(this.sessionsList)) {
-            if (session.ownerUsername === username) {
-                sessionsToRemove.push(id);
-            }
+            if (session.ownerUsername === username) sessionsToRemove.push(id);
         }
-        
         for (const id of sessionsToRemove) {
-            this.deleteSession(id);
-            addLog(`[SESSION] Session ${id} supprimée (utilisateur ${username} supprimé)`);
+            this.deleteSession(id).catch(e => addLog('[SESSION] Erreur suppression ' + id + ': ' + e.message));
+            addLog('[SESSION] Session ' + id + ' supprimee (utilisateur ' + username + ' supprime)');
         }
-        
         return sessionsToRemove.length;
     }
 
-    initClient(sessionId) {
+    async initClient(sessionId) {
         const sessionData = this.sessionsList[sessionId];
         if (!sessionData) return null;
 
-        const authPath = sessionData.authPath;
-        
-        // Clean lock files
-        try {
-            const cleanLockFiles = (dir) => {
-                if (!fs.existsSync(dir)) return;
-                const entries = fs.readdirSync(dir, { withFileTypes: true });
-                for (const entry of entries) {
-                    const fullPath = path.join(dir, entry.name);
-                    if (entry.name.startsWith('Singleton')) {
-                        try { fs.unlinkSync(fullPath); } catch (e) {}
-                    } else if (entry.isDirectory()) {
-                        cleanLockFiles(fullPath);
-                    }
-                }
-            };
-            cleanLockFiles(authPath);
-        } catch (e) {}
+        const authPath = path.join(__dirname, '.baileys_auth', sessionId);
+        if (sessionData.authPath !== authPath) {
+            sessionData.authPath = authPath;
+            this.saveSessionsList();
+        }
+        if (!fs.existsSync(authPath)) fs.mkdirSync(authPath, { recursive: true });
 
-        const client = new Client({
-            authStrategy: new LocalAuth({ dataPath: authPath }),
-            puppeteer: {
-                headless: true,
-                timeout: 180000,
-                protocolTimeout: 600000,
-                args: [
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-accelerated-2d-canvas',
-                    '--no-first-run',
-                    '--no-zygote',
-                    '--disable-gpu'
-                ]
-            }
+        const baileys = await loadBaileys();
+        const { state, saveCreds } = await baileys.useMultiFileAuthState(authPath);
+        const makeWASocket = baileys.default || baileys.makeWASocket;
+        let sock;
+        sock = makeWASocket({
+            auth: state,
+            logger: makeBaileysLogger(),
+            browser: baileys.Browsers?.ubuntu?.('PayOol Bot') || undefined,
+            markOnlineOnConnect: false,
+            syncFullHistory: true,
+            getMessage: async (key) => getCachedMessage(sock, key.id)?.message || undefined,
+            cachedGroupMetadata: async (jid) => ensureRuntime(sock).chats.get(jid)?._raw || undefined
         });
 
-        this.setupClientEvents(client, sessionId);
-        return client;
+        sock.sessionId = sessionId;
+        sock.info = null;
+        sock.isReady = false;
+        sock._destroyed = false;
+        ensureRuntime(sock);
+        loadPersistentMessageCache(sock, sessionId);
+        this.setupClientEvents(sock, sessionId, {
+            saveCreds,
+            DisconnectReason: baileys.DisconnectReason,
+            jidNormalizedUser: baileys.jidNormalizedUser
+        });
+        return sock;
     }
 
-    setupClientEvents(client, sessionId) {
+    setupClientEvents(sock, sessionId, deps) {
         let qrTimeout = null;
-        const QR_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+        const QR_TIMEOUT_MS = 5 * 60 * 1000;
+        const { saveCreds, DisconnectReason, jidNormalizedUser } = deps;
 
-        client.on('qr', (qr) => {
+        sock.ev.on('creds.update', saveCreds);
+
+        sock.ev.on('connection.update', async (update) => {
+            const { connection, lastDisconnect, qr } = update;
             const session = this.sessions.get(sessionId);
-            if (session) {
-                session.data.currentQR = qr;
-                session.data.status = 'qr';
-                this.sessionsList[sessionId].status = 'qr';
-                this.saveSessionsList();
-            }
-            addLog(`[${sessionId}] QR code genere`);
-            console.log(`\n[${sessionId}] Scannez ce QR code avec WhatsApp:\n`);
-            qrcode.generate(qr, { small: true });
 
-            // Démarrer/redémarrer le timer de 5 min au premier QR
-            if (!qrTimeout) {
-                qrTimeout = setTimeout(async () => {
-                    const sess = this.sessions.get(sessionId);
-                    if (sess && sess.data.status !== 'connected') {
-                        addLog(`[TIMEOUT] [${sessionId}] QR non scanné après 5 min — suppression automatique`);
-                        await this.deleteSession(sessionId);
+            if (qr) {
+                if (session) {
+                    session.data.currentQR = qr;
+                    session.data.status = 'qr';
+                    this.sessionsList[sessionId].status = 'qr';
+                    this.saveSessionsList();
+                }
+                addLog('[' + sessionId + '] QR code genere');
+                console.log('\n[' + sessionId + '] Scannez ce QR code avec WhatsApp:\n');
+                qrcode.generate(qr, { small: true });
+                if (!qrTimeout) {
+                    qrTimeout = setTimeout(async () => {
+                        const sess = this.sessions.get(sessionId);
+                        if (sess && sess.data.status !== 'connected') {
+                            addLog('[TIMEOUT] [' + sessionId + '] QR non scanne apres 5 min - suppression automatique');
+                            await this.deleteSession(sessionId);
+                        }
+                    }, QR_TIMEOUT_MS);
+                }
+            }
+
+            if (connection === 'open') {
+                if (qrTimeout) { clearTimeout(qrTimeout); qrTimeout = null; }
+                const me = sock.user || sock.authState?.creds?.me || {};
+                const ownJid = jidNormalizedUser ? jidNormalizedUser(me.lid || me.id) : normalizeJid(me.lid || me.id);
+                const phoneJid = me.phoneNumber || (me.id ? (jidNormalizedUser ? jidNormalizedUser(me.id) : normalizeJid(me.id)) : ownJid);
+                sock.info = {
+                    wid: jidObject(ownJid),
+                    lid: me.lid || (ownJid?.endsWith('@lid') ? ownJid : null),
+                    phoneNumber: phoneJid ? jidNumber(phoneJid) : jidNumber(ownJid),
+                    pushname: me.name || me.notify || me.verifiedName || null
+                };
+                sock.isReady = true;
+                sock._destroyed = false;
+
+                if (session) {
+                    session.data.status = 'connected';
+                    session.data.currentQR = null;
+                    session.data.phoneNumber = sock.info.phoneNumber || sock.info.wid.user || null;
+                    session.data.pushName = sock.info.pushname || null;
+                    this.sessionsList[sessionId].status = 'connected';
+                    this.sessionsList[sessionId].phoneNumber = session.data.phoneNumber;
+                    this.sessionsList[sessionId].pushName = session.data.pushName;
+
+                    const ownerOfActive = this.activeSessionId ? this.sessionsList[this.activeSessionId]?.ownerUsername : null;
+                    const ownerOfThis = this.sessionsList[sessionId]?.ownerUsername;
+                    if (!this.activeSessionId || (ownerOfThis && ownerOfActive !== ownerOfThis && ownerOfActive === null)) {
+                        this.activeSessionId = sessionId;
+                        addLog('[TARGET] Session active: ' + sessionId);
                     }
-                }, QR_TIMEOUT_MS);
+                    this.saveSessionsList();
+                }
+
+                await getAllChats(sock).catch(() => {});
+                await sock.fetchBlocklist?.().then(list => {
+                    ensureRuntime(sock).blocklist = new Set((list || []).filter(Boolean).map(normalizeJid));
+                }).catch(() => {});
+
+                addLog('[OK] [' + sessionId + '] Bot connecte et pret!');
+                restoreUnblockTimers(sessionId);
+                startPresenceManager(sessionId);
+                const sessionData = getSessionData(sessionId);
+                if (sessionData.config.AUTO_SCAN_ENABLED) {
+                    const startupDelay = HumanBehavior.gaussianRandom(45000, 15000);
+                    addLog('[TIMER] [' + sessionId + '] Premier scan dans ' + Math.round(startupDelay / 1000) + 's...');
+                    const scheduledFor = sock;
+                    await new Promise(r => setTimeout(r, startupDelay));
+                    const currentSession = this.sessions.get(sessionId);
+                    if (!currentSession || currentSession.client !== scheduledFor) {
+                        addLog('[TIMER] [' + sessionId + '] Scan initial annule (session redemarree)');
+                    } else {
+                        try { await scanAllGroups(sessionId); }
+                        catch (scanError) { addLog('[X] [' + sessionId + '] Erreur scan initial: ' + scanError.message); }
+                    }
+                }
+                scheduleNextScan(sessionId);
+            }
+
+            if (connection === 'close') {
+                if (qrTimeout) { clearTimeout(qrTimeout); qrTimeout = null; }
+                sock.isReady = false;
+                sock._destroyed = true;
+                const statusCode = lastDisconnect?.error?.output?.statusCode;
+                const reason = statusCode === DisconnectReason?.loggedOut ? 'LOGOUT' : (lastDisconnect?.error?.message || String(statusCode || 'close'));
+                if (session) {
+                    session.data.status = statusCode === DisconnectReason?.loggedOut ? 'auth_failure' : 'disconnected';
+                    this.sessionsList[sessionId].status = session.data.status;
+                    this.saveSessionsList();
+                }
+                addLog('[DECO] [' + sessionId + '] Deconnecte: ' + reason);
+                if (statusCode !== DisconnectReason?.loggedOut) {
+                    addLog('[RECONNECT] [' + sessionId + '] Reconnexion auto dans 10s...');
+                    setTimeout(() => this.startSession(sessionId).catch(e => addLog('[RECONNECT] [' + sessionId + '] Erreur: ' + e.message)), 10000);
+                }
             }
         });
 
-        client.on('ready', async () => {
-            // Annuler le timer QR si la session se connecte
-            if (qrTimeout) { clearTimeout(qrTimeout); qrTimeout = null; }
-
-            const session = this.sessions.get(sessionId);
-            if (session) {
-                session.data.status = 'connected';
-                session.data.currentQR = null;
-                session.data.phoneNumber = client.info?.wid?.user || null;
-                session.data.pushName = client.info?.pushname || null;
-                this.sessionsList[sessionId].status = 'connected';
-                this.sessionsList[sessionId].phoneNumber = session.data.phoneNumber;
-                this.sessionsList[sessionId].pushName = session.data.pushName;
-                
-                // Activer automatiquement si aucune session n'est active globalement
-                // OU si l'activeSessionId actuel n'appartient pas au même propriétaire
-                const ownerOfActive = this.activeSessionId
-                    ? this.sessionsList[this.activeSessionId]?.ownerUsername
-                    : null;
-                const ownerOfThis = this.sessionsList[sessionId]?.ownerUsername;
-                if (!this.activeSessionId || (ownerOfThis && ownerOfActive !== ownerOfThis && ownerOfActive === null)) {
-                    this.activeSessionId = sessionId;
-                    addLog(`[TARGET] Session active: ${sessionId}`);
+        sock.ev.on('messages.upsert', async ({ type, messages }) => {
+            for (const message of messages || []) {
+                cacheMessage(sock, message);
+                cacheMessageContactInfo(sock, message);
+                const isOwnBotCommand = isMessageFromMe(message) && !!getBotCommand(message);
+                if (type === 'notify' || isOwnBotCommand) {
+                    try { await handleMessage(sock, message, sessionId); }
+                    catch (e) { addLog('[X] [' + sessionId + '] Erreur message: ' + e.message); }
                 }
-                
-                this.saveSessionsList();
             }
-            addLog(`[OK] [${sessionId}] Bot connecte et pret!`);
-            
-            // Toutes les sessions démarrent leurs processus
-            restoreUnblockTimers(sessionId);
-            startPresenceManager(sessionId);
+        });
+
+        sock.ev.on('messaging-history.set', ({ chats, contacts, messages, lidPnMappings }) => {
+            const rt = ensureRuntime(sock);
+            for (const chat of chats || []) rt.chats.set(chat.id, hydrateChat(chat.id, chat));
+            for (const contact of contacts || []) cacheContactInfo(sock, contact);
+            for (const mapping of lidPnMappings || []) cacheLidPnMapping(sock, mapping.lid, mapping.pn);
+            let cachedMessages = 0;
+            for (const message of messages || []) {
+                cacheMessage(sock, message, { persist: false });
+                cacheMessageContactInfo(sock, message);
+                cachedMessages++;
+            }
+            if (cachedMessages) schedulePersistentMessageCacheSave(sock);
+        });
+
+        sock.ev.on('lid-mapping.update', ({ lid, pn }) => {
+            cacheLidPnMapping(sock, lid, pn);
+        });
+
+        sock.ev.on('chats.upsert', chats => {
+            const rt = ensureRuntime(sock);
+            for (const chat of chats || []) rt.chats.set(chat.id, hydrateChat(chat.id, chat));
+        });
+        sock.ev.on('chats.update', chats => {
+            const rt = ensureRuntime(sock);
+            for (const chat of chats || []) rt.chats.set(chat.id, hydrateChat(chat.id, { ...(rt.chats.get(chat.id)?._raw || {}), ...chat }));
+        });
+        sock.ev.on('contacts.upsert', contacts => {
+            for (const contact of contacts || []) cacheContactInfo(sock, contact);
+        });
+        sock.ev.on('contacts.update', contacts => {
+            for (const contact of contacts || []) cacheContactInfo(sock, contact);
+        });
+        sock.ev.on('groups.upsert', groups => {
+            const rt = ensureRuntime(sock);
+            for (const group of groups || []) rt.chats.set(group.id, hydrateChat(group.id, group));
+        });
+        sock.ev.on('groups.update', groups => {
+            const rt = ensureRuntime(sock);
+            for (const group of groups || []) rt.chats.set(group.id, hydrateChat(group.id, { ...(rt.chats.get(group.id)?._raw || {}), ...group }));
+        });
+        sock.ev.on('group-participants.update', async (event) => {
+            if (!event?.id) return;
+            getCachedChatInfo(sock, event.id);
+            if (event.action === 'add') {
+                for (const participant of event.participants || []) {
+                    await handleGroupJoin(sock, { chatId: event.id, participant }, sessionId);
+                }
+            }
+        });
+        sock.ev.on('blocklist.set', ({ blocklist }) => {
+            ensureRuntime(sock).blocklist = new Set((blocklist || []).filter(Boolean).map(normalizeJid));
+        });
+        sock.ev.on('blocklist.update', async ({ blocklist, type }) => {
+            const rt = ensureRuntime(sock);
             const sessionData = getSessionData(sessionId);
-            if (sessionData.config.AUTO_SCAN_ENABLED) {
-                // Délai plus généreux pour laisser WhatsApp Web finir la synchro initiale des chats
-                // (sinon getChats() peut dépasser protocolTimeout sur les gros comptes)
-                const startupDelay = HumanBehavior.gaussianRandom(45000, 15000);
-                addLog(`[TIMER] [${sessionId}] Premier scan dans ${Math.round(startupDelay / 1000)}s...`);
-                // Capture référence client pour pouvoir détecter un restart pendant l'attente
-                const scheduledFor = client;
-                await new Promise(r => setTimeout(r, startupDelay));
-                // Si la session a été arrêtée/redémarrée pendant l'attente, le client en mémoire
-                // sera différent de celui qui a programmé ce scan → on abandonne silencieusement
-                const currentSession = this.sessions.get(sessionId);
-                if (!currentSession || currentSession.client !== scheduledFor) {
-                    addLog(`[TIMER] [${sessionId}] Scan initial annulé (session redémarrée)`);
-                } else {
-                    try {
-                        await scanAllGroups(sessionId);
-                    } catch (scanError) {
-                        addLog(`[X] [${sessionId}] Erreur scan initial: ${scanError.message}`);
-                    }
+            for (const jid of blocklist || []) {
+                const normalizedJid = normalizeJid(jid);
+                if (type === 'add') rt.blocklist.add(normalizedJid);
+                if (type === 'remove') {
+                    rt.blocklist.delete(normalizedJid);
+                    const aliases = await resolveUserAliases(sock, normalizedJid).catch(() => []);
+                    const cleared = clearSessionCallStateForValues(sessionData, buildUserMatchValues(normalizedJid, aliases));
+                    if (cleared) sessionData.addLog('[UNBLOCK] ' + normalizedJid + ' debloque dans WhatsApp, etat appels nettoye (' + cleared + ')');
                 }
             }
-            scheduleNextScan(sessionId);
         });
-
-        client.on('auth_failure', (msg) => {
-            if (qrTimeout) { clearTimeout(qrTimeout); qrTimeout = null; }
-            const session = this.sessions.get(sessionId);
-            if (session) {
-                session.data.status = 'auth_failure';
-                this.sessionsList[sessionId].status = 'auth_failure';
-                this.saveSessionsList();
+        sock.ev.on('call', async (calls) => {
+            for (const call of calls || []) {
+                const status = call.status || call.tag;
+                if (!status || ['offer', 'ringing', 'call'].includes(status)) {
+                    await handleCall(sock, call, sessionId);
+                }
             }
-            addLog(`[X] [${sessionId}] Echec auth: ${msg}`);
-        });
-
-        client.on('disconnected', (reason) => {
-            if (qrTimeout) { clearTimeout(qrTimeout); qrTimeout = null; }
-            const session = this.sessions.get(sessionId);
-            if (session) {
-                session.data.status = 'disconnected';
-                this.sessionsList[sessionId].status = 'disconnected';
-                this.saveSessionsList();
-            }
-            addLog(`[DECO] [${sessionId}] Deconnecte: ${reason}`);
-
-            if (reason !== 'LOGOUT') {
-                addLog(`[RECONNECT] [${sessionId}] Reconnexion auto dans 10s...`);
-                setTimeout(() => {
-                    try {
-                        client.initialize();
-                        addLog(`[RECONNECT] [${sessionId}] Reinitialisation lancee`);
-                    } catch (e) {
-                        addLog(`[RECONNECT] [${sessionId}] Erreur reinit: ${e.message}`);
-                    }
-                }, 10000);
-            }
-        });
-
-        // Message handler - Toutes les sessions traitent les messages
-        client.on('message', async (message) => {
-            await handleMessage(client, message, sessionId);
-        });
-
-        // Group join handler - Toutes les sessions traitent
-        client.on('group_join', async (notification) => {
-            await handleGroupJoin(client, notification, sessionId);
-        });
-
-        // Call handler - Toutes les sessions traitent
-        client.on('call', async (call) => {
-            await handleCall(client, call, sessionId);
         });
     }
 
-    startSession(sessionId) {
+    async startSession(sessionId) {
         let session = this.sessions.get(sessionId);
-
-        // Si la session n'existe pas en mémoire mais existe sur disque → la créer
         if (!session && this.sessionsList[sessionId]) {
-            const client = this.initClient(sessionId);
+            const client = await this.initClient(sessionId);
             if (!client) return false;
             this.sessions.set(sessionId, { client, data: { ...this.sessionsList[sessionId] } });
             session = this.sessions.get(sessionId);
         }
-
         if (!session) return false;
-
-        // Si le client a été détruit (après stopSession), il faut en créer un nouveau
-        // `pupBrowser` est null quand destroy() a été appelé avec succès
-        const isDestroyed = !session.client || !session.client.pupBrowser;
-        if (isDestroyed) {
-            addLog(`[START] [${sessionId}] Recréation du client (précédent détruit)`);
-            const newClient = this.initClient(sessionId);
+        if (session.client && !session.client._destroyed && (session.client.isReady || session.data.status === 'pending' || session.data.status === 'qr')) {
+            return true;
+        }
+        if (!session.client || session.client._destroyed) {
+            addLog('[START] [' + sessionId + '] Creation du socket Baileys');
+            const newClient = await this.initClient(sessionId);
             if (!newClient) return false;
             session.client = newClient;
         }
-
-        try {
-            session.client.initialize();
-            session.data.status = 'pending';
-            if (this.sessionsList[sessionId]) {
-                this.sessionsList[sessionId].status = 'pending';
-                this.saveSessionsList();
-            }
-            addLog(`[START] [${sessionId}] Session demarree`);
-            return true;
-        } catch (e) {
-            addLog(`[X] [${sessionId}] Erreur startSession: ${e.message}`);
-            return false;
+        session.data.status = 'pending';
+        if (this.sessionsList[sessionId]) {
+            this.sessionsList[sessionId].status = 'pending';
+            this.saveSessionsList();
         }
+        addLog('[START] [' + sessionId + '] Session demarree');
+        return true;
     }
 
     async stopSession(sessionId) {
         const session = this.sessions.get(sessionId);
         if (session && session.client) {
             try {
-                await session.client.destroy();
+                session.client._destroyed = true;
+                session.client.isReady = false;
+                await session.client.end?.(undefined);
+                session.client.ev?.removeAllListeners?.();
                 session.data.status = 'stopped';
-                this.sessionsList[sessionId].status = 'stopped';
+                if (this.sessionsList[sessionId]) this.sessionsList[sessionId].status = 'stopped';
                 this.saveSessionsList();
-                addLog(`[STOP] [${sessionId}] Session arretee`);
+                addLog('[STOP] [' + sessionId + '] Session arretee');
                 return true;
             } catch (e) {
-                addLog(`[X] [${sessionId}] Erreur arret: ${e.message}`);
+                addLog('[X] [' + sessionId + '] Erreur arret: ' + e.message);
                 return false;
             }
         }
@@ -3183,39 +4905,19 @@ class SessionManager {
 
     async deleteSession(sessionId) {
         await this.stopSession(sessionId);
-        
-        // Delete auth folder
-        const authPath = path.join(__dirname, '.wwebjs_auth', sessionId);
-        try {
-            if (fs.existsSync(authPath)) {
-                fs.rmSync(authPath, { recursive: true, force: true });
-            }
-        } catch (e) {
-            addLog(`[!] [${sessionId}] Erreur suppression dossier auth: ${e.message}`);
+        for (const authPath of [path.join(__dirname, '.baileys_auth', sessionId), path.join(__dirname, '.wwebjs_auth', sessionId)]) {
+            try { if (fs.existsSync(authPath)) fs.rmSync(authPath, { recursive: true, force: true }); }
+            catch (e) { addLog('[!] [' + sessionId + '] Erreur suppression dossier auth: ' + e.message); }
         }
-        
-        // Delete session data folder
         const sessionDataPath = path.join(DATA_DIR, 'sessions', sessionId);
-        try {
-            if (fs.existsSync(sessionDataPath)) {
-                fs.rmSync(sessionDataPath, { recursive: true, force: true });
-            }
-        } catch (e) {
-            addLog(`[!] [${sessionId}] Erreur suppression dossier data: ${e.message}`);
-        }
-        
-        // Remove from sessionDataManagers map
+        try { if (fs.existsSync(sessionDataPath)) fs.rmSync(sessionDataPath, { recursive: true, force: true }); }
+        catch (e) { addLog('[!] [' + sessionId + '] Erreur suppression dossier data: ' + e.message); }
         sessionDataManagers.delete(sessionId);
-
         this.sessions.delete(sessionId);
         delete this.sessionsList[sessionId];
-        
-        if (this.activeSessionId === sessionId) {
-            this.activeSessionId = null;
-        }
-        
+        if (this.activeSessionId === sessionId) this.activeSessionId = null;
         this.saveSessionsList();
-        addLog(`[SUPPR] [${sessionId}] Session supprimee`);
+        addLog('[SUPPR] [' + sessionId + '] Session supprimee');
         return true;
     }
 
@@ -3232,18 +4934,15 @@ class SessionManager {
             const active = this.sessionsList[this.activeSessionId];
             if (active && active.ownerUsername === username) return this.activeSessionId;
         }
-        const userSessions = Object.values(this.sessionsList)
-            .filter(s => s.ownerUsername === username);
-        return userSessions.find(s => s.status === 'connected')?.id
-            || userSessions[0]?.id
-            || null;
+        const userSessions = Object.values(this.sessionsList).filter(s => s.ownerUsername === username);
+        return userSessions.find(s => s.status === 'connected')?.id || userSessions[0]?.id || null;
     }
 
     setActiveSession(sessionId) {
         if (this.sessionsList[sessionId]) {
             this.activeSessionId = sessionId;
             this.saveSessionsList();
-            addLog(`[TARGET] Session active: ${sessionId}`);
+            addLog('[TARGET] Session active: ' + sessionId);
             return true;
         }
         return false;
@@ -3251,103 +4950,60 @@ class SessionManager {
 
     getActiveClient() {
         if (!this.activeSessionId) return null;
-        const session = this.sessions.get(this.activeSessionId);
-        return session ? session.client : null;
+        return this.sessions.get(this.activeSessionId)?.client || null;
     }
 
     getSessionStatus(sessionId) {
         const session = this.sessions.get(sessionId);
         const listData = this.sessionsList[sessionId];
-        if (session) {
-            return {
-                ...listData,
-                currentQR: session.data.currentQR,
-                status: session.data.status
-            };
-        }
+        if (session) return { ...listData, currentQR: session.data.currentQR, status: session.data.status };
         return listData || null;
     }
 
     getAllSessionsStatus() {
         const result = [];
-        for (const [id, session] of this.sessions) {
-            result.push(this.getSessionStatus(id));
-        }
-        // Also include sessions not yet initialized
-        for (const id in this.sessionsList) {
-            if (!this.sessions.has(id)) {
-                result.push(this.sessionsList[id]);
-            }
-        }
+        for (const [id] of this.sessions) result.push(this.getSessionStatus(id));
+        for (const id in this.sessionsList) if (!this.sessions.has(id)) result.push(this.sessionsList[id]);
         return result;
     }
 
-    initializeAllSessions() {
-        // Initialize all saved sessions
+    async initializeAllSessions() {
         const orphanSessions = [];
         for (const sessionId in this.sessionsList) {
             const sessionData = this.sessionsList[sessionId];
-            
-            // Supprimer les sessions sans propriétaire valide
-            if (!sessionData.ownerUsername) {
+            if (!sessionData.ownerUsername || !authManager.users[sessionData.ownerUsername]) {
                 orphanSessions.push(sessionId);
                 continue;
             }
-            
-            // Vérifier que le propriétaire existe
-            if (!authManager.users[sessionData.ownerUsername]) {
-                orphanSessions.push(sessionId);
-                continue;
-            }
-            
             if (!this.sessions.has(sessionId)) {
-                const client = this.initClient(sessionId);
-                if (client) {
-                    this.sessions.set(sessionId, { 
-                        client, 
-                        data: { ...sessionData }
-                    });
-                }
+                const client = await this.initClient(sessionId);
+                if (client) this.sessions.set(sessionId, { client, data: { ...sessionData } });
             }
         }
-        
-        // Supprimer les sessions orphelines
         for (const sessionId of orphanSessions) {
-            addLog(`[CLEANUP] Session orpheline supprimée: ${sessionId}`);
+            addLog('[CLEANUP] Session orpheline supprimee: ' + sessionId);
             delete this.sessionsList[sessionId];
-            // Supprimer le dossier d'authentification
-            try {
-                const authPath = path.join(__dirname, '.wwebjs_auth', sessionId);
-                if (fs.existsSync(authPath)) {
-                    fs.rmSync(authPath, { recursive: true, force: true });
-                }
-            } catch (e) {}
-        }
-        
-        if (orphanSessions.length > 0) {
-            if (this.activeSessionId && orphanSessions.includes(this.activeSessionId)) {
-                this.activeSessionId = null;
+            for (const authPath of [path.join(__dirname, '.baileys_auth', sessionId), path.join(__dirname, '.wwebjs_auth', sessionId)]) {
+                try { if (fs.existsSync(authPath)) fs.rmSync(authPath, { recursive: true, force: true }); } catch (e) {}
             }
-            this.saveSessionsList();
-            console.log(`${orphanSessions.length} session(s) orpheline(s) supprimée(s)`);
         }
-
-        // Set active session or first one
+        if (orphanSessions.length > 0) {
+            if (this.activeSessionId && orphanSessions.includes(this.activeSessionId)) this.activeSessionId = null;
+            this.saveSessionsList();
+        }
         if (!this.activeSessionId && Object.keys(this.sessionsList).length > 0) {
             this.activeSessionId = Object.keys(this.sessionsList)[0];
             this.saveSessionsList();
         }
-
-        // Start all valid sessions
-        for (const [sessionId, session] of this.sessions) {
-            this.startSession(sessionId);
+        for (const [sessionId] of this.sessions) {
+            this.startSession(sessionId).catch(e => addLog('[START] [' + sessionId + '] Erreur: ' + e.message));
         }
     }
 }
 
 const sessionManager = new SessionManager();
 
-// Legacy compatibility - client variable for backward compatibility
+// Reference rapide vers la session active Baileys
 let client = null;
 let currentQR = null;
 let isConnected = false;
@@ -3356,223 +5012,260 @@ let isConnected = false;
 // 🔍 SCAN HUMANISÉ
 // ============================================================
 
-async function scanOldMessages(chat, limit = 100, sessionId = null) {
+
+async function scanOldMessages(chat, limit = 100, sessionId = null, options = {}) {
     const sessionData = sessionId ? getSessionData(sessionId) : null;
-    
-    // Récupérer le client de la session
     const sessionClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : client;
+
     if (!sessionClient || !sessionClient.info) {
-        if (sessionData) sessionData.addLog(`[!] Client non disponible pour le scan`);
-        else addLog(`[!] Client non disponible pour le scan`);
+        if (sessionData) sessionData.addLog('[!] Client non disponible pour le scan');
+        else addLog('[!] Client non disponible pour le scan');
         return { deleted: 0, scanned: 0, warned: 0 };
     }
-    
+
     const log = (msg) => sessionData ? sessionData.addLog(msg) : addLog(msg);
-    
-    if (sessionData && sessionData.isGroupExcluded(chat)) {
-        log(`[EXCL] Groupe ${chat.name} exclu`);
+    const chatInfo = chat?.jid ? chat : await getChatInfo(sessionClient, chat?.id?._serialized || chat?.id || chat, true);
+    if (!chatInfo?.isGroup) return { deleted: 0, scanned: 0, warned: 0 };
+    const config = sessionData ? sessionData.config : CONFIG;
+    const groupExcluded = sessionData ? sessionData.isGroupExcluded(chatInfo) : isGroupExcluded(chatInfo);
+
+    if (groupExcluded && !config.DELETE_STATUS_MENTIONS) {
+        log('[EXCL] Groupe ' + chatInfo.name + ' exclu');
         return { deleted: 0, scanned: 0, warned: 0 };
-    } else if (!sessionData && isGroupExcluded(chat)) {
-        log(`[EXCL] Groupe ${chat.name} exclu`);
-        return { deleted: 0, scanned: 0, warned: 0 };
+    } else if (groupExcluded) {
+        log('[EXCL] Groupe ' + chatInfo.name + ' exclu: scan limite aux notifications de statut');
     }
 
-    log(`[SCAN] Scan de ${chat.name}...`);
+    log('[SCAN] Scan de ' + chatInfo.name + '...');
 
-    const botId = sessionClient.info.wid._serialized;
-    const participants = chat.participants || [];
-    const botP = participants.find(p => p.id._serialized === botId);
-
+    const participants = chatInfo.participants || [];
+    const botP = findBotParticipant(sessionClient, participants);
     if (!botP || !botP.isAdmin) {
-        log(`[!] Pas admin dans ${chat.name}`);
+        log('[!] Pas admin dans ' + chatInfo.name);
         return { deleted: 0, scanned: 0, warned: 0 };
     }
 
-    try { await chat.sendSeen(); } catch (e) {}
+    try { await markChatRead(sessionClient, chatInfo.jid); } catch (e) {}
     await HumanBehavior.naturalDelay(HumanBehavior.gaussianRandom(2000, 1000));
 
-    const messages = await chat.fetchMessages({ limit });
+    const cachedBeforeHistory = getCachedMessages(sessionClient, chatInfo.jid, limit).length;
+    if (cachedBeforeHistory === 0 && options.anchorMessage) {
+        log('[SCAN] Cache vide pour ' + chatInfo.name + ', utilisation de la commande comme repere historique');
+    }
+    const messages = await fetchMoreHistory(sessionClient, chatInfo.jid, limit, {
+        anchorMessage: options.anchorMessage
+    });
+    if (!messages.length) {
+        log('[SCAN] Aucun message disponible pour ' + chatInfo.name + ' (cache vide; le scan ne peut supprimer que les messages deja vus par le bot)');
+    } else if (cachedBeforeHistory === 0 && messages.length > 0) {
+        log('[SCAN] ' + messages.length + ' messages charges depuis l historique Baileys pour ' + chatInfo.name);
+    }
     let deleted = 0, scanned = 0, warned = 0;
-
     let actionCount = 0;
-    const config = sessionData ? sessionData.config : CONFIG;
-
-    for (const message of messages) {
-        if (message.fromMe) continue;
-        scanned++;
-
-        const msgId = message.id._serialized || message.id.id;
-        if (sessionData && sessionData.isAlreadyProcessed(msgId)) continue;
-        else if (!sessionData && isAlreadyProcessed(msgId)) continue;
-        if (!containsLink(message)) continue;
-
-        let authorId = message.author || message.from;
-        if (authorId.includes('@g.us')) continue;
-        
-        // ✅ Autoriser directement les admins du groupe (détection dynamique)
-        const authorP = participants.find(p => p.id._serialized === authorId);
-        if (authorP?.isAdmin || authorP?.isSuperAdmin) continue;
-        
-        if (sessionData && sessionData.isUserExcluded(authorId, participants)) continue;
-        else if (!sessionData && isUserExcluded(authorId, participants)) continue;
-
-        if (actionCount > 0) {
-            await HumanBehavior.naturalDelay(HumanBehavior.interActionDelay());
-        }
+    const waitBeforeScanAction = async () => {
+        if (actionCount > 0) await HumanBehavior.naturalDelay(HumanBehavior.interActionDelay(config));
         actionCount++;
 
         if (actionCount > 0 && actionCount % 5 === 0) {
             const fatiguePause = HumanBehavior.gaussianRandom(8000, 4000);
-            log(`😴 Pause fatigue: ${Math.round(fatiguePause / 1000)}s`);
+            log('[PAUSE] Pause fatigue: ' + Math.round(fatiguePause / 1000) + 's');
             await HumanBehavior.naturalDelay(fatiguePause);
         }
+    };
+
+    for (const message of messages) {
+        if (isMessageFromMe(message)) continue;
+        scanned++;
+
+        const msgId = getMessageId(message);
+        if (sessionData && sessionData.isAlreadyProcessed(msgId)) continue;
+        else if (!sessionData && isAlreadyProcessed(msgId)) continue;
+
+        if (config.DELETE_STATUS_MENTIONS && isStatusMentionNotification(message)) {
+            await waitBeforeScanAction();
+            try {
+                if (sessionData) sessionData.markAsProcessed(msgId);
+                else markAsProcessed(msgId);
+
+                const wasDeleted = await deleteMessageHumanized(sessionClient, message);
+                if (wasDeleted) {
+                    deleted++;
+                    if (sessionData) sessionData.stats.totalDeleted++;
+                    else STATS.totalDeleted++;
+                    log('[STATUS] Ancienne notification de statut supprimee dans ' + chatInfo.name);
+                } else {
+                    log('[STATUS] Echec suppression ancienne notification de statut dans ' + chatInfo.name);
+                }
+            } catch (error) {
+                log('[!] Erreur traitement statut: ' + error.message);
+            }
+            continue;
+        }
+
+        if (groupExcluded || options.statusOnly) continue;
+        if (!containsLink(message)) continue;
+
+        const authorId = getMessageSender(message);
+        if (!authorId || authorId.includes('@g.us')) continue;
+
+        const authorP = participants.find(p => participantMatches(p, authorId));
+        if (authorP?.isAdmin || authorP?.isSuperAdmin) continue;
+
+        if (sessionData && sessionData.isUserExcluded(authorId, participants)) continue;
+        else if (!sessionData && isUserExcluded(authorId, participants)) continue;
+
+        await waitBeforeScanAction();
 
         try {
             if (sessionData) sessionData.markAsProcessed(msgId);
             else markAsProcessed(msgId);
 
-            const contact = await message.getContact();
-            const mention = `@${contact.id.user}`;
-            const currentWarnings = sessionData 
-                ? (sessionData.warnings[chat.id._serialized]?.[authorId]?.length || 0)
-                : getWarningCount(chat.id._serialized, authorId);
+            const contact = await getContactInfo(sessionClient, authorId);
+            const mention = '@' + contact.number;
+            const currentWarnings = sessionData
+                ? (sessionData.warnings[chatInfo.jid]?.[authorId]?.length || 0)
+                : getWarningCount(chatInfo.jid, authorId);
 
-            // ══════ ÉTAPE 1 : SUPPRIMER D'ABORD ══════
-            if (await deleteMessageHumanized(message)) {
+            if (await deleteMessageHumanized(sessionClient, message)) {
                 deleted++;
                 if (sessionData) sessionData.stats.totalDeleted++;
                 else STATS.totalDeleted++;
-                log(`🗑️ Ancien message supprimé dans ${chat.name}`);
+                log('[DELETE] Ancien message supprime dans ' + chatInfo.name);
             }
 
-            // ══════ ÉTAPE 2 : AVERTIR / BANNIR ENSUITE ══════
-            if (currentWarnings >= config.MAX_WARNINGS) {
-                try {
-                    const banMsg = MessagePool.pick(
-                        MessagePool.bans, mention, config.MAX_WARNINGS
-                    );
-                    await sendMessageHumanized(chat, banMsg, {
-                        mentions: [contact.id._serialized]
-                    }, message.body?.length || 0, sessionData);
-
-                    await HumanBehavior.naturalDelay(
-                        HumanBehavior.gaussianRandom(2000, 800)
-                    );
-                    await chat.removeParticipants([authorId]);
-                    rateLimiter.recordAction();
-
-                    if (sessionData) {
-                        sessionData.resetWarnings(chat.id._serialized, authorId);
-                        sessionData.stats.totalBanned++;
-                    } else {
-                        resetWarnings(chat.id._serialized, authorId);
-                        STATS.totalBanned++;
-                    }
-                    log(`🚫 ${authorId} banni de ${chat.name}`);
-                } catch (banError) {
-                    log(`❌ Erreur ban: ${banError.message}`);
+            const banUser = async () => {
+                const banMsg = MessagePool.pick(MessagePool.bans, mention, config.MAX_WARNINGS);
+                await sendMessageHumanized(sessionClient, chatInfo.jid, banMsg, makeReplyOptions(message, { mentions: [contact.jid] }), getMessageBody(message)?.length || 0, sessionData);
+                await HumanBehavior.naturalDelay(HumanBehavior.gaussianRandom(2000, 800));
+                await sessionClient.groupParticipantsUpdate(chatInfo.jid, [normalizeJid(authorId)], 'remove');
+                rateLimiter.recordAction();
+                if (sessionData) {
+                    sessionData.resetWarnings(chatInfo.jid, authorId);
+                    sessionData.stats.totalBanned++;
+                } else {
+                    resetWarnings(chatInfo.jid, authorId);
+                    STATS.totalBanned++;
                 }
+                log('[BAN] ' + authorId + ' banni de ' + chatInfo.name);
+            };
+
+            if (currentWarnings >= config.MAX_WARNINGS) {
+                try { await banUser(); }
+                catch (banError) { log('[X] Erreur ban: ' + banError.message); }
             } else {
-                const warningCount = sessionData 
-                    ? sessionData.addWarning(chat.id._serialized, authorId)
-                    : addWarning(chat.id._serialized, authorId);
+                const warningCount = sessionData ? sessionData.addWarning(chatInfo.jid, authorId) : addWarning(chatInfo.jid, authorId);
                 warned++;
                 if (sessionData) sessionData.stats.totalWarnings++;
                 else STATS.totalWarnings++;
 
                 if (warningCount >= config.MAX_WARNINGS) {
-                    try {
-                        const banMsg = MessagePool.pick(
-                            MessagePool.bans, mention, config.MAX_WARNINGS
-                        );
-                        await sendMessageHumanized(chat, banMsg, {
-                            mentions: [contact.id._serialized]
-                        }, message.body?.length || 0, sessionData);
-
-                        await HumanBehavior.naturalDelay(
-                            HumanBehavior.gaussianRandom(2000, 800)
-                        );
-                        await chat.removeParticipants([authorId]);
-                        rateLimiter.recordAction();
-
-                        if (sessionData) {
-                            sessionData.resetWarnings(chat.id._serialized, authorId);
-                            sessionData.stats.totalBanned++;
-                        } else {
-                            resetWarnings(chat.id._serialized, authorId);
-                            STATS.totalBanned++;
-                        }
-                        log(`🚫 ${authorId} banni de ${chat.name}`);
-                    } catch (banError) {
-                        log(`❌ Erreur ban: ${banError.message}`);
-                    }
+                    try { await banUser(); }
+                    catch (banError) { log('[X] Erreur ban: ' + banError.message); }
                 } else {
                     const remaining = config.MAX_WARNINGS - warningCount;
-                    const warnMsg = MessagePool.pick(
-                        MessagePool.warnings, mention, warningCount,
-                        config.MAX_WARNINGS, remaining
-                    );
+                    const warnMsg = MessagePool.pick(MessagePool.warnings, mention, warningCount, config.MAX_WARNINGS, remaining);
                     try {
-                        await sendMessageHumanized(chat, warnMsg, {
-                            mentions: [contact.id._serialized]
-                        }, message.body?.length || 0, sessionData);
+                        await sendMessageHumanized(sessionClient, chatInfo.jid, warnMsg, makeReplyOptions(message, { mentions: [contact.jid] }), getMessageBody(message)?.length || 0, sessionData);
                     } catch (warnError) {
                         console.error('Erreur avertissement:', warnError);
                     }
                 }
             }
         } catch (error) {
-            log(`[!] Erreur traitement: ${error.message}`);
+            log('[!] Erreur traitement: ' + error.message);
         }
     }
 
-    log(`[OK] Scan ${chat.name}: ${scanned} scans, ${deleted} supprimes, ${warned} avertis`);
+    log('[OK] Scan ' + chatInfo.name + ': ' + scanned + ' scans, ' + deleted + ' supprimes, ' + warned + ' avertis');
     if (sessionData) sessionData.saveStats();
     return { deleted, scanned, warned };
 }
 
-async function scanAllGroups(sessionId = null) {
-    // Récupérer le client de la session
+async function scanAllGroups(sessionId = null, options = {}) {
     const sessionClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : client;
     if (!sessionClient || !sessionClient.info) {
-        addLog(`[!] [${sessionId}] Client non disponible pour le scan`);
+        addLog('[!] [' + sessionId + '] Client non disponible pour le scan');
         return { totalDeleted: 0, totalScanned: 0, totalWarned: 0 };
     }
-    
+
     addLog('[SCAN] ========== SCAN AUTOMATIQUE ==========');
-    const chats = await sessionClient.getChats();
-    const botId = sessionClient.info.wid._serialized;
-    
-    // Filtrer uniquement les groupes où le bot est admin
-    const groups = chats.filter(c => {
+
+    let chats;
+    try {
+        chats = await getAllChatsWithOptions(sessionClient, {
+            force: true,
+            retries: options.groupFetchRetries ?? 2,
+            retryDelayMs: options.groupFetchRetryDelayMs ?? GROUP_CACHE_RETRY_DELAY_MS
+        });
+    } catch (error) {
+        const reason = error?.message || 'liste des groupes indisponible';
+        addLog('[SCAN] Liste des groupes indisponible (' + reason + '), scan reporte');
+        if (isRateLimitError(error) && options.autoRetry !== false && !options._retriedAfterRateLimit) {
+            const retryDelay = options.retryAfterRateLimitMs ?? 2 * 60 * 1000;
+            addLog('[TIMER] [' + sessionId + '] Nouveau scan dans ' + Math.round(retryDelay / 1000) + 's apres limite WhatsApp');
+            const retryTimer = setTimeout(() => {
+                scanAllGroups(sessionId, {
+                    ...options,
+                    _retriedAfterRateLimit: true,
+                    groupFetchRetries: 1
+                }).catch(e => addLog('[SCAN] Retry annule: ' + e.message));
+            }, retryDelay);
+            retryTimer.unref?.();
+        }
+        return { totalDeleted: 0, totalScanned: 0, totalWarned: 0, deferred: true };
+    }
+
+    const allGroups = chats.filter(c => c.isGroup);
+    if (!allGroups.length) {
+        addLog('[SCAN] Aucun groupe charge depuis WhatsApp; scan reporte');
+        return { totalDeleted: 0, totalScanned: 0, totalWarned: 0, deferred: true };
+    }
+
+    const groups = allGroups.filter(c => {
         if (!c.isGroup) return false;
-        const botParticipant = c.participants?.find(p => p.id._serialized === botId);
-        return botParticipant?.isAdmin; // Bot doit être admin
+        const botParticipant = findBotParticipant(sessionClient, c.participants || []);
+        return botParticipant?.isAdmin;
     });
-    
-    addLog(`[STATS] ${groups.length} groupes administres detectes`);
+
+    addLog('[STATS] ' + groups.length + ' groupes administres detectes');
+    if (!groups.length) {
+        const groupsWithParticipants = allGroups.filter(g => (g.participants || []).length > 0).length;
+        addLog('[SCAN] ' + allGroups.length + ' groupe(s) vu(s), ' + groupsWithParticipants + ' avec participants. Verification admin impossible ou bot non reconnu.');
+        addLog('[SCAN] Identifiants bot connus: ' + getOwnJids(sessionClient).slice(0, 6).join(', '));
+        if (groupsWithParticipants === 0 && options.autoRetry !== false && !options._retriedAfterIncompleteGroups) {
+            const retryDelay = options.retryAfterIncompleteGroupsMs ?? 90 * 1000;
+            addLog('[TIMER] [' + sessionId + '] Nouveau scan dans ' + Math.round(retryDelay / 1000) + 's apres chargement incomplet des groupes');
+            const retryTimer = setTimeout(() => {
+                scanAllGroups(sessionId, {
+                    ...options,
+                    _retriedAfterIncompleteGroups: true,
+                    groupFetchRetries: 1
+                }).catch(e => addLog('[SCAN] Retry annule: ' + e.message));
+            }, retryDelay);
+            retryTimer.unref?.();
+            return { totalDeleted: 0, totalScanned: 0, totalWarned: 0, deferred: true };
+        }
+    }
 
     let totalDeleted = 0, totalScanned = 0, totalWarned = 0;
-
     const shuffled = groups.sort(() => Math.random() - 0.5);
-
     const sdScan = getSessionData(sessionId);
+    const scanConfig = sdScan?.config || CONFIG;
+    const scanLimit = scanConfig.SCAN_LIMIT || CONFIG.SCAN_LIMIT;
+
     for (const group of shuffled) {
-        const result = await scanOldMessages(group, sdScan.config.SCAN_LIMIT || CONFIG.SCAN_LIMIT, sessionId);
+        const result = await scanOldMessages(group, scanLimit, sessionId, options);
         totalDeleted += result.deleted;
         totalScanned += result.scanned;
         totalWarned += result.warned || 0;
-
-        await HumanBehavior.naturalDelay(HumanBehavior.interGroupDelay());
+        await HumanBehavior.naturalDelay(HumanBehavior.interGroupDelay(scanConfig));
     }
 
     addLog('[OK] ========== FIN DU SCAN ==========');
-    addLog(`Total: ${totalScanned} scans, ${totalDeleted} supprimes, ${totalWarned} avertis`);
+    addLog('Total: ' + totalScanned + ' scans, ' + totalDeleted + ' supprimes, ' + totalWarned + ' avertis');
     return { totalDeleted, totalScanned, totalWarned };
 }
 
-// ============================================================
-// ⏰ PLANIFICATION DES SCANS (par session)
 // ============================================================
 
 const scanTimers = new Map();
@@ -3625,21 +5318,21 @@ function startPresenceManager(sessionId) {
         try {
             const hour = new Date().getHours();
             if (hour >= 1 && hour < 7) {
-                await client.sendPresenceUnavailable();
+                await client.sendPresenceUpdate('unavailable');
                 const offlineTime = HumanBehavior.gaussianRandom(3600000, 1800000);
                 const timer = setTimeout(togglePresence, offlineTime);
                 presenceTimers.set(sessionId, timer);
                 return;
             }
 
-            await client.sendPresenceAvailable();
+            await client.sendPresenceUpdate('available');
             const onlineTime = HumanBehavior.gaussianRandom(720000, 420000);
 
             const timer = setTimeout(async () => {
                 try {
                     const s = sessionManager.sessions.get(sessionId);
                     if (s && s.data.status === 'connected') {
-                        await s.client.sendPresenceUnavailable();
+                        await s.client.sendPresenceUpdate('unavailable');
                         const offlineTime = HumanBehavior.gaussianRandom(360000, 240000);
                         const t = setTimeout(togglePresence, offlineTime);
                         presenceTimers.set(sessionId, t);
@@ -3664,470 +5357,384 @@ function startPresenceManager(sessionId) {
 // 📩 HANDLER MESSAGE (par session)
 // ============================================================
 
-async function handleMessage(client, message, sessionId) {
+
+async function handleMessage(sock, message, sessionId) {
     const sessionData = getSessionData(sessionId);
-    
+
     try {
-        if (message.fromMe) return;
-        const chat = await message.getChat();
-        const senderId = message.author || message.from;
+        const messageText = getMessageBody(message).trim();
+        const normalizedCommand = getBotCommand(message);
+        const isBotCommand = !!normalizedCommand;
+        if (isMessageFromMe(message) && !isBotCommand) return;
+
+        let chat = await getChatInfo(sock, getMessageChatId(message));
+        if (chat.isGroup && (!chat.participants || chat.participants.length === 0)) {
+            chat = await getChatInfo(sock, chat.jid, true);
+        }
+
+        const senderId = getMessageSender(message);
         const menuAllowedInChat = await canUseInteractiveMenusInChat(chat, sessionData);
 
-        // ✅ Réponse à un menu interactif (boutons natifs)
-        if (menuAllowedInChat && (message.type === 'buttons_response' || message.type === 'list_response')) {
-            const responseId = message.selectedButtonId || message.selectedRowId;
+        if (!isBotCommand && menuAllowedInChat && (getMessageType(message) === 'buttons_response' || getMessageType(message) === 'list_response')) {
+            const responseId = getSelectedResponseId(message);
             if (responseId) {
-                sessionData.addLog(`Menu reponse: ${responseId} de ${senderId}`);
-                await handleMenuResponse(message, responseId, sessionData);
+                sessionData.addLog('Menu reponse: ' + responseId + ' de ' + senderId);
+                await handleMenuResponse(sock, message, responseId, sessionData);
                 return;
             }
         }
 
-        // ✅ Réponse numérotée à un menu textuel
-        const messageText = message.body.trim();
-        const numberMatch = messageText.match(/^(\d+)$/);
-        if (menuAllowedInChat && numberMatch) {
-            const selectedNumber = parseInt(numberMatch[1]);
-
-            let latestSession = null;
-            let latestSessionId = null;
-
-            for (const sessId in sessionData.menuSessions) {
-                const session = sessionData.menuSessions[sessId];
-
-                if (session.expiresAt < Date.now()) {
-                    delete sessionData.menuSessions[sessId];
-                    continue;
-                }
-
-                if (sessId.startsWith(chat.id._serialized)) {
-                    if (!latestSession || session.createdAt > latestSession.createdAt) {
-                        latestSession = session;
-                        latestSessionId = sessId;
-                    }
-                }
+        if (!isBotCommand && menuAllowedInChat && getMessageType(message) === 'chat') {
+            const activeMenuSession = getActiveMenuSession(sessionData.menuSessions, chat.jid, senderId);
+            const selection = findMenuSessionSelection(activeMenuSession, messageText);
+            if (selection?.item) {
+                const sourceMenu = sessionData.interactiveMenus[activeMenuSession.menuId] || {};
+                sessionData.addLog('[MENU] Reponse ' + selection.method + ': ' + (selection.index + 1) + ' (' + getMenuItemLabel(selection.item) + ') de ' + senderId);
+                await runMenuItem(sock, chat, senderId, selection.item, sourceMenu, sessionData, message, messageText.length);
+                return;
+            }
+            if (selection?.invalidNumber) {
+                await sendMessageHumanized(sock, chat.jid, 'Option invalide. Repondez avec un numero entre *1* et *' + selection.itemsCount + '*.', makeReplyOptions(message), messageText.length, sessionData);
+                return;
             }
 
-            if (latestSession) {
-                const items = latestSession.buttons || latestSession.rows || [];
-                if (selectedNumber >= 1 && selectedNumber <= items.length) {
-                    const selectedItem = items[selectedNumber - 1];
-                    sessionData.addLog(`Menu reponse textuel: ${selectedNumber} (${selectedItem.text || selectedItem.title}) de ${senderId}`);
-
-                    const quoteOpts = { quotedMessageId: message.id._serialized };
-                    if (selectedItem.response) {
-                        await sendMessageHumanized(chat, selectedItem.response, quoteOpts, messageText.length, sessionData);
-                    } else if (selectedItem.nextMenu) {
-                        await sendInteractiveMenu(chat, selectedItem.nextMenu, sessionData, message);
-                    } else {
-                        await sendMessageHumanized(chat, `[OK] Vous avez selectionne: ${selectedItem.text || selectedItem.title}`, quoteOpts, messageText.length, sessionData);
-                    }
-                    return;
-                } else if (items.length > 0) {
-                    await sendMessageHumanized(chat, `⚠️ Option invalide. Veuillez choisir un numéro entre *1* et *${items.length}*.`, { quotedMessageId: message.id._serialized }, messageText.length, sessionData);
-                    return;
-                }
-            }
-        }
-
-        // ✅ Réponse textuelle à un menu (l'utilisateur tape le texte de l'option au lieu du numéro)
-        if (menuAllowedInChat && !numberMatch && messageText.length >= 2) {
-            const normalizeText = s => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
-            const inputNorm = normalizeText(messageText);
-
-            let latestSession = null;
-            for (const sessId in sessionData.menuSessions) {
-                const session = sessionData.menuSessions[sessId];
-                if (session.expiresAt < Date.now()) {
-                    delete sessionData.menuSessions[sessId];
-                    continue;
-                }
-                if (sessId.startsWith(chat.id._serialized)) {
-                    if (!latestSession || session.createdAt > latestSession.createdAt) {
-                        latestSession = session;
-                    }
-                }
-            }
-
-            if (latestSession) {
-                const items = latestSession.buttons || latestSession.rows || [];
-                let bestMatch = null;
-                let bestScore = 0;
-
-                for (let i = 0; i < items.length; i++) {
-                    const itemLabel = items[i].text || items[i].title || '';
-                    const itemNorm = normalizeText(itemLabel);
-                    if (!itemNorm) continue;
-
-                    // Match exact
-                    if (inputNorm === itemNorm) {
-                        bestMatch = i;
-                        bestScore = 100;
-                        break;
-                    }
-                    // L'un contient l'autre
-                    if (inputNorm.includes(itemNorm) || itemNorm.includes(inputNorm)) {
-                        const score = Math.min(inputNorm.length, itemNorm.length) / Math.max(inputNorm.length, itemNorm.length) * 90;
-                        if (score > bestScore) { bestScore = score; bestMatch = i; }
-                    }
-                    // Mots en commun (au moins 50% des mots de l'option)
-                    if (bestScore < 50) {
-                        const inputWords = inputNorm.split(/\s+/).filter(w => w.length > 2);
-                        const itemWords = itemNorm.split(/\s+/).filter(w => w.length > 2);
-                        if (itemWords.length > 0) {
-                            const matched = itemWords.filter(iw => inputWords.some(uw => uw === iw || uw.includes(iw) || iw.includes(uw)));
-                            const score = (matched.length / itemWords.length) * 70;
-                            if (score > bestScore) { bestScore = score; bestMatch = i; }
-                        }
-                    }
-                }
-
-                if (bestMatch !== null && bestScore >= 50) {
-                    const selectedItem = items[bestMatch];
-                    sessionData.addLog(`Menu reponse texte: "${messageText}" -> ${bestMatch + 1} (${selectedItem.text || selectedItem.title}) [score:${bestScore.toFixed(0)}] de ${senderId}`);
-
-                    const quoteOpts = { quotedMessageId: message.id._serialized };
-                    if (selectedItem.response) {
-                        await sendMessageHumanized(chat, selectedItem.response, quoteOpts, messageText.length, sessionData);
-                    } else if (selectedItem.nextMenu) {
-                        await sendInteractiveMenu(chat, selectedItem.nextMenu, sessionData, message);
-                    } else {
-                        await sendMessageHumanized(chat, `✅ Vous avez sélectionné: ${selectedItem.text || selectedItem.title}`, quoteOpts, messageText.length, sessionData);
-                    }
-                    return;
-                }
-            }
-        }
-
-        // ✅ Vérifier si le message déclenche un menu (texte uniquement, pas images/médias)
-        if (menuAllowedInChat) {
-        if (message.type !== 'chat') { /* skip menu trigger for non-text messages */ }
-        else {
-        const normalizeApostrophes = s => s.replace(/[\u2018\u2019\u201A\u201B\u0060\u00B4]/g, "'");
-        const triggerText = normalizeApostrophes(message.body.trim().toLowerCase());
-        const cleanPunct = s => normalizeApostrophes(s).replace(/[^\wàâäéèêëïîôùûüç\s'-]/gi, '').replace(/\s+/g, ' ').trim();
-        const cleanMsg = cleanPunct(triggerText);
-        const messageWords = cleanMsg.split(/\s+/).filter(w => w.length > 2);
-        sessionData.addLog(`[DEBUG-TRIGGER] msg="${cleanMsg}" | words=[${messageWords.join(', ')}]`);
-        for (const menuId in sessionData.interactiveMenus) {
-            const menu = sessionData.interactiveMenus[menuId];
-            if (!menu.enabled || !menu.trigger) continue;
-            if (menu.groupId && chat.id._serialized !== menu.groupId) continue;
-            const triggers = menu.trigger.split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
-            const matched = triggers.find(t => {
-                const cleanT = cleanPunct(t);
-                // 1. Match exact (sans ponctuation) : le message EST le trigger ou le contient
-                if (cleanMsg === cleanT) return true;
-                if (cleanMsg.includes(cleanT) && cleanT.length >= 4) return true;
-                if (cleanT.includes(cleanMsg) && cleanMsg.length >= 4) return true;
-                // 2. Trigger court (1-2 mots) : chaque mot doit être trouvé dans le message
-                const tWords = cleanT.split(/\s+/).filter(w => w.length > 2);
-                if (tWords.length <= 2) {
-                    return tWords.every(tw => messageWords.some(mw => mw === tw));
-                }
-                // 3. Trigger long (phrase) : au moins 3 mots-clés significatifs en commun
-                const keyWords = tWords.filter(w => w.length > 3);
-                if (keyWords.length === 0) return false;
-                const found = keyWords.filter(kw => messageWords.some(mw => mw === kw));
-                return found.length >= 3 || (found.length >= 2 && found.length >= Math.ceil(keyWords.length * 0.5));
-            });
-            if (matched) {
-                sessionData.addLog(`Menu declenche: ${menuId} par ${senderId} (mot-cle: ${matched})`);
-                await sendInteractiveMenu(chat, menuId, sessionData, message);
+            const triggered = findTriggeredMenu(sessionData.interactiveMenus, chat, messageText);
+            if (triggered) {
+                sessionData.addLog('[MENU] Declenchement ' + triggered.mode + ': ' + triggered.menu.id + ' par ' + senderId + ' (mot-cle: ' + triggered.rawTrigger + ')');
+                await sendInteractiveMenu(sock, chat, triggered.menu.id, sessionData, message);
                 return;
             }
         }
+
+        const commandReplyOpts = isBotCommand ? makeReplyOptions(message) : {};
+
+        if (normalizedCommand === '!help') {
+            await sendMessageHumanized(sock, chat.jid, buildHelpMessage(), commandReplyOpts, getMessageBody(message).length, sessionData);
+            return;
         }
 
-        }
-
-        // ✅ Seul le traitement des groupes continue
         if (!chat.isGroup) return;
 
-        const botId = client.info.wid._serialized;
         const participants = chat.participants || [];
-        const botP = participants.find(p => p.id._serialized === botId);
-        if (!botP || !botP.isAdmin) return;
+        const botP = findBotParticipant(sock, participants);
 
-        const senderNumber = senderId.split('@')[0];
-        const senderP = participants.find(p => p.id._serialized === senderId || p.id._serialized?.split('@')[0] === senderNumber);
+        const senderP = participants.find(p => participantMatches(p, senderId));
+        const groupExcluded = sessionData.isGroupExcluded(chat);
+        const commandAllowed = senderP?.isAdmin || senderP?.isSuperAdmin || isMessageFromMe(message);
 
-        // ✅ Suppression automatique des notifications de statut (status mentions)
-        // Quand un utilisateur identifie un groupe dans son statut WhatsApp, une notification est envoyée dans le groupe
-        // NOTE: s'applique MÊME aux groupes exclus — c'est une fonctionnalité indépendante de la modération
-        if (sessionData.config.DELETE_STATUS_MENTIONS) {
-            const d = message._data || {};
-            // Détection d'un message qui cite un statut (status@broadcast)
-            const quotedFromStatus = (
-                d.quotedParticipant === 'status@broadcast' ||
-                d.quotedStanzaID && (d.quotedRemoteJid === 'status@broadcast' || (d.quotedMsg && d.quotedMsg.remoteJid === 'status@broadcast')) ||
-                (d.quotedMsg && (d.quotedMsg.from === 'status@broadcast' || d.quotedMsg.remoteJid === 'status@broadcast'))
-            );
-            const isStatusMention = quotedFromStatus ||
-                                    message.type === 'status_mention' ||
-                                    message.type === 'status' ||
-                                    d.type === 'status_mention' ||
-                                    d.isStatusMention === true ||
-                                    (message.body && (
-                                        message.body.includes('a ajouté ce groupe à son statut') ||
-                                        message.body.includes('Ce groupe a été mentionné') ||
-                                        message.body.includes('mentioned this group in their status') ||
-                                        message.body.includes('This group was mentioned')
-                                    ));
+        if (normalizedCommand && ADMIN_COMMANDS.has(normalizedCommand) && !commandAllowed) {
+            await sendMessageHumanized(sock, chat.jid, buildNoticeMessage('ACCES REFUSE', 'Cette commande est reservee aux admins du groupe.', [menuCommand('!help', 'voir les commandes disponibles')]), commandReplyOpts, getMessageBody(message).length, sessionData);
+            sessionData.addLog('[CMD] ' + normalizedCommand + ' ignore: expediteur non admin dans ' + chat.name);
+            return;
+        }
 
-            if (isStatusMention) {
-                const msgId = message.id._serialized || message.id.id;
+        if (sessionData.config.DELETE_STATUS_MENTIONS && botP?.isAdmin) {
+            if (isStatusMentionNotification(message)) {
+                const msgId = getMessageId(message);
                 if (!sessionData.isAlreadyProcessed(msgId)) {
                     sessionData.markAsProcessed(msgId);
-                    sessionData.addLog(`[STATUS] Notification de statut détectée de ${senderId} dans ${chat.name} (type=${message.type}, quoted=${d.quotedParticipant || d.quotedRemoteJid || 'none'})`);
-
-                    const wasDeleted = await deleteMessageHumanized(message);
+                    sessionData.addLog('[STATUS] Notification de statut detectee (' + getMessageType(message) + ') de ' + senderId + ' dans ' + chat.name);
+                    const wasDeleted = await deleteMessageHumanized(sock, message);
                     if (wasDeleted) {
                         sessionData.stats.totalDeleted++;
-                        sessionData.addLog(`[STATUS] Notification de statut supprimée dans ${chat.name}`);
+                        sessionData.saveStats();
+                        sessionData.addLog('[STATUS] Notification de statut supprimee dans ' + chat.name);
                     } else {
-                        sessionData.addLog(`[STATUS] Échec suppression notification statut dans ${chat.name}`);
+                        sessionData.addLog('[STATUS] Echec suppression notification statut dans ' + chat.name);
                     }
                 }
-                return; // Ne pas continuer le traitement normal
+                return;
             }
         }
 
-        // Exclusion des groupes APRÈS le check status mention
-        if (sessionData.isGroupExcluded(chat)) return;
+        if (normalizedCommand === '!status') {
+            await sendMessageHumanized(sock, chat.jid, buildStatusMessage(sock, chat, sessionData, botP), commandReplyOpts, getMessageBody(message).length, sessionData);
+            return;
+        }
 
-        // ✅ Commande !scan
-        if (messageText === '!scan') {
-            if (senderP?.isAdmin) {
-                await sendMessageHumanized(chat, '🔍 Scan en cours...', {}, message.body.length, sessionData);
-                const result = await scanOldMessages(chat, sessionData.config.SCAN_LIMIT || CONFIG.SCAN_LIMIT, sessionId);
-                await sendMessageHumanized(
-                    chat,
-                    `✅ Scan terminé: ${result.scanned} scannés, ${result.deleted} supprimés.`,
-                    {}, 20, sessionData
-                );
+        if (normalizedCommand === '!cache') {
+            const limit = sessionData.config.SCAN_LIMIT || CONFIG.SCAN_LIMIT;
+            const count = getCachedMessages(sock, chat.jid, limit).length;
+            await sendMessageHumanized(sock, chat.jid, menuPanel('CACHE DU GROUPE', [
+                { title: 'Etat', lines: [menuLine('Messages connus ici', count), menuLine('Limite de scan', limit)] },
+                { title: 'Note', lines: ['Si ce nombre vaut 0, le scan ne peut pas analyser les anciens messages.'] }
+            ]), commandReplyOpts, getMessageBody(message).length, sessionData);
+            return;
+        }
+
+        if (normalizedCommand === '!groupinfo') {
+            await sendMessageHumanized(sock, chat.jid, buildGroupInfoMessage(sock, chat, sessionData, botP), commandReplyOpts, getMessageBody(message).length, sessionData);
+            return;
+        }
+
+        if (normalizedCommand === '!config') {
+            await sendMessageHumanized(sock, chat.jid, buildConfigMessage(sessionData), commandReplyOpts, getMessageBody(message).length, sessionData);
+            return;
+        }
+
+        if (normalizedCommand === '!scan') {
+            if (commandAllowed) {
+                if (!botP?.isAdmin) {
+                    await sendMessageHumanized(sock, chat.jid, buildNoticeMessage('SCAN IMPOSSIBLE', 'Le bot doit etre admin du groupe.'), commandReplyOpts, getMessageBody(message).length, sessionData);
+                    return;
+                }
+                await sendMessageHumanized(sock, chat.jid, buildNoticeMessage('SCAN DU GROUPE', 'Analyse en cours...'), commandReplyOpts, getMessageBody(message).length, sessionData);
+                const result = await scanOldMessages(chat, sessionData.config.SCAN_LIMIT || CONFIG.SCAN_LIMIT, sessionId, { anchorMessage: message });
+                await sendMessageHumanized(sock, chat.jid, menuPanel('SCAN TERMINE', [
+                    { title: 'Resultat', lines: [menuLine('Messages analyses', result.scanned), menuLine('Messages supprimes', result.deleted), menuLine('Avertissements', result.warned || 0)] }
+                ]), commandReplyOpts, 20, sessionData);
+            } else {
+                sessionData.addLog('[CMD] !scan ignore: expediteur non admin dans ' + chat.name);
             }
             return;
         }
 
-        // ✅ Commande !scanall
-        if (messageText === '!scanall') {
-            if (senderP?.isAdmin) {
-                await sendMessageHumanized(chat, '🔍 Scan global en cours...', {}, message.body.length, sessionData);
+        if (normalizedCommand === '!scanall') {
+            if (commandAllowed) {
+                if (!botP?.isAdmin) {
+                    await sendMessageHumanized(sock, chat.jid, buildNoticeMessage('SCAN GLOBAL IMPOSSIBLE', 'Le bot doit etre admin de ce groupe pour lancer la commande depuis ici.'), commandReplyOpts, getMessageBody(message).length, sessionData);
+                    return;
+                }
+                await sendMessageHumanized(sock, chat.jid, buildNoticeMessage('SCAN GLOBAL', 'Analyse de tous les groupes admin en cours...'), commandReplyOpts, getMessageBody(message).length, sessionData);
                 const result = await scanAllGroups(sessionId);
-                await sendMessageHumanized(
-                    chat,
-                    `✅ Scan global terminé: ${result.totalScanned} scannés, ${result.totalDeleted} supprimés.`,
-                    {}, 25, sessionData
-                );
+                await sendMessageHumanized(sock, chat.jid, menuPanel('SCAN GLOBAL TERMINE', [
+                    { title: 'Resultat', lines: [menuLine('Messages analyses', result.totalScanned), menuLine('Messages supprimes', result.totalDeleted), menuLine('Avertissements', result.totalWarned || 0)] }
+                ]), commandReplyOpts, 25, sessionData);
+            } else {
+                sessionData.addLog('[CMD] !scanall ignore: expediteur non admin dans ' + chat.name);
             }
             return;
         }
 
-        // ✅ Commande !diagdelete — diagnostic des méthodes de suppression
-        if (messageText === '!diagdelete') {
-            if (senderP?.isAdmin) {
-                await sendMessageHumanized(chat, '🔬 Diagnostic suppression en cours...', {}, message.body.length);
-                try {
-                    const diag = await client.pupPage.evaluate(() => {
-                        const r = { store: {}, chat: [], msg: [], cmd: [], wwebjs: [] };
-
-                        for (const key of Object.keys(window.Store || {})) {
-                            try {
-                                const mod = window.Store[key];
-                                if (!mod || typeof mod !== 'object') continue;
-                                const fns = [];
-                                for (const p of Object.getOwnPropertyNames(mod)) {
-                                    try {
-                                        if (typeof mod[p] === 'function' && /revoke|delete|remove/i.test(p))
-                                            fns.push(p);
-                                    } catch (e) {}
-                                }
-                                if (fns.length) r.store[key] = fns;
-                            } catch (e) {}
-                        }
-
-                        try {
-                            const c = window.Store.Chat.getModelsArray()[0];
-                            if (c) {
-                                let proto = Object.getPrototypeOf(c);
-                                while (proto && proto !== Object.prototype) {
-                                    for (const p of Object.getOwnPropertyNames(proto)) {
-                                        try {
-                                            if (typeof proto[p] === 'function' && /revoke|delete|send/i.test(p))
-                                                r.chat.push(p);
-                                        } catch (e) {}
-                                    }
-                                    proto = Object.getPrototypeOf(proto);
-                                }
-                                r.chat = [...new Set(r.chat)];
-                            }
-                        } catch (e) {}
-
-                        try {
-                            const m = window.Store.Msg.getModelsArray()[0];
-                            if (m) {
-                                let proto = Object.getPrototypeOf(m);
-                                while (proto && proto !== Object.prototype) {
-                                    for (const p of Object.getOwnPropertyNames(proto)) {
-                                        try {
-                                            if (typeof proto[p] === 'function' && /revoke|delete|canRevoke|canAdmin/i.test(p))
-                                                r.msg.push(p);
-                                        } catch (e) {}
-                                    }
-                                    proto = Object.getPrototypeOf(proto);
-                                }
-                                r.msg = [...new Set(r.msg)];
-                            }
-                        } catch (e) {}
-
-                        if (window.Store.Cmd) {
-                            r.cmd = Object.getOwnPropertyNames(window.Store.Cmd)
-                                .filter(p => { try { return typeof window.Store.Cmd[p] === 'function'; } catch (e) { return false; } })
-                                .slice(0, 40);
-                        }
-
-                        if (window.WWebJS)
-                            r.wwebjs = Object.keys(window.WWebJS);
-
-                        return r;
-                    });
-
-                    let report = `🔬 *DIAGNOSTIC SUPPRESSION*\n\n`;
-                    report += `📦 *Store modules (delete/revoke):*\n`;
-                    for (const [mod, fns] of Object.entries(diag.store || {})) {
-                        report += `• \`${mod}\`: ${fns.join(', ')}\n`;
-                    }
-                    report += `\n💬 *Chat proto:*\n\`${(diag.chat || []).join(', ')}\`\n`;
-                    report += `\n📩 *Msg proto:*\n\`${(diag.msg || []).join(', ')}\`\n`;
-                    report += `\n🔧 *Cmd toutes méthodes:*\n\`${(diag.cmd || []).join(', ')}\`\n`;
-                    report += `\n🌐 *WWebJS:*\n\`${(diag.wwebjs || []).join(', ')}\`\n`;
-
-                    await sendMessageHumanized(chat, report, {}, 10);
-                    addLog(`[DIAG] [${sessionId}] Diagnostic envoye dans ${chat.name}`);
-                } catch (error) {
-                    await sendMessageHumanized(chat, `❌ Erreur: ${error.message}`, {}, 10);
-                }
+        if (normalizedCommand === '!scanstatus') {
+            if (!botP?.isAdmin) {
+                await sendMessageHumanized(sock, chat.jid, buildNoticeMessage('SCAN STATUT IMPOSSIBLE', 'Le bot doit etre admin du groupe.'), commandReplyOpts, getMessageBody(message).length, sessionData);
+                return;
             }
+            await sendMessageHumanized(sock, chat.jid, buildNoticeMessage('SCAN STATUT', 'Recherche des notifications de statut en cours...'), commandReplyOpts, getMessageBody(message).length, sessionData);
+            const result = await scanOldMessages(chat, sessionData.config.SCAN_LIMIT || CONFIG.SCAN_LIMIT, sessionId, { anchorMessage: message, statusOnly: true });
+            await sendMessageHumanized(sock, chat.jid, menuPanel('SCAN STATUT TERMINE', [
+                { title: 'Resultat', lines: [menuLine('Messages analyses', result.scanned), menuLine('Notifications supprimees', result.deleted)] }
+            ]), commandReplyOpts, 20, sessionData);
             return;
         }
 
-        // ✅ Commande !testdelete — envoie un message test puis le supprime
-        if (messageText === '!testdelete') {
-            if (senderP?.isAdmin) {
-                const testMsg = await sendMessageHumanized(chat, '🧪 Message test — sera supprimé dans 3s...', {}, 5);
+        if (normalizedCommand === '!excludehere') {
+            if (!sessionData.groupExceptions.excludedGroups.includes(chat.jid)) {
+                sessionData.groupExceptions.excludedGroups.push(chat.jid);
+                sessionData.saveGroupExceptions();
+            }
+            await sendMessageHumanized(sock, chat.jid, buildNoticeMessage('GROUPE EXCLU', 'La moderation est desactivee ici.', ['Les commandes admin restent disponibles.']), commandReplyOpts, getMessageBody(message).length, sessionData);
+            return;
+        }
+
+        if (normalizedCommand === '!includehere') {
+            sessionData.groupExceptions.excludedGroups = sessionData.groupExceptions.excludedGroups.filter(id => id !== chat.jid);
+            sessionData.saveGroupExceptions();
+            await sendMessageHumanized(sock, chat.jid, buildNoticeMessage('GROUPE REACTIVE', 'La moderation est de nouveau active dans ce groupe.'), commandReplyOpts, getMessageBody(message).length, sessionData);
+            return;
+        }
+
+        if (normalizedCommand === '!warnings') {
+            const target = getCommandTarget(message, participants);
+            if (!target) {
+                await sendMessageHumanized(sock, chat.jid, buildUsageMessage('!warnings', '@membre ou numero'), commandReplyOpts, getMessageBody(message).length, sessionData);
+                return;
+            }
+            const warningKey = findWarningKeyForTarget(sessionData, chat.jid, target);
+            const warningList = warningKey ? (sessionData.warnings[chat.jid]?.[warningKey] || []) : [];
+            const user = await describeUserId(sock, warningKey || target.id, participants);
+            const details = warningList.length
+                ? warningList.slice(-5).map((ts, i) => (i + 1) + '. ' + formatDateTime(ts)).join('\n')
+                : 'Aucun avertissement.';
+            await sendMessageHumanized(sock, chat.jid, menuPanel('AVERTISSEMENTS', [
+                { title: 'Utilisateur', lines: [menuLine('Nom', user.name), menuLine('Numero', user.phone), menuLine('Total', warningList.length + '/' + sessionData.config.MAX_WARNINGS)] },
+                { title: 'Historique', lines: [details] }
+            ]), commandReplyOpts, getMessageBody(message).length, sessionData);
+            return;
+        }
+
+        if (normalizedCommand === '!resetwarn') {
+            const target = getCommandTarget(message, participants);
+            if (!target) {
+                await sendMessageHumanized(sock, chat.jid, buildUsageMessage('!resetwarn', '@membre ou numero'), commandReplyOpts, getMessageBody(message).length, sessionData);
+                return;
+            }
+            const warningKey = findWarningKeyForTarget(sessionData, chat.jid, target);
+            const user = await describeUserId(sock, warningKey || target.id, participants);
+            if (warningKey) sessionData.resetWarnings(chat.jid, warningKey);
+            await sendMessageHumanized(sock, chat.jid, buildNoticeMessage('AVERTISSEMENTS EFFACES', user.name + ' (' + user.phone + ')'), commandReplyOpts, getMessageBody(message).length, sessionData);
+            return;
+        }
+
+        if (normalizedCommand === '!blocked') {
+            const entries = Object.entries(sessionData.blockedUsers || {});
+            if (!entries.length) {
+                await sendMessageHumanized(sock, chat.jid, buildNoticeMessage('UTILISATEURS BLOQUES', 'Aucun utilisateur bloque par anti-spam appels.'), commandReplyOpts, getMessageBody(message).length, sessionData);
+                return;
+            }
+            const lines = [];
+            for (const [userId, entry] of entries.slice(0, 10)) {
+                const user = await describeUserId(sock, userId, participants);
+                const durationMs = getCallBlockDurationMin(sessionData.config) * 60 * 1000;
+                const remaining = entry.autoUnblock ? formatDuration(durationMs - (Date.now() - (entry.blockedAt || Date.now()))) : 'manuel';
+                lines.push(user.name + ' (' + user.phone + ') - ' + (entry.callCount || 0) + ' appels - reste: ' + remaining);
+            }
+            const suffix = entries.length > 10 ? '\n\n+' + (entries.length - 10) + ' autres.' : '';
+            await sendMessageHumanized(sock, chat.jid, menuPanel('UTILISATEURS BLOQUES', [
+                { title: 'Liste', lines: lines }
+            ]) + suffix, commandReplyOpts, getMessageBody(message).length, sessionData);
+            return;
+        }
+
+        if (normalizedCommand === '!unblock') {
+            const target = getCommandTarget(message, participants);
+            if (!target) {
+                await sendMessageHumanized(sock, chat.jid, buildUsageMessage('!unblock', 'numero ou @membre'), commandReplyOpts, getMessageBody(message).length, sessionData);
+                return;
+            }
+            const blockedKey = findBlockedKeyForTarget(sessionData.blockedUsers, target);
+            if (!blockedKey) {
+                await sendMessageHumanized(sock, chat.jid, buildNoticeMessage('DEBLOCAGE', 'Cet utilisateur n est pas bloque par le bot.'), commandReplyOpts, getMessageBody(message).length, sessionData);
+                return;
+            }
+            await sock.updateBlockStatus(normalizeJid(blockedKey), 'unblock');
+            ensureRuntime(sock).blocklist.delete(normalizeJid(blockedKey));
+            if (sessionData.unblockTimers[blockedKey]) {
+                clearTimeout(sessionData.unblockTimers[blockedKey]);
+                delete sessionData.unblockTimers[blockedKey];
+            }
+            delete sessionData.blockedUsers[blockedKey];
+            delete sessionData.callSpamTracker[blockedKey];
+            sessionData.saveCallSpamData();
+            const user = await describeUserId(sock, blockedKey, participants);
+            await sendMessageHumanized(sock, chat.jid, buildNoticeMessage('UTILISATEUR DEBLOQUE', user.name + ' (' + user.phone + ')'), commandReplyOpts, getMessageBody(message).length, sessionData);
+            return;
+        }
+
+        if (normalizedCommand === '!allowcalls') {
+            const target = getCommandTarget(message, participants);
+            if (!target) {
+                await sendMessageHumanized(sock, chat.jid, buildUsageMessage('!allowcalls', 'numero ou @membre'), commandReplyOpts, getMessageBody(message).length, sessionData);
+                return;
+            }
+            const aliases = await resolveUserAliases(sock, target.id);
+            const values = buildUserMatchValues(target.id, target.values, aliases);
+            let userIndex = sessionData.userExceptions.excludedUsers.findIndex(entry => userExceptionMatches(entry, values));
+            let entry = userIndex >= 0 ? sessionData.userExceptions.excludedUsers[userIndex] : null;
+            if (entry && typeof entry !== 'object') {
+                entry = { id: entry, aliases: buildUserMatchValues(entry), linkException: true, callException: true };
+                sessionData.userExceptions.excludedUsers[userIndex] = entry;
+            }
+            if (entry) {
+                entry.callException = true;
+                entry.aliases = Array.from(new Set([...(entry.aliases || []), ...aliases, ...values]));
+            } else {
+                entry = { id: target.id, aliases: Array.from(new Set([...aliases, ...values])), linkException: false, callException: true };
+                sessionData.userExceptions.excludedUsers.push(entry);
+            }
+            sessionData.saveUserExceptions();
+            const cleared = await clearCallBlocksForValues(sock, sessionData, values);
+            const user = await describeUserId(sock, target.id, participants);
+            await sendMessageHumanized(sock, chat.jid, buildNoticeMessage('APPELS AUTORISES', user.name + ' (' + user.phone + ')', cleared ? ['Blocage retire.'] : []), commandReplyOpts, getMessageBody(message).length, sessionData);
+            return;
+        }
+
+        if (normalizedCommand === '!diagdelete') {
+            if (commandAllowed) {
+                await sendMessageHumanized(sock, chat.jid, buildNoticeMessage('DIAGNOSTIC', 'Verification de la suppression en cours...'), commandReplyOpts, getMessageBody(message).length, sessionData);
+                const author = await describeMessageAuthor(sock, message, participants);
+                const report = buildDeleteDiagnosticReport({ sock, chat, message, author, botP, commandAllowed });
+                await sendMessageHumanized(sock, chat.jid, report, commandReplyOpts, 10, sessionData);
+                addLog('[DIAG] [' + sessionId + '] Diagnostic Baileys envoye dans ' + chat.name);
+                return;
+            }
+            sessionData.addLog('[CMD] !diagdelete ignore: expediteur non admin dans ' + chat.name);
+            return;
+        }
+
+        if (normalizedCommand === '!testdelete') {
+            if (commandAllowed) {
+                const testMsg = await sendMessageHumanized(sock, chat.jid, buildNoticeMessage('TEST SUPPRESSION', 'Ce message sera supprime dans 3 secondes.'), commandReplyOpts, 5, sessionData);
                 if (testMsg) {
                     await new Promise(r => setTimeout(r, 3000));
-                    const deleted = await deleteMessageHumanized(testMsg);
-                    if (deleted) {
-                        await sendMessageHumanized(chat, '✅ Suppression réussie !', {}, 5);
-                    } else {
-                        await sendMessageHumanized(chat, '❌ Suppression échouée — voir les logs', {}, 5);
-                    }
+                    const deleted = await deleteMessageHumanized(sock, testMsg);
+                    await sendMessageHumanized(sock, chat.jid, deleted
+                        ? buildNoticeMessage('TEST SUPPRESSION', 'Suppression reussie.')
+                        : buildNoticeMessage('TEST SUPPRESSION', 'Suppression echouee.', ['Consulte les logs pour le detail.']), commandReplyOpts, 5, sessionData);
                 }
+            } else {
+                sessionData.addLog('[CMD] !testdelete ignore: expediteur non admin dans ' + chat.name);
             }
             return;
         }
 
-        // ✅ Vérification lien
+        if (!botP?.isAdmin) return;
+
+        if (groupExcluded) return;
+
         if (!containsLink(message)) return;
 
-        const msgId = message.id._serialized || message.id.id;
+        const msgId = getMessageId(message);
         if (sessionData.isAlreadyProcessed(msgId)) return;
         sessionData.markAsProcessed(msgId);
 
-        let authorId = message.author || message.from;
-        if (authorId.includes('@g.us')) return;
-        
-        // ✅ Autoriser directement les admins du groupe (détection dynamique)
-        const authorContact = await message.getContact();
-        const authorNumber = authorContact?.number || authorId.split('@')[0];
-        const authorCusId = authorContact?.id?._serialized;
-        
-        // Vérifier admin par toutes les méthodes possibles
+        const authorId = getMessageSender(message);
+        if (!authorId || authorId.includes('@g.us')) return;
+
+        const contact = await getContactInfo(sock, authorId);
+        const authorNumber = contact?.number || jidNumber(authorId);
+
         if (senderP?.isAdmin || senderP?.isSuperAdmin) return;
-        
-        const isAdmin = participants.some(p => {
-            if (!(p.isAdmin || p.isSuperAdmin)) return false;
-            const pId = p.id._serialized;
-            const pNum = p.id.user || pId?.split('@')[0];
-            return pId === authorId || pId === authorCusId || pNum === authorNumber;
-        });
+        const isAdmin = participants.some(p => (p.isAdmin || p.isSuperAdmin) && participantMatches(p, authorId));
         if (isAdmin) {
-            sessionData.addLog(`[ADMIN] ${authorNumber} est admin, lien ignoré`);
+            sessionData.addLog('[ADMIN] ' + authorNumber + ' est admin, lien ignore');
             return;
         }
-        
-        // Vérifier les autres exceptions (utilisateurs whitelisted)
-        if (sessionData.isUserExcluded(authorNumber, participants)) return;
 
-        // ✅ Marquer comme lu
-        try { await chat.sendSeen(); } catch (e) {}
+        if (sessionData.isUserExcluded(authorId, participants) || sessionData.isUserExcluded(authorNumber, participants)) return;
 
-        const contact = await message.getContact();
-        const mention = `@${contact.id.user}`;
-        const warningCount = sessionData.addWarning(chat.id._serialized, authorId);
+        try { await markChatRead(sock, chat.jid); } catch (e) {}
+
+        const mention = '@' + contact.number;
+        const warningCount = sessionData.addWarning(chat.jid, authorId);
         const remaining = sessionData.config.MAX_WARNINGS - warningCount;
         sessionData.stats.totalWarnings++;
 
-        // ══════════════════════════════════════════════════════
-        // ÉTAPE 1 : SUPPRIMER D'ABORD (contenu nuisible)
-        // ══════════════════════════════════════════════════════
-        const messageBodyLength = message.body?.length || 0;
-        try { await message.react('🚫'); } catch (e) {}
-        const wasDeleted = await deleteMessageHumanized(message);
+        const messageBodyLength = getMessageBody(message)?.length || 0;
+        try { await sock.sendMessage(chat.jid, { react: { text: '\uD83D\uDEAB', key: message.key } }); } catch (e) {}
+        const wasDeleted = await deleteMessageHumanized(sock, message);
         if (wasDeleted) {
             sessionData.stats.totalDeleted++;
-            sessionData.addLog(`[SUPPR] Message supprime de ${authorId} dans ${chat.name}`);
+            sessionData.addLog('[SUPPR] Message supprime de ' + authorId + ' dans ' + chat.name);
         }
 
-        // ══════════════════════════════════════════════════════
-        // ÉTAPE 2 : AVERTIR OU BANNIR ENSUITE
-        // ══════════════════════════════════════════════════════
         if (warningCount >= sessionData.config.MAX_WARNINGS) {
             try {
-                const banMsg = MessagePool.pick(
-                    MessagePool.bans, mention, sessionData.config.MAX_WARNINGS
-                );
-                await sendMessageHumanized(chat, banMsg, {
-                    mentions: [contact.id._serialized]
-                }, messageBodyLength, sessionData);
-
-                await HumanBehavior.naturalDelay(
-                    HumanBehavior.gaussianRandom(2500, 1000)
-                );
-                await chat.removeParticipants([authorId]);
+                const banMsg = MessagePool.pick(MessagePool.bans, mention, sessionData.config.MAX_WARNINGS);
+                await sendMessageHumanized(sock, chat.jid, banMsg, makeReplyOptions(message, { mentions: [contact.jid] }), messageBodyLength, sessionData);
+                await HumanBehavior.naturalDelay(HumanBehavior.gaussianRandom(2500, 1000));
+                await sock.groupParticipantsUpdate(chat.jid, [normalizeJid(authorId)], 'remove');
                 rateLimiter.recordAction();
-
-                sessionData.resetWarnings(chat.id._serialized, authorId);
+                sessionData.resetWarnings(chat.jid, authorId);
                 sessionData.stats.totalBanned++;
-                sessionData.addLog(`[BAN] ${authorId} banni de ${chat.name}`);
+                sessionData.addLog('[BAN] ' + authorId + ' banni de ' + chat.name);
             } catch (banError) {
-                sessionData.addLog(`[X] Erreur ban: ${banError.message}`);
-                await sendMessageHumanized(chat,
-                    `⚠️ ${mention} a atteint la limite mais je n'ai pas pu le bannir.`,
-                    { mentions: [contact.id._serialized] },
-                    10, sessionData
-                );
+                sessionData.addLog('[X] Erreur ban: ' + banError.message);
+                await sendMessageHumanized(sock, chat.jid, mention + ' a atteint la limite mais je n ai pas pu le bannir.', makeReplyOptions(message, { mentions: [contact.jid] }), 10, sessionData);
             }
         } else {
-            const warnMsg = MessagePool.pick(
-                MessagePool.warnings, mention, warningCount,
-                sessionData.config.MAX_WARNINGS, remaining
-            );
-            await sendMessageHumanized(chat, warnMsg, {
-                mentions: [contact.id._serialized]
-            }, messageBodyLength, sessionData);
-            sessionData.addLog(`[!] Avertissement ${warningCount}/${sessionData.config.MAX_WARNINGS} pour ${authorId} dans ${chat.name}`);
+            const warnMsg = MessagePool.pick(MessagePool.warnings, mention, warningCount, sessionData.config.MAX_WARNINGS, remaining);
+            await sendMessageHumanized(sock, chat.jid, warnMsg, makeReplyOptions(message, { mentions: [contact.jid] }), messageBodyLength, sessionData);
+            sessionData.addLog('[!] Avertissement ' + warningCount + '/' + sessionData.config.MAX_WARNINGS + ' pour ' + authorId + ' dans ' + chat.name);
         }
+
         sessionData.saveStats();
     } catch (error) {
-        console.error(`[${sessionId}] Erreur traitement message:`, error);
+        console.error('[' + sessionId + '] Erreur traitement message:', error);
     }
 }
 
-// ============================================================
-// 👋 HANDLER BIENVENUE
 // ============================================================
 
 const WELCOME_MESSAGE_EXCLUDED = `👋 Bienvenue {mention} dans *{group}* !
@@ -4138,246 +5745,229 @@ N'hésite pas à participer et à partager.
 
 Bonne discussion ! 🙌`;
 
-async function handleGroupJoin(client, notification, sessionId) {
+
+async function handleGroupJoin(sock, notification, sessionId) {
     const sessionData = getSessionData(sessionId);
-    
+
     try {
         if (!sessionData.config.WELCOME_ENABLED) return;
 
-        const chat = await notification.getChat();
-        const botId = client.info.wid._serialized;
-        const participants = chat.participants || [];
-        const botP = participants.find(p => p.id._serialized === botId);
-        if (!botP || !botP.isAdmin) return;
+        const chatId = normalizeJid(notification.chatId || notification.id || notification.key?.remoteJid);
+        if (!chatId || !isGroupJid(chatId)) return;
+        const chat = getCachedChatInfo(sock, chatId);
 
-        if (sessionData.groupExceptions.excludedWelcome.includes(chat.id._serialized)) {
-            sessionData.addLog(`[MUTE] Bienvenue desactivee pour ${chat.name}`);
+        if (sessionData.groupExceptions.excludedWelcome.includes(chat.jid)) {
+            sessionData.addLog('[MUTE] Bienvenue desactivee pour ' + chat.name);
             return;
         }
 
-        let newMemberId = notification.recipient;
-        if (notification.id?.participant) newMemberId = notification.id.participant;
+        const newMemberId = normalizeJid(notification.participant || notification.recipient || notification.id?.participant);
+        if (!newMemberId) return;
+        const participants = chat.participants || [];
+        let newMemberParticipant = participants.find(p => participantMatches(p, newMemberId));
+        if (!newMemberParticipant) {
+            newMemberParticipant = hydrateParticipant(notification.participant || newMemberId);
+            if (newMemberParticipant?.jid && !participants.some(p => participantMatches(p, newMemberParticipant.jid))) {
+                chat.participants = [...participants, newMemberParticipant];
+                ensureRuntime(sock).chats.set(chat.jid, chat);
+            }
+        }
+        const contactId = newMemberParticipant?.phoneNumber || newMemberParticipant?.jid || newMemberParticipant?.lid || newMemberId;
+        const contact = await getContactInfo(sock, contactId);
 
-        let contact;
-        try { contact = await client.getContactById(newMemberId); } catch (e) { return; }
-
-        await HumanBehavior.naturalDelay(
-            HumanBehavior.gaussianRandom(5000, 3000)
-        );
-
-        const mention = `@${contact.id.user}`;
-
+        const mentionJids = Array.from(new Set([
+            contact.jid,
+            newMemberId,
+            contact.phoneNumber,
+            newMemberParticipant?.jid,
+            newMemberParticipant?.lid,
+            newMemberParticipant?.phoneNumber
+        ].map(normalizeJid).filter(Boolean)));
+        const mention = '@' + contact.number;
         const isExcluded = sessionData.isGroupExcluded(chat);
-
         const welcomeMessage = (isExcluded ? WELCOME_MESSAGE_EXCLUDED : sessionData.config.WELCOME_MESSAGE)
             .replace(/{mention}/g, mention)
             .replace(/{group}/g, chat.name)
             .replace(/{maxWarnings}/g, sessionData.config.MAX_WARNINGS);
 
-        let profilePicUrl = null;
-        try { profilePicUrl = await client.getProfilePicUrl(newMemberId); } catch (e) {}
+        const profilePic = await getProfilePictureUrlForUser(sock, newMemberParticipant, contact.phoneNumber, contact.jid, newMemberId, contact.aliases);
+        const profilePicUrl = profilePic.url;
 
         if (profilePicUrl) {
             try {
-                const media = await MessageMedia.fromUrl(profilePicUrl, { unsafeMime: true });
-                await rateLimiter.waitUntilAllowed();
-                await chat.sendMessage(media, { caption: welcomeMessage, mentions: [contact.id._serialized] });
-                rateLimiter.recordAction();
+                const media = await mediaFromUrl(profilePicUrl, 'profile.jpg');
+                await sendMessageHumanized(sock, chat.jid, media, { caption: welcomeMessage, mentions: mentionJids, bypassRateLimit: true }, 0, sessionData);
             } catch (e) {
-                await sendMessageHumanized(chat, welcomeMessage, { mentions: [contact.id._serialized] }, 0, sessionData);
+                await sendMessageHumanized(sock, chat.jid, welcomeMessage, { mentions: mentionJids, bypassRateLimit: true }, 0, sessionData);
             }
         } else {
-            await sendMessageHumanized(chat, welcomeMessage, { mentions: [contact.id._serialized] }, 0, sessionData);
+            await sendMessageHumanized(sock, chat.jid, welcomeMessage, { mentions: mentionJids, bypassRateLimit: true }, 0, sessionData);
         }
 
-        sessionData.addLog(`[BIENVENUE] Bienvenue envoye a ${contact.number} dans ${chat.name}${isExcluded ? ' (groupe exclu)' : ''}`);
+        sessionData.addLog('[BIENVENUE] Bienvenue envoye a ' + contact.number + ' dans ' + chat.name + (profilePic.jid ? ' avec photo (' + profilePic.type + ')' : ' sans photo (' + (profilePic.tried?.length || 0) + ' tentative(s))') + (isExcluded ? ' (groupe exclu)' : ''));
     } catch (error) {
-        sessionData.addLog(`[X] Erreur bienvenue: ${error.message}`);
+        sessionData.addLog('[X] Erreur bienvenue: ' + error.message);
     }
 }
 
 // ============================================================
-// 📞 HANDLER APPELS
-// ============================================================
 
 const callProcessingLock = new Map(); // { callerId: boolean } par session
 
-async function handleCall(client, call, sessionId) {
+
+async function handleCall(sock, call, sessionId) {
     const sessionData = getSessionData(sessionId);
-    
+    const callerId = getCallFrom(call);
+    const lockKey = callerId ? sessionId + '_' + callerId : null;
+
     try {
         if (!sessionData.config.CALL_REJECT_ENABLED) return;
+        if (!callerId) return;
 
-        const callerId = call.from;
-        sessionData.addLog(`[CALL] Appel entrant de ${callerId}`);
+        sessionData.addLog('[CALL] Appel entrant de ' + callerId);
 
-        // Verrou anti-concurrence : si un appel de ce numéro est déjà en cours de traitement,
-        // on rejette immédiatement sans enregistrer ni envoyer de message
-        const lockKey = `${sessionId}_${callerId}`;
-        if (callProcessingLock.get(lockKey)) {
-            try { await call.reject(); } catch (e) {}
-            sessionData.addLog(`[CALL] Appel ${callerId} rejete (traitement concurrent en cours)`);
+        if (lockKey && callProcessingLock.get(lockKey)) {
+            try { await rejectBaileysCall(sock, call); } catch (e) {}
+            sessionData.addLog('[CALL] Appel ' + callerId + ' rejete (traitement concurrent en cours)');
             return;
         }
-        callProcessingLock.set(lockKey, true);
+        if (lockKey) callProcessingLock.set(lockKey, true);
 
-        let callerNumber = callerId.split('@')[0];
-        try {
-            const contact = await client.getContactById(callerId);
-            if (contact && contact.number) {
-                callerNumber = contact.number;
-                sessionData.addLog(`Numero associe: ${callerNumber}`);
-            }
-        } catch (e) {}
+        const contact = await getContactInfo(sock, callerId);
+        const callerNumber = contact.number || jidNumber(callerId);
+        if (callerNumber) sessionData.addLog('Numero associe: ' + callerNumber);
 
-        // Vérifier si l'utilisateur est exempté
-        const userException = sessionData.userExceptions.excludedUsers.find(u => {
-            const exceptionId = typeof u === 'object' ? u.id : u;
-            const exceptionNumber = exceptionId.split('@')[0];
-            return exceptionId === callerId || exceptionNumber === callerNumber || exceptionId === callerNumber;
-        });
-        
-        if (userException && (typeof userException === 'object' ? userException.callException : false)) {
-            sessionData.addLog(`[OK] ${callerNumber} exempté du rejet d'appels - appel ignoré`);
+        const callerAliases = await resolveUserAliases(sock, callerId);
+        const callMatchValues = buildUserMatchValues(callerId, callerNumber, contact, callerAliases, call.from, call.chatId, call.creator, call.participant);
+        const userException = await findCallExceptionForValues(sock, sessionData.userExceptions, callMatchValues);
+
+        if (userException) {
+            await clearCallBlocksForValues(sock, sessionData, buildUserMatchValues(callMatchValues, userException));
+            sessionData.saveUserExceptions();
+            sessionData.addLog('[OK] ' + callerNumber + ' exempte du rejet appels - appel ignore');
             return;
         }
 
-        if (sessionData.blockedUsers[callerId]) {
+        const internalBlockedKey = Object.keys(sessionData.blockedUsers || {})
+            .find(key => callMatchValues.some(value => valuesMatchUser(key, value)));
+
+        if (internalBlockedKey) {
             try {
-                const contact = await client.getContactById(callerId);
-                if (contact.isBlocked) {
-                    sessionData.addLog(`[BLOCK] ${callerId} deja bloque`);
-                    try { await call.reject(); } catch (e) {} // Rejet immédiat, sans délai
+                const stillBlocked = await isUserBlockedOnWhatsApp(sock, buildUserMatchValues(callMatchValues, internalBlockedKey));
+                if (stillBlocked) {
+                    sessionData.addLog('[BLOCK] ' + callerId + ' deja bloque sur WhatsApp');
+                    try { await rejectBaileysCall(sock, call); } catch (e) {}
                     return;
-                } else {
-                    sessionData.addLog(`[UNBLOCK] ${callerId} debloque manuellement, mise a jour`);
-                    delete sessionData.blockedUsers[callerId];
-                    delete sessionData.callSpamTracker[callerId];
-                    if (sessionData.unblockTimers[callerId]) {
-                        clearTimeout(sessionData.unblockTimers[callerId]);
-                        delete sessionData.unblockTimers[callerId];
-                    }
-                    sessionData.saveCallSpamData();
                 }
+                const cleared = await clearCallBlocksForValues(sock, sessionData, buildUserMatchValues(callMatchValues, internalBlockedKey));
+                sessionData.addLog('[UNBLOCK] ' + callerId + ' debloque manuellement sur WhatsApp, etat interne nettoye (' + cleared + ')');
             } catch (e) {
-                sessionData.addLog(`[!] Erreur verification blocage: ${e.message}`);
+                sessionData.addLog('[!] Erreur verification blocage: ' + e.message);
             }
         }
 
         try {
-            await call.reject();
-            sessionData.addLog(`[REJECT] Appel rejete: ${callerId}`);
+            await rejectBaileysCall(sock, call);
+            sessionData.addLog('[REJECT] Appel rejete: ' + callerId);
             sessionData.stats.totalCallsRejected++;
             rateLimiter.recordAction();
         } catch (rejectError) {
-            sessionData.addLog(`[!] Erreur rejet appel: ${rejectError.message}`);
+            sessionData.addLog('[!] Erreur rejet appel: ' + rejectError.message);
         }
 
-        sessionData.addCallToHistory(callerId, callerNumber, call.isVideo || false, 'rejected');
+        sessionData.addCallToHistory(callerId, callerNumber, isVideoCall(call), 'rejected');
 
-        // Ajouter l'appel au tracker
         const now = Date.now();
+        const callBlockDurationMin = getCallBlockDurationMin(sessionData.config);
+        const callBlockDurationText = formatCallBlockDuration(callBlockDurationMin);
         const windowMs = (sessionData.config.CALL_SPAM_WINDOW_MIN || 30) * 60 * 1000;
         if (!sessionData.callSpamTracker[callerId]) sessionData.callSpamTracker[callerId] = [];
         sessionData.callSpamTracker[callerId] = sessionData.callSpamTracker[callerId].filter(ts => now - ts < windowMs);
         sessionData.callSpamTracker[callerId].push(now);
         const callCount = sessionData.callSpamTracker[callerId].length;
         sessionData.saveCallSpamData();
-        
-        sessionData.addLog(`[STATS] ${callerId}: ${callCount}/${sessionData.config.CALL_SPAM_THRESHOLD} appels`);
+
+        sessionData.addLog('[STATS] ' + callerId + ': ' + callCount + '/' + sessionData.config.CALL_SPAM_THRESHOLD + ' appels');
 
         if (callCount >= sessionData.config.CALL_SPAM_THRESHOLD) {
-            sessionData.addLog(`[SPAM] SPAM: ${callerId} - ${callCount} appels -> BLOCAGE`);
+            sessionData.addLog('[SPAM] SPAM: ' + callerId + ' - ' + callCount + ' appels -> BLOCAGE');
 
             try {
-                const postCallDelay = HumanBehavior.postCallMessageDelay();
-                await HumanBehavior.naturalDelay(postCallDelay);
-
-                const chat = await client.getChatById(callerId);
-                const blockMsg = MessagePool.pick(MessagePool.callBlocked);
-                await sendMessageHumanized(chat, blockMsg, {}, 0, sessionData);
+                await HumanBehavior.naturalDelay(HumanBehavior.postCallMessageDelay());
+                const blockMsg = MessagePool.pick(MessagePool.callBlocked, callBlockDurationText);
+                await sendMessageHumanized(sock, callerId, blockMsg, {}, 0, sessionData);
             } catch (msgError) {
-                sessionData.addLog(`[!] Message pre-blocage echoue: ${msgError.message}`);
+                sessionData.addLog('[!] Message pre-blocage echoue: ' + msgError.message);
             }
 
             await HumanBehavior.naturalDelay(HumanBehavior.blockDelay());
 
-            // Marquer en interne AVANT le contact.block() pour éviter les appels répétés
-            // même si l'API WhatsApp échoue
             sessionData.blockedUsers[callerId] = {
                 blockedAt: Date.now(),
                 autoUnblock: true,
-                callCount: callCount
+                callCount
             };
             sessionData.saveCallSpamData();
-            sessionData.addLog(`[LOCK] ${callerId} marque bloque en interne`);
+            sessionData.addLog('[LOCK] ' + callerId + ' marque bloque en interne');
 
             try {
-                const contact = await client.getContactById(callerId);
-                if (!contact.isBlocked) {
-                    await contact.block();
+                const normalizedCaller = normalizeJid(callerId);
+                const alreadyBlockedOnWhatsApp = await isUserBlockedOnWhatsApp(sock, buildUserMatchValues(callMatchValues, normalizedCaller));
+                if (!alreadyBlockedOnWhatsApp) {
+                    await sock.updateBlockStatus(normalizedCaller, 'block');
+                    ensureRuntime(sock).blocklist.add(normalizedCaller);
                     rateLimiter.recordAction();
-                    sessionData.addLog(`[LOCK] ${callerId} bloque sur WhatsApp`);
+                    sessionData.addLog('[LOCK] ' + callerId + ' bloque sur WhatsApp');
                 } else {
-                    sessionData.addLog(`[LOCK] ${callerId} deja bloque sur WhatsApp`);
+                    sessionData.addLog('[LOCK] ' + callerId + ' deja bloque sur WhatsApp');
                 }
 
-                // Planifier le déblocage
-                const blockDuration = sessionData.config.CALL_BLOCK_DURATION_MIN * 60 * 1000;
+                const blockDuration = callBlockDurationMin * 60 * 1000;
                 if (sessionData.unblockTimers[callerId]) clearTimeout(sessionData.unblockTimers[callerId]);
                 sessionData.unblockTimers[callerId] = setTimeout(async () => {
                     if (sessionData.blockedUsers[callerId] && sessionData.blockedUsers[callerId].autoUnblock) {
                         try {
-                            const contact = await client.getContactById(callerId);
                             await HumanBehavior.naturalDelay(HumanBehavior.gaussianRandom(3000, 1500));
-                            await contact.unblock();
+                            await sock.updateBlockStatus(normalizedCaller, 'unblock');
+                            ensureRuntime(sock).blocklist.delete(normalizedCaller);
                             delete sessionData.blockedUsers[callerId];
                             delete sessionData.callSpamTracker[callerId];
                             delete sessionData.unblockTimers[callerId];
                             sessionData.saveCallSpamData();
-                            sessionData.addLog(`[UNBLOCK] ${callerId} debloque automatiquement`);
+                            sessionData.addLog('[UNBLOCK] ' + callerId + ' debloque automatiquement');
                         } catch (error) {
-                            sessionData.addLog(`[X] Erreur deblocage auto ${callerId}: ${error.message}`);
+                            sessionData.addLog('[X] Erreur deblocage auto ' + callerId + ': ' + error.message);
                         }
                     }
                 }, blockDuration);
-
             } catch (blockError) {
-                // blockedUsers est déjà marqué — l'utilisateur sera bloqué en interne
-                // même si l'API WhatsApp a échoué
-                sessionData.addLog(`[X] Erreur blocage WhatsApp (blocage interne actif): ${blockError.message}`);
+                sessionData.addLog('[X] Erreur blocage WhatsApp (blocage interne actif): ' + blockError.message);
             }
+
             sessionData.saveStats();
             return;
         }
 
         const msgDelay = HumanBehavior.postCallMessageDelay();
-        sessionData.addLog(`[TIMER] Message dans ${Math.round(msgDelay / 1000)}s...`);
+        sessionData.addLog('[TIMER] Message dans ' + Math.round(msgDelay / 1000) + 's...');
         await HumanBehavior.naturalDelay(msgDelay);
 
         try {
-            const chat = await client.getChatById(callerId);
             const remaining = sessionData.config.CALL_SPAM_THRESHOLD - callCount;
-            const rejectMsg = MessagePool.pick(
-                MessagePool.callRejections, remaining
-            );
-            await sendMessageHumanized(chat, rejectMsg, {}, 0, sessionData);
-            sessionData.addLog(`[MSG] Message envoye a ${callerId}`);
+            const rejectMsg = MessagePool.pick(MessagePool.callRejections, remaining, callBlockDurationText);
+            await sendMessageHumanized(sock, callerId, rejectMsg, {}, 0, sessionData);
+            sessionData.addLog('[MSG] Message envoye a ' + callerId);
         } catch (msgError) {
-            sessionData.addLog(`[X] Erreur message post-appel: ${msgError.message}`);
+            sessionData.addLog('[X] Erreur message post-appel: ' + msgError.message);
         }
-
     } catch (error) {
-        const sessionData = getSessionData(sessionId);
-        sessionData.addLog(`[X] Erreur handler appel: ${error.message}`);
+        const sd = getSessionData(sessionId);
+        sd.addLog('[X] Erreur handler appel: ' + error.message);
     } finally {
-        const lockKey = `${sessionId}_${call.from}`;
-        callProcessingLock.delete(lockKey);
+        if (lockKey) callProcessingLock.delete(lockKey);
     }
 }
 
-// ============================================================
-// 🌐 SERVEUR WEB EXPRESS
 // ============================================================
 
 const app = express();
@@ -5162,7 +6752,7 @@ app.post('/api/admin/subscription/notify', requireAdmin, async (req, res) => {
         if (state >= 2) {
             // Redémarrer la session si elle était déconnectée
             try {
-                sessionManager.startSession(sessionId);
+                await sessionManager.startSession(sessionId);
                 restarted++;
                 addLog(`[SUB] Session ${sessionId} redémarrée par ${req.user.username}`);
             } catch (e) {
@@ -5268,7 +6858,7 @@ app.get('/api/sessions', requireAuth, (req, res) => {
     });
 });
 
-app.post('/api/sessions', requireAuth, (req, res) => {
+app.post('/api/sessions', requireAuth, async (req, res) => {
     try {
         const { name } = req.body;
         const username = req.user.username;
@@ -5279,8 +6869,8 @@ app.post('/api/sessions', requireAuth, (req, res) => {
             return res.status(403).json({ success: false, message: check.reason, requireSubscription: check.requireSubscription || false });
         }
         
-        const sessionData = sessionManager.createSession(null, name || 'New Session', username);
-        sessionManager.startSession(sessionData.id);
+        const sessionData = await sessionManager.createSession(null, name || 'New Session', username);
+        await sessionManager.startSession(sessionData.id);
         addLog(`[NEW] Nouvelle session créée: ${sessionData.id} par ${username}`);
         res.json({ success: true, session: sessionData });
     } catch (error) {
@@ -5313,7 +6903,7 @@ app.post('/api/sessions/:id/activate', requireAuth, (req, res) => {
 });
 
 // Démarrer manuellement une session
-app.post('/api/sessions/:id/start', requireAuth, (req, res) => {
+app.post('/api/sessions/:id/start', requireAuth, async (req, res) => {
     const sessionId = req.params.id;
     const session = sessionManager.sessionsList[sessionId];
     
@@ -5334,7 +6924,7 @@ app.post('/api/sessions/:id/start', requireAuth, (req, res) => {
         return res.status(403).json({ success: false, message: 'SUBSCRIPTION_REQUIRED', requireSubscription: true });
     }
     
-    const success = sessionManager.startSession(sessionId);
+    const success = await sessionManager.startSession(sessionId);
     if (success) {
         res.json({ success: true, message: 'Session démarrée' });
     } else {
@@ -5387,6 +6977,25 @@ app.get('/api/status', requireAuth, (req, res) => {
     });
 });
 
+function normalizeConfigNumber(value, fallback, min = null, max = null) {
+    let normalized = Number.parseInt(value, 10);
+    if (!Number.isFinite(normalized)) normalized = fallback;
+    if (min !== null) normalized = Math.max(min, normalized);
+    if (max !== null) normalized = Math.min(max, normalized);
+    return normalized;
+}
+
+function normalizeConfigBoolean(value, fallback = true) {
+    if (value === undefined || value === null) return fallback;
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'string') {
+        const lowered = value.trim().toLowerCase();
+        if (['true', '1', 'yes', 'on'].includes(lowered)) return true;
+        if (['false', '0', 'no', 'off'].includes(lowered)) return false;
+    }
+    return Boolean(value);
+}
+
 app.get('/api/config', requireAuth, (req, res) => {
     // Utiliser la config de la session active ou la config globale
     const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.query.sessionId);
@@ -5395,20 +7004,22 @@ app.get('/api/config', requireAuth, (req, res) => {
     
     res.json({
         sessionId: sessionId || 'global',
-        MAX_WARNINGS: config.MAX_WARNINGS,
-        WARNING_EXPIRY_HOURS: config.WARNING_EXPIRY_HOURS,
-        SCAN_LIMIT: config.SCAN_LIMIT,
-        AUTO_SCAN_INTERVAL_HOURS: config.AUTO_SCAN_INTERVAL_HOURS,
-        DELAY_BETWEEN_ACTIONS_MIN: config.DELAY_BETWEEN_ACTIONS_MIN,
-        DELAY_BETWEEN_ACTIONS_MAX: config.DELAY_BETWEEN_ACTIONS_MAX,
+        MAX_WARNINGS: normalizeConfigNumber(config.MAX_WARNINGS, 3, 1, 10),
+        WARNING_EXPIRY_HOURS: normalizeConfigNumber(config.WARNING_EXPIRY_HOURS, 24, 1, 168),
+        SCAN_LIMIT: normalizeConfigNumber(config.SCAN_LIMIT, 100, 1, 1000),
+        AUTO_SCAN_INTERVAL_HOURS: normalizeConfigNumber(config.AUTO_SCAN_INTERVAL_HOURS, 24, 1, 168),
+        DELAY_BETWEEN_ACTIONS_MIN: normalizeConfigNumber(config.DELAY_BETWEEN_ACTIONS_MIN, 2000, 0, 60000),
+        DELAY_BETWEEN_ACTIONS_MAX: normalizeConfigNumber(config.DELAY_BETWEEN_ACTIONS_MAX, 5000, 0, 120000),
+        DELAY_BETWEEN_GROUPS_MIN: normalizeConfigNumber(config.DELAY_BETWEEN_GROUPS_MIN, 5000, 0, 300000),
+        DELAY_BETWEEN_GROUPS_MAX: normalizeConfigNumber(config.DELAY_BETWEEN_GROUPS_MAX, 15000, 0, 600000),
         WELCOME_MESSAGE: config.WELCOME_MESSAGE,
-        WELCOME_ENABLED: config.WELCOME_ENABLED,
-        AUTO_SCAN_ENABLED: config.AUTO_SCAN_ENABLED,
-        CALL_REJECT_ENABLED: config.CALL_REJECT_ENABLED,
-        CALL_SPAM_THRESHOLD: config.CALL_SPAM_THRESHOLD,
-        CALL_SPAM_WINDOW_MIN: config.CALL_SPAM_WINDOW_MIN,
-        CALL_BLOCK_DURATION_MIN: config.CALL_BLOCK_DURATION_MIN,
-        DELETE_STATUS_MENTIONS: config.DELETE_STATUS_MENTIONS
+        WELCOME_ENABLED: normalizeConfigBoolean(config.WELCOME_ENABLED, true),
+        AUTO_SCAN_ENABLED: normalizeConfigBoolean(config.AUTO_SCAN_ENABLED, true),
+        CALL_REJECT_ENABLED: normalizeConfigBoolean(config.CALL_REJECT_ENABLED, true),
+        CALL_SPAM_THRESHOLD: normalizeConfigNumber(config.CALL_SPAM_THRESHOLD, 4, 1, 50),
+        CALL_SPAM_WINDOW_MIN: normalizeConfigNumber(config.CALL_SPAM_WINDOW_MIN, 10, 1, 1440),
+        CALL_BLOCK_DURATION_MIN: normalizeConfigNumber(config.CALL_BLOCK_DURATION_MIN, 30, 1, 10080),
+        DELETE_STATUS_MENTIONS: normalizeConfigBoolean(config.DELETE_STATUS_MENTIONS, true)
     });
 });
 
@@ -5420,20 +7031,39 @@ app.post('/api/config', requireAuth, (req, res) => {
         const config = sessionData ? sessionData.config : CONFIG;
         
         const nc = req.body;
-        if (nc.MAX_WARNINGS !== undefined) config.MAX_WARNINGS = parseInt(nc.MAX_WARNINGS);
-        if (nc.WARNING_EXPIRY_HOURS !== undefined) config.WARNING_EXPIRY_HOURS = parseInt(nc.WARNING_EXPIRY_HOURS);
-        if (nc.SCAN_LIMIT !== undefined) config.SCAN_LIMIT = parseInt(nc.SCAN_LIMIT);
-        if (nc.AUTO_SCAN_INTERVAL_HOURS !== undefined) config.AUTO_SCAN_INTERVAL_HOURS = parseInt(nc.AUTO_SCAN_INTERVAL_HOURS);
-        if (nc.DELAY_BETWEEN_ACTIONS_MIN !== undefined) config.DELAY_BETWEEN_ACTIONS_MIN = parseInt(nc.DELAY_BETWEEN_ACTIONS_MIN);
-        if (nc.DELAY_BETWEEN_ACTIONS_MAX !== undefined) config.DELAY_BETWEEN_ACTIONS_MAX = parseInt(nc.DELAY_BETWEEN_ACTIONS_MAX);
-        if (nc.WELCOME_MESSAGE !== undefined) config.WELCOME_MESSAGE = nc.WELCOME_MESSAGE;
-        if (nc.WELCOME_ENABLED !== undefined) config.WELCOME_ENABLED = nc.WELCOME_ENABLED;
-        if (nc.AUTO_SCAN_ENABLED !== undefined) config.AUTO_SCAN_ENABLED = nc.AUTO_SCAN_ENABLED;
-        if (nc.CALL_REJECT_ENABLED !== undefined) config.CALL_REJECT_ENABLED = nc.CALL_REJECT_ENABLED;
-        if (nc.CALL_SPAM_THRESHOLD !== undefined) config.CALL_SPAM_THRESHOLD = parseInt(nc.CALL_SPAM_THRESHOLD);
-        if (nc.CALL_SPAM_WINDOW_MIN !== undefined) config.CALL_SPAM_WINDOW_MIN = parseInt(nc.CALL_SPAM_WINDOW_MIN);
-        if (nc.CALL_BLOCK_DURATION_MIN !== undefined) config.CALL_BLOCK_DURATION_MIN = parseInt(nc.CALL_BLOCK_DURATION_MIN);
-        if (nc.DELETE_STATUS_MENTIONS !== undefined) config.DELETE_STATUS_MENTIONS = nc.DELETE_STATUS_MENTIONS === true || nc.DELETE_STATUS_MENTIONS === 'true';
+        const setNumber = (key, fallback, min, max) => {
+            if (nc[key] !== undefined) {
+                config[key] = normalizeConfigNumber(nc[key], normalizeConfigNumber(config[key], fallback, min, max), min, max);
+            }
+        };
+        const setBoolean = (key, fallback) => {
+            if (nc[key] !== undefined) config[key] = normalizeConfigBoolean(nc[key], fallback);
+        };
+
+        setNumber('MAX_WARNINGS', 3, 1, 10);
+        setNumber('WARNING_EXPIRY_HOURS', 24, 1, 168);
+        setNumber('SCAN_LIMIT', 100, 1, 1000);
+        setNumber('AUTO_SCAN_INTERVAL_HOURS', 24, 1, 168);
+        setNumber('DELAY_BETWEEN_ACTIONS_MIN', 2000, 0, 60000);
+        setNumber('DELAY_BETWEEN_ACTIONS_MAX', 5000, 0, 120000);
+        setNumber('DELAY_BETWEEN_GROUPS_MIN', 5000, 0, 300000);
+        setNumber('DELAY_BETWEEN_GROUPS_MAX', 15000, 0, 600000);
+        setNumber('CALL_SPAM_THRESHOLD', 4, 1, 50);
+        setNumber('CALL_SPAM_WINDOW_MIN', 10, 1, 1440);
+        setNumber('CALL_BLOCK_DURATION_MIN', 30, 1, 10080);
+
+        if (config.DELAY_BETWEEN_ACTIONS_MAX < config.DELAY_BETWEEN_ACTIONS_MIN) {
+            config.DELAY_BETWEEN_ACTIONS_MAX = config.DELAY_BETWEEN_ACTIONS_MIN;
+        }
+        if (config.DELAY_BETWEEN_GROUPS_MAX < config.DELAY_BETWEEN_GROUPS_MIN) {
+            config.DELAY_BETWEEN_GROUPS_MAX = config.DELAY_BETWEEN_GROUPS_MIN;
+        }
+
+        if (nc.WELCOME_MESSAGE !== undefined) config.WELCOME_MESSAGE = String(nc.WELCOME_MESSAGE);
+        setBoolean('WELCOME_ENABLED', true);
+        setBoolean('AUTO_SCAN_ENABLED', true);
+        setBoolean('CALL_REJECT_ENABLED', true);
+        setBoolean('DELETE_STATUS_MENTIONS', true);
         
         if (sessionData) {
             sessionData.saveConfig();
@@ -5454,10 +7084,10 @@ app.get('/api/stats', requireAuth, async (req, res) => {
         const activeClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
         
         if (activeClient && activeClient.info) {
-            const chats = await activeClient.getChats();
+            const chats = await getAllChats(activeClient);
             let adminCount = 0;
             for (const g of chats.filter(c => c.isGroup)) {
-                const bp = g.participants?.find(p => p.id._serialized === activeClient.info.wid._serialized);
+                const bp = findBotParticipant(activeClient, g.participants || []);
                 if (bp?.isAdmin) adminCount++;
             }
             stats.adminGroups = adminCount;
@@ -5533,14 +7163,14 @@ app.get('/api/stats/groups', requireAuth, async (req, res) => {
         const activeClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
         if (!activeClient || !activeClient.info) return res.json({ sessionId: sessionId || 'global', groups: [] });
         
-        const chats = await activeClient.getChats();
+        const chats = await getAllChatsWithOptions(activeClient, { retries: 1, retryDelayMs: 5000 });
         const groups = [];
         for (const g of chats.filter(c => c.isGroup)) {
-            const bp = g.participants?.find(p => p.id._serialized === activeClient.info.wid._serialized);
+            const bp = findBotParticipant(activeClient, g.participants || []);
             if (bp?.isAdmin) {
                 groups.push({
                     name: g.name,
-                    id: g.id._serialized,
+                    id: g.jid,
                     participants: g.participants?.length || 0
                 });
             }
@@ -5693,18 +7323,19 @@ app.get('/api/groups', requireAuth, async (req, res) => {
         const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.query.sessionId);
         const activeClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
         const sessionData = sessionId ? getSessionData(sessionId) : null;
-        
+
         if (!activeClient) return res.json([]);
-        const chats = await activeClient.getChats();
+        const chats = await getAllChatsWithOptions(activeClient, { retries: 1, retryDelayMs: 5000 });
         const groupExceptions = sessionData ? sessionData.groupExceptions : GROUP_EXCEPTIONS;
-        
+
         res.json(chats.filter(c => c.isGroup).map(g => {
-            const bp = g.participants?.find(p => p.id._serialized === activeClient.info.wid._serialized);
+            const bp = findBotParticipant(activeClient, g.participants || []);
             return {
-                id: g.id._serialized, name: g.name,
+                id: g.jid,
+                name: g.name,
                 participants: g.participants?.length || 0,
                 isAdmin: bp?.isAdmin || false,
-                isExcluded: groupExceptions.excludedGroups.includes(g.id._serialized)
+                isExcluded: groupExceptions.excludedGroups.includes(g.jid)
             };
         }).filter(g => g.isAdmin));
     } catch (error) { res.status(500).json([]); }
@@ -5715,37 +7346,41 @@ app.get('/api/groups/all', requireAuth, async (req, res) => {
         const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.query.sessionId);
         const activeClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
         const sessionData = sessionId ? getSessionData(sessionId) : null;
-        
+
         if (!activeClient) {
             if (sessionData) sessionData.addLog('[!] /api/groups/all: Aucune session active');
             else addLog('[!] /api/groups/all: Aucune session active');
             return res.json([]);
         }
-        const chats = await activeClient.getChats();
-        const botId = activeClient.info.wid._serialized;
+
+        const chats = await getAllChatsWithOptions(activeClient, { retries: 1, retryDelayMs: 5000 });
         const groups = [];
-        
+
         for (const g of chats.filter(c => c.isGroup)) {
-            // Vérifier si le bot est encore dans le groupe
-            const botParticipant = g.participants?.find(p => p.id._serialized === botId);
-            if (!botParticipant) continue; // Bot n'est plus dans ce groupe
-            
+            const botParticipant = findBotParticipant(activeClient, g.participants || []);
+
             groups.push({
-                id: g.id._serialized, name: g.name,
+                id: g.jid,
+                name: g.name,
                 participants: g.participants?.length || 0,
-                isAdmin: botParticipant.isAdmin || false,
-                isSuperAdmin: botParticipant.isSuperAdmin || false
+                isAdmin: botParticipant?.isAdmin || false,
+                isSuperAdmin: botParticipant?.isSuperAdmin || false
             });
         }
-        
-        if (sessionData) sessionData.addLog(`[GROUPS] /api/groups/all: ${groups.length} groupes trouves`);
-        else addLog(`[GROUPS] /api/groups/all: ${groups.length} groupes trouves`);
+
+        if (sessionData) sessionData.addLog('[GROUPS] /api/groups/all: ' + groups.length + ' groupes trouves');
+        else addLog('[GROUPS] /api/groups/all: ' + groups.length + ' groupes trouves');
         res.json(groups);
     } catch (error) {
         const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.query.sessionId);
         const sessionData = sessionId ? getSessionData(sessionId) : null;
-        if (sessionData) sessionData.addLog(`[X] Erreur /api/groups/all: ${error.message}`);
-        else addLog(`[X] Erreur /api/groups/all: ${error.message}`);
+        if (isRateLimitError(error)) {
+            if (sessionData) sessionData.addLog('[GROUPS] /api/groups/all: limite WhatsApp temporaire, cache indisponible');
+            else addLog('[GROUPS] /api/groups/all: limite WhatsApp temporaire, cache indisponible');
+            return res.json([]);
+        }
+        if (sessionData) sessionData.addLog('[X] Erreur /api/groups/all: ' + error.message);
+        else addLog('[X] Erreur /api/groups/all: ' + error.message);
         res.status(500).json([]);
     }
 });
@@ -5755,32 +7390,26 @@ app.post('/api/groups/leave', requireAuth, async (req, res) => {
         const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.body.sessionId);
         const activeClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
         const sessionData = sessionId ? getSessionData(sessionId) : null;
-        
+
         if (!activeClient) return res.status(400).json({ success: false, message: 'Aucune session active' });
         const { groupId } = req.body;
         if (!groupId) return res.status(400).json({ success: false, message: 'groupId requis' });
 
-        const chat = await activeClient.getChatById(groupId);
-        if (!chat || !chat.isGroup) return res.status(404).json({ success: false, message: 'Groupe non trouvé' });
+        const chat = await getChatInfo(activeClient, groupId, true);
+        if (!chat || !chat.isGroup) return res.status(404).json({ success: false, message: 'Groupe non trouve' });
 
         const groupName = chat.name;
-        await chat.leave();
-        
-        // Supprimer le chat de la liste locale pour forcer le rafraîchissement
-        try {
-            await chat.delete();
-        } catch (e) {
-            // Ignore si non supporté
-        }
-        
-        if (sessionData) sessionData.addLog(`[LEAVE] Bot a quitte le groupe: ${groupName}`);
-        else addLog(`[LEAVE] Bot a quitte le groupe: ${groupName}`);
-        res.json({ success: true, message: 'Groupe quitté' });
+        await activeClient.groupLeave(chat.jid);
+        await deleteChatLocal(activeClient, chat.jid);
+
+        if (sessionData) sessionData.addLog('[LEAVE] Bot a quitte le groupe: ' + groupName);
+        else addLog('[LEAVE] Bot a quitte le groupe: ' + groupName);
+        res.json({ success: true, message: 'Groupe quitte' });
     } catch (error) {
         const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.body.sessionId);
         const sessionData = sessionId ? getSessionData(sessionId) : null;
-        if (sessionData) sessionData.addLog(`[X] Erreur quitter groupe: ${error.message}`);
-        else addLog(`[X] Erreur quitter groupe: ${error.message}`);
+        if (sessionData) sessionData.addLog('[X] Erreur quitter groupe: ' + error.message);
+        else addLog('[X] Erreur quitter groupe: ' + error.message);
         res.status(500).json({ success: false, message: error.message });
     }
 });
@@ -5790,28 +7419,29 @@ app.delete('/api/groups/delete', requireAuth, async (req, res) => {
         const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.body.sessionId);
         const activeClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
         const sessionData = sessionId ? getSessionData(sessionId) : null;
-        
+
         if (!activeClient) return res.status(400).json({ success: false, message: 'Aucune session active' });
         const { groupId } = req.body;
         if (!groupId) return res.status(400).json({ success: false, message: 'groupId requis' });
 
-        const chat = await activeClient.getChatById(groupId);
-        if (!chat || !chat.isGroup) return res.status(404).json({ success: false, message: 'Groupe non trouvé' });
+        const chat = await getChatInfo(activeClient, groupId, true);
+        if (!chat || !chat.isGroup) return res.status(404).json({ success: false, message: 'Groupe non trouve' });
 
-        const botParticipant = chat.participants?.find(p => p.id._serialized === activeClient.info.wid._serialized);
+        const botParticipant = findBotParticipant(activeClient, chat.participants || []);
         if (!botParticipant?.isAdmin) {
-            return res.status(403).json({ success: false, message: 'Le bot doit être admin pour supprimer ce groupe' });
+            return res.status(403).json({ success: false, message: 'Le bot doit etre admin pour supprimer ce groupe' });
         }
 
-        await chat.leave();
-        if (sessionData) sessionData.addLog(`[SUPPR] Groupe supprime (bot etait admin): ${chat.name}`);
-        else addLog(`[SUPPR] Groupe supprime (bot etait admin): ${chat.name}`);
-        res.json({ success: true, message: 'Groupe quitté (suppression complète non supportée par l\'API)' });
+        await activeClient.groupLeave(chat.jid);
+        await deleteChatLocal(activeClient, chat.jid);
+        if (sessionData) sessionData.addLog('[SUPPR] Groupe supprime (bot etait admin): ' + chat.name);
+        else addLog('[SUPPR] Groupe supprime (bot etait admin): ' + chat.name);
+        res.json({ success: true, message: 'Groupe quitte (suppression complete non supportee par l API)' });
     } catch (error) {
         const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.body.sessionId);
         const sessionData = sessionId ? getSessionData(sessionId) : null;
-        if (sessionData) sessionData.addLog(`[X] Erreur suppression groupe: ${error.message}`);
-        else addLog(`[X] Erreur suppression groupe: ${error.message}`);
+        if (sessionData) sessionData.addLog('[X] Erreur suppression groupe: ' + error.message);
+        else addLog('[X] Erreur suppression groupe: ' + error.message);
         res.status(500).json({ success: false, message: error.message });
     }
 });
@@ -5877,32 +7507,143 @@ app.post('/api/groups/welcome', requireAuth, (req, res) => {
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
+app.get('/api/groups/participants', requireAuth, async (req, res) => {
+    try {
+        const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.query.sessionId);
+        const activeClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
+        const sessionData = sessionId ? getSessionData(sessionId) : null;
+        const groupId = req.query.groupId;
+
+        if (!activeClient) return res.status(400).json({ success: false, message: 'Aucune session active' });
+        if (!groupId) return res.status(400).json({ success: false, message: 'groupId requis' });
+
+        await getAllChatsWithOptions(activeClient, { retries: 1, retryDelayMs: 5000 }).catch(() => {});
+        const { chat, participants } = await getGroupParticipantsDetailed(activeClient, groupId);
+        if (sessionData) sessionData.addLog('[GROUPS] Participants listes: ' + participants.length + ' dans ' + chat.name);
+        else addLog('[GROUPS] Participants listes: ' + participants.length + ' dans ' + chat.name);
+
+        res.json({
+            success: true,
+            sessionId: sessionId || 'global',
+            group: { id: chat.jid, name: chat.name, participants: participants.length },
+            participants
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+app.get('/api/jobs/:id', requireAuth, (req, res) => {
+    const job = backgroundJobs.get(req.params.id);
+    if (!job) return res.status(404).json({ success: false, message: 'Tache introuvable ou expiree' });
+    if (job.ownerUsername && !req.user?.isAdmin && job.ownerUsername !== req.user?.username) {
+        return res.status(403).json({ success: false, message: 'Acces refuse' });
+    }
+    res.json({ success: true, job: sanitizeBackgroundJob(job) });
+});
+
+app.post('/api/groups/message-users', requireAuth, async (req, res) => {
+    try {
+        const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.body.sessionId);
+        const activeClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
+        const sessionData = sessionId ? getSessionData(sessionId) : null;
+
+        if (!activeClient) return res.status(400).json({ success: false, message: 'Aucune session active' });
+
+        const recipients = uniqueRecipients(parseRecipientValues(req.body.recipients));
+        const job = startBackgroundBulkMessageJob({
+            sock: activeClient,
+            sessionData,
+            sessionId: sessionId || 'global',
+            ownerUsername: req.user?.username,
+            recipients,
+            message: String(req.body.message || ''),
+            options: req.body,
+            type: 'group-message-users',
+            label: 'Message aux participants selectionnes'
+        });
+        res.status(202).json({ success: true, background: true, jobId: job.id, sessionId: sessionId || 'global', total: job.total, job });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+app.post('/api/whatsapp/bulk-message', requireAuth, async (req, res) => {
+    try {
+        const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.body.sessionId);
+        const activeClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
+        const sessionData = sessionId ? getSessionData(sessionId) : null;
+
+        if (!activeClient) return res.status(400).json({ success: false, message: 'Aucune session active' });
+
+        const rawRecipients = [
+            ...parseRecipientValues(req.body.numbers),
+            ...parseRecipientValues(req.body.recipients)
+        ];
+        const job = startBackgroundBulkMessageJob({
+            sock: activeClient,
+            sessionData,
+            sessionId: sessionId || 'global',
+            ownerUsername: req.user?.username,
+            recipients: rawRecipients,
+            message: String(req.body.message || ''),
+            options: req.body,
+            type: 'bulk-whatsapp-message',
+            label: 'Envoi WhatsApp cible'
+        });
+        res.status(202).json({ success: true, background: true, jobId: job.id, sessionId: sessionId || 'global', total: job.total, job });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
 app.get('/api/users/exceptions', requireAuth, (req, res) => {
     const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.query.sessionId);
     const sessionData = sessionId ? getSessionData(sessionId) : null;
     res.json({ sessionId: sessionId || 'global', ...(sessionData ? sessionData.userExceptions : USER_EXCEPTIONS) });
 });
 
-app.post('/api/users/exceptions', requireAuth, (req, res) => {
+app.post('/api/users/exceptions', requireAuth, async (req, res) => {
     try {
         const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.body.sessionId);
+        const activeClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
         const sessionData = sessionId ? getSessionData(sessionId) : null;
         const exceptions = sessionData ? sessionData.userExceptions : USER_EXCEPTIONS;
         
         const { userId, linkException, callException } = req.body;
         if (!userId) return res.status(400).json({ success: false, message: 'userId requis' });
 
-        let userEntry = exceptions.excludedUsers.find(u => u.id === userId);
+        const aliases = await resolveUserAliases(activeClient, userId);
+        const userIndex = exceptions.excludedUsers.findIndex(u => userExceptionMatches(u, aliases));
+        let userEntry = userIndex >= 0 ? exceptions.excludedUsers[userIndex] : null;
+
+        if (userEntry && typeof userEntry !== 'object') {
+            userEntry = {
+                id: userEntry,
+                aliases: buildUserMatchValues(userEntry),
+                linkException: true,
+                callException: false
+            };
+            exceptions.excludedUsers[userIndex] = userEntry;
+        }
 
         if (userEntry) {
             if (linkException !== undefined) userEntry.linkException = linkException;
             if (callException !== undefined) userEntry.callException = callException;
+            userEntry.aliases = Array.from(new Set([...(userEntry.aliases || []), ...aliases]));
         } else {
-            exceptions.excludedUsers.push({
+            userEntry = {
                 id: userId,
+                aliases,
                 linkException: linkException === true,
                 callException: callException === true
-            });
+            };
+            exceptions.excludedUsers.push(userEntry);
+        }
+
+        if (callException === true && sessionData && activeClient) {
+            const cleared = await clearCallBlocksForValues(activeClient, sessionData, buildUserMatchValues(userId, aliases));
+            if (cleared) sessionData.addLog('[UNBLOCK] Exception appels activee, blocage retire pour ' + userId);
         }
 
         if (sessionData) sessionData.saveUserExceptions();
@@ -5918,7 +7659,8 @@ app.delete('/api/users/exceptions', requireAuth, (req, res) => {
         const exceptions = sessionData ? sessionData.userExceptions : USER_EXCEPTIONS;
         
         const { userId } = req.body;
-        exceptions.excludedUsers = exceptions.excludedUsers.filter(u => u.id !== userId);
+        const values = buildUserMatchValues(userId);
+        exceptions.excludedUsers = exceptions.excludedUsers.filter(u => !userExceptionMatches(u, values));
         
         if (sessionData) sessionData.saveUserExceptions();
         else saveUserExceptions();
@@ -5956,13 +7698,13 @@ app.post('/api/blocked/unblock', requireAuth, async (req, res) => {
         const blocked = sessionData ? sessionData.blockedUsers : blockedUsers;
         const timers = sessionData ? sessionData.unblockTimers : unblockTimers;
         const tracker = sessionData ? sessionData.callSpamTracker : callSpamTracker;
-        
+
         if (!activeClient) return res.status(400).json({ success: false, message: 'Aucune session active' });
         const { userId } = req.body;
-        if (!blocked[userId]) return res.status(404).json({ success: false, message: 'Non bloqué' });
+        if (!blocked[userId]) return res.status(404).json({ success: false, message: 'Non bloque' });
 
-        const contact = await activeClient.getContactById(userId);
-        await contact.unblock();
+        await activeClient.updateBlockStatus(normalizeJid(userId), 'unblock');
+        ensureRuntime(activeClient).blocklist.delete(normalizeJid(userId));
 
         if (timers[userId]) {
             clearTimeout(timers[userId]);
@@ -5971,15 +7713,15 @@ app.post('/api/blocked/unblock', requireAuth, async (req, res) => {
 
         delete blocked[userId];
         delete tracker[userId];
-        
+
         if (sessionData) {
             sessionData.saveCallSpamData();
-            sessionData.addLog(`[UNBLOCK] ${userId} debloque manuellement`);
+            sessionData.addLog('[UNBLOCK] ' + userId + ' debloque manuellement');
         } else {
             saveCallSpamData();
-            addLog(`[UNBLOCK] ${userId} debloque manuellement`);
+            addLog('[UNBLOCK] ' + userId + ' debloque manuellement');
         }
-        res.json({ success: true, sessionId: sessionId || 'global', message: 'Débloqué' });
+        res.json({ success: true, sessionId: sessionId || 'global', message: 'Debloque' });
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
@@ -6039,11 +7781,7 @@ app.put('/api/menus/:id', requireAuth, (req, res) => {
             return res.status(404).json({ success: false, message: 'Menu non trouvé' });
         }
 
-        menus[menuId] = {
-            ...menus[menuId],
-            ...req.body,
-            id: menuId
-        };
+        menus[menuId] = normalizeMenuConfig({ ...menus[menuId], ...req.body, id: menuId }, menus[menuId]);
         
         if (sessionData) {
             sessionData.saveMenus();
@@ -6090,7 +7828,7 @@ app.post('/api/menus/:id/test', requireAuth, async (req, res) => {
         const activeClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
         const sessionData = sessionId ? getSessionData(sessionId) : null;
         const menus = sessionData ? sessionData.interactiveMenus : interactiveMenus;
-        
+
         if (!activeClient) {
             return res.status(400).json({ success: false, message: 'Aucune session active' });
         }
@@ -6099,18 +7837,19 @@ app.post('/api/menus/:id/test', requireAuth, async (req, res) => {
         const { groupId } = req.body;
 
         if (!menus[menuId]) {
-            return res.status(404).json({ success: false, message: 'Menu non trouvé' });
+            return res.status(404).json({ success: false, message: 'Menu non trouve' });
         }
 
-        const chats = await activeClient.getChats();
+        const chats = await getAllChats(activeClient);
         let targetChat;
 
         if (groupId) {
-            targetChat = chats.find(c => c.id._serialized === groupId);
+            targetChat = chats.find(c => c.jid === groupId);
+            if (!targetChat) targetChat = await getChatInfo(activeClient, groupId, true).catch(() => null);
         } else {
             targetChat = chats.find(c => {
                 if (!c.isGroup) return false;
-                const bp = c.participants?.find(p => p.id._serialized === activeClient.info.wid._serialized);
+                const bp = findBotParticipant(activeClient, c.participants || []);
                 return bp?.isAdmin || bp?.isSuperAdmin;
             });
         }
@@ -6126,18 +7865,19 @@ app.post('/api/menus/:id/test', requireAuth, async (req, res) => {
             });
         }
 
-        const sent = await sendInteractiveMenu(targetChat, menuId, sessionData);
+        const sent = await sendInteractiveMenu(activeClient, targetChat, menuId, sessionData);
         if (!sent) {
             return res.status(500).json({ success: false, message: 'Menu non envoye' });
         }
 
-        if (sessionData) sessionData.addLog(`[TEST] Menu teste: ${menuId} dans ${targetChat.name}`);
-        else addLog(`[TEST] Menu teste: ${menuId} dans ${targetChat.name}`);
+        if (sessionData) sessionData.addLog('[TEST] Menu teste: ' + menuId + ' dans ' + targetChat.name);
+        else addLog('[TEST] Menu teste: ' + menuId + ' dans ' + targetChat.name);
         res.json({ success: true, sessionId: sessionId || 'global', groupName: targetChat.name });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
 });
+
 
 // ============ API ANNONCES ============
 
@@ -6167,35 +7907,32 @@ app.get('/api/announcements/groups', requireAuth, async (req, res) => {
     try {
         const sessionId = sessionManager.getEffectiveSessionId(req.user?.username, req.user?.isAdmin, req.query.sessionId);
         const sessionClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : sessionManager.getActiveClient();
-        
+
         if (!sessionClient || !sessionClient.info) {
-            return res.json({ success: true, groups: [], message: 'Session non connectée' });
+            return res.json({ success: true, groups: [], message: 'Session non connectee' });
         }
-        
-        const chats = await sessionClient.getChats();
-        const botId = sessionClient.info.wid._serialized;
-        const allGroups = chats.filter(c => c.isGroup);
+
+        const chats = await getAllChats(sessionClient);
         const adminGroups = [];
-        
-        for (const chat of allGroups) {
-            const botParticipant = chat.participants?.find(p => p.id._serialized === botId);
+
+        for (const chat of chats.filter(c => c.isGroup)) {
+            const botParticipant = findBotParticipant(sessionClient, chat.participants || []);
             const isAdmin = botParticipant?.isAdmin || botParticipant?.isSuperAdmin || false;
             if (isAdmin) {
                 adminGroups.push({
-                    id: chat.id._serialized,
+                    id: chat.jid,
                     name: chat.name,
                     participants: chat.participants?.length || 0
                 });
             }
         }
-        
+
         res.json({ success: true, groups: adminGroups, total: adminGroups.length });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
 });
 
-// Statistiques des annonces (AVANT :id pour ne pas être capturé par le paramètre)
 app.get('/api/announcements/stats', requireAuth, (req, res) => {
     const stats = announcementsManager.getStats();
     res.json({ success: true, stats });
@@ -6528,7 +8265,7 @@ console.log('   └─ Multi-sessions activé');
 sessionManager.cleanupOrphanSessions();
 
 // Initialiser toutes les sessions existantes
-sessionManager.initializeAllSessions();
+sessionManager.initializeAllSessions().catch(e => addLog('[START] Erreur initialisation sessions: ' + e.message));
 
 // Générer l'image OG si nécessaire (après le démarrage du serveur)
 setTimeout(async () => {
@@ -6542,7 +8279,7 @@ setTimeout(async () => {
     }
 }, 3000);
 
-// Mettre à jour la variable client pour la compatibilité
+// Mettre a jour la reference active Baileys
 const updateClientReference = () => {
     client = sessionManager.getActiveClient();
     if (client) {
@@ -6579,10 +8316,23 @@ setTimeout(async () => {
     }
 }, 30000);
 console.log('   |- Jitter sur les intervalles de scan');
-console.log('   |- Suppression V3 avec VERIFICATION post-delete');
+console.log('   |- Suppression via Baileys (delete message key)');
 console.log('');
-console.log('Commandes admin dans les groupes:');
-console.log('   ├─ !scan        → Scanner le groupe actuel');
-console.log('   ├─ !scanall     → Scanner tous les groupes');
-console.log('   ├─ !diagdelete  → Diagnostic des méthodes de suppression');
-console.log('   └─ !testdelete  → Tester la suppression sur un message du bot\n');
+console.log('Commandes WhatsApp:');
+console.log('   ├─ !help        -> Aide publique');
+console.log('   ├─ !status      -> Etat rapide du bot');
+console.log('   ├─ !cache       -> Messages connus dans le groupe');
+console.log('   ├─ !scan        -> Scanner le groupe actuel');
+console.log('   ├─ !scanstatus  -> Scanner seulement les notifications de statut');
+console.log('   ├─ !scanall     -> Scanner tous les groupes admin');
+console.log('   ├─ !groupinfo   -> Infos du groupe');
+console.log('   ├─ !config      -> Configuration active');
+console.log('   ├─ !excludehere -> Exclure ce groupe');
+console.log('   ├─ !includehere -> Reactiver ce groupe');
+console.log('   ├─ !warnings    -> Voir les avertissements');
+console.log('   ├─ !resetwarn   -> Effacer les avertissements');
+console.log('   ├─ !blocked     -> Voir les numeros bloques');
+console.log('   ├─ !unblock     -> Debloquer un numero');
+console.log('   ├─ !allowcalls  -> Autoriser les appels');
+console.log('   ├─ !diagdelete  -> Diagnostic suppression Baileys');
+console.log('   └─ !testdelete  -> Tester la suppression sur un message du bot\n');
