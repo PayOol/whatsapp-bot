@@ -880,7 +880,13 @@
                     <div class="form-group">
                         <label class="form-label">Clé API LeekPay (publique)</label>
                         <input type="text" class="form-input" id="sub-api-key" placeholder="pk_live_votre_cle_publique">
-                        <div class="form-hint">Clé publique fournie par LeekPay</div>
+                        <div class="form-hint">Clé publique fournie par LeekPay (commence par pk_live_)</div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Clé API LeekPay (secrète)</label>
+                        <input type="password" class="form-input" id="sub-secret-key" placeholder="sk_live_votre_cle_secrete">
+                        <div class="form-hint">Clé secrète pour vérifier les paiements (commence par sk_live_)</div>
                     </div>
                     
                     <div class="form-row">
@@ -1453,6 +1459,7 @@
                     var s = data.settings;
                     document.getElementById('sub-enabled-toggle').checked = s.enabled;
                     document.getElementById('sub-api-key').value = s.apiKey || '';
+                    document.getElementById('sub-secret-key').value = s.secretKey || '';
                     document.getElementById('sub-amount').value = s.amount || 5000;
                     document.getElementById('sub-currency').value = s.currency || 'XOF';
                     document.getElementById('sub-duration').value = s.durationDays || 30;
@@ -1502,6 +1509,7 @@
         function saveSubscriptionSettings() {
             var settings = {
                 apiKey: document.getElementById('sub-api-key').value.trim(),
+                secretKey: document.getElementById('sub-secret-key').value.trim(),
                 amount: parseInt(document.getElementById('sub-amount').value) || 5000,
                 currency: document.getElementById('sub-currency').value,
                 durationDays: parseInt(document.getElementById('sub-duration').value) || 30,
@@ -1510,7 +1518,11 @@
             };
             
             if (!settings.apiKey) {
-                showToast('Veuillez entrer la clé API LeekPay', 'error');
+                showToast('Veuillez entrer la clé API publique LeekPay', 'error');
+                return;
+            }
+            if (!settings.secretKey) {
+                showToast('Veuillez entrer la clé API secrète LeekPay', 'error');
                 return;
             }
             

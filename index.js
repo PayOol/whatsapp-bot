@@ -690,6 +690,7 @@ const TOKEN_EXPIRY_HOURS = 24;
 const DEFAULT_SUBSCRIPTION_SETTINGS = {
     enabled: false,
     apiKey: '',
+    secretKey: '',
     amount: 5000,
     currency: 'XOF',
     durationDays: 30,
@@ -5032,7 +5033,7 @@ app.get('/api/subscription/status', requireAuth, (req, res) => {
 });
 
 // Confirmer un paiement réussi et activer l'abonnement
-app.post('/api/subscription/confirm', requireAuth, (req, res) => {
+app.post('/api/subscription/confirm', requireAuth, async (req, res) => {
     const { paymentId, amount, currency } = req.body;
     const username = req.user.username;
     
@@ -5042,6 +5043,25 @@ app.post('/api/subscription/confirm', requireAuth, (req, res) => {
     
     if (!subscriptionSettings.enabled) {
         return res.json({ success: true, message: 'Abonnement non requis' });
+    }
+    
+    // Vérification auprès de LeekPay si la clé secrète est configurée
+    if (subscriptionSettings.secretKey) {
+        try {
+            const fetchResponse = await fetch(`https://leekpay.fr/api/v1/checkout/${paymentId}`, {
+                headers: {
+                    'Authorization': `Bearer ${subscriptionSettings.secretKey}`
+                }
+            });
+            const responseData = await fetchResponse.json();
+            
+            if (!fetchResponse.ok || !responseData.data || responseData.data.status !== 'paid') {
+                return res.status(400).json({ success: false, message: 'Paiement non validé par LeekPay' });
+            }
+        } catch (error) {
+            console.error('Erreur vérification LeekPay:', error);
+            return res.status(500).json({ success: false, message: 'Erreur lors de la vérification du paiement' });
+        }
     }
     
     const sub = activateSubscription(username, paymentId, amount || subscriptionSettings.amount, currency || subscriptionSettings.currency);
@@ -5067,10 +5087,11 @@ app.get('/api/admin/subscription/settings', requireAdmin, (req, res) => {
 
 // Admin: modifier les paramètres d'abonnement
 app.post('/api/admin/subscription/settings', requireAdmin, (req, res) => {
-    const { enabled, apiKey, amount, currency, durationDays, description, trialEnabled, trialDurationDays } = req.body;
+    const { enabled, apiKey, secretKey, amount, currency, durationDays, description, trialEnabled, trialDurationDays } = req.body;
     
     if (enabled !== undefined) subscriptionSettings.enabled = !!enabled;
     if (apiKey !== undefined) subscriptionSettings.apiKey = apiKey;
+    if (secretKey !== undefined) subscriptionSettings.secretKey = secretKey;
     if (amount !== undefined) subscriptionSettings.amount = parseInt(amount) || 5000;
     if (currency !== undefined) subscriptionSettings.currency = currency;
     if (durationDays !== undefined) subscriptionSettings.durationDays = parseInt(durationDays) || 30;
