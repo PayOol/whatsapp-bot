@@ -2058,6 +2058,27 @@ async function deleteChatLocal(sock, chatId) {
 // ============================================================
 
 const DATA_DIR = path.join(__dirname, 'data');
+const LEGACY_ROOT_USERS_FILE = path.join(__dirname, 'users.json');
+
+function normalizeUserExceptionsData(data = {}) {
+    const excludedUsers = Array.isArray(data.excludedUsers)
+        ? data.excludedUsers.filter(Boolean)
+        : [];
+    return {
+        excludedUsers,
+        excludedAdmins: data.excludedAdmins !== false
+    };
+}
+
+function readUserExceptionsFromFiles(files = []) {
+    for (const file of files) {
+        try {
+            if (!file || !fs.existsSync(file)) continue;
+            return normalizeUserExceptionsData(JSON.parse(fs.readFileSync(file, 'utf8')));
+        } catch (e) {}
+    }
+    return null;
+}
 
 // Configuration globale pour le mode Beta
 const BETA_MODE_FILE = path.join(DATA_DIR, 'beta_mode.json');
@@ -3802,7 +3823,17 @@ class SessionDataManager {
         const file = path.join(this.sessionDir, 'users.json');
         try {
             if (fs.existsSync(file)) {
-                this.userExceptions = JSON.parse(fs.readFileSync(file, 'utf8'));
+                this.userExceptions = normalizeUserExceptionsData(JSON.parse(fs.readFileSync(file, 'utf8')));
+                return;
+            }
+
+            const fallback = readUserExceptionsFromFiles([
+                path.join(DATA_DIR, 'users.json'),
+                LEGACY_ROOT_USERS_FILE
+            ]);
+            if (fallback) {
+                this.userExceptions = fallback;
+                this.saveUserExceptions();
             }
         } catch (e) {}
     }
@@ -4745,7 +4776,11 @@ function isGroupExcluded(chat) {
 
 function loadUserExceptions() {
     try {
-        if (fs.existsSync(USERS_FILE)) USER_EXCEPTIONS = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+        const loaded = readUserExceptionsFromFiles([USERS_FILE, LEGACY_ROOT_USERS_FILE]);
+        if (loaded) {
+            USER_EXCEPTIONS = loaded;
+            if (!fs.existsSync(USERS_FILE)) saveUserExceptions();
+        }
     } catch (error) {}
 }
 
