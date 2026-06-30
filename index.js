@@ -401,6 +401,19 @@ function getMessageId(message) {
     return message?.key?.id || '';
 }
 
+function getMessageProcessKey(message) {
+    const key = message?.key || {};
+    const remoteJid = key.remoteJid || '';
+    const id = key.id || '';
+    if (!id) return '';
+    return [
+        String(!!key.fromMe),
+        remoteJid,
+        id,
+        key.participant || key.participantAlt || key.participantPn || key.participantLid || ''
+    ].join('_');
+}
+
 function makeReplyOptions(message, options = {}) {
     const msgId = getMessageId(message);
     if (!message || !msgId) return { ...options };
@@ -426,6 +439,28 @@ function getMessageSender(message) {
 
 function isMessageFromMe(message) {
     return !!message?.key?.fromMe;
+}
+
+function isSocketUsable(sock) {
+    return !!(sock && sock.sendMessage && sock.isReady !== false && sock._destroyed !== true);
+}
+
+function isConnectionClosedError(error) {
+    const message = String(error?.message || error || '').toLowerCase();
+    return message.includes('connection closed')
+        || message.includes('connection was lost')
+        || message.includes('socket closed')
+        || message.includes('stream errored')
+        || message.includes('not open');
+}
+
+function summarizeMessageKey(key = {}) {
+    return [
+        key.fromMe ? 'fromMe' : 'fromOther',
+        key.remoteJid || 'noChat',
+        key.id || 'noId',
+        key.participant ? `p=${key.participant}` : ''
+    ].filter(Boolean).join(' ');
 }
 
 function hydrateParticipant(participant) {
@@ -479,6 +514,9 @@ const MESSAGE_CACHE_LIMIT_PER_CHAT = 300;
 const MESSAGE_CACHE_SAVE_DELAY_MS = 1200;
 const GROUP_CACHE_TTL_MS = 2 * 60 * 1000;
 const GROUP_CACHE_RETRY_DELAY_MS = 15000;
+const INITIAL_AUTO_SCAN_MIN_DELAY_MS = 3 * 60 * 1000;
+const INITIAL_AUTO_SCAN_MAX_DELAY_MS = 5 * 60 * 1000;
+const AUTOMATIC_SCAN_MAX_MESSAGE_AGE_MS = 24 * 60 * 60 * 1000;
 const CONTACT_NAME_FIELDS = ['name', 'notify', 'verifiedName', 'verifiedBizName', 'pushName', 'shortName', 'username'];
 
 function messageTimestampNumber(messageOrTimestamp) {
@@ -2354,25 +2392,137 @@ async function sendMessageHumanized(sock, chatId, text, options = {}, triggerMes
 // Chaque tentative est VÉRIFIÉE avant de déclarer le succès
 // ============================================================
 
+async function buildDeleteMessageKeys(sock, message) {
+    const originalKey = message?.key || {};
+    const remoteJid = normalizeJid(originalKey.remoteJid || getMessageChatId(message));
+    const id = originalKey.id || getMessageId(message);
+    if (!remoteJid || !id) return [];
+
+    const fromMe = !!originalKey.fromMe;
+    const isGroup = isGroupJid(remoteJid);
+    const participantCandidates = [];
+    const addParticipant = (value) => {
+        const jid = normalizeJid(value);
+        if (!jid || isGroupJid(jid) || jid === 'status@broadcast') return;
+        if (!participantCandidates.includes(jid)) participantCandidates.push(jid);
+    };
+
+    [
+        originalKey.participant,
+        originalKey.participantAlt,
+        originalKey.participantPn,
+        originalKey.participantLid,
+        getMessageSender(message)
+    ].forEach(addParticipant);
+
+    const cachedContact = findCachedContactInfo(sock, participantCandidates);
+    if (cachedContact) {
+        addParticipant(cachedContact.lid);
+        addParticipant(cachedContact.phoneNumber);
+        addParticipant(cachedContact.jid);
+        addParticipant(cachedContact.id);
+    }
+
+    for (const participant of [...participantCandidates]) {
+        try {
+            if (participant.endsWith('@lid')) {
+                const pn = await sock?.signalRepository?.lidMapping?.getPNForLID(participant);
+                if (pn) {
+                    const pnJid = normalizeJid(pn);
+                    cacheLidPnMapping(sock, participant, pnJid);
+                    addParticipant(pnJid);
+                }
+            } else if (participant.endsWith('@s.whatsapp.net')) {
+                const lid = await sock?.signalRepository?.lidMapping?.getLIDForPN(participant);
+                if (lid) {
+                    const lidJid = normalizeJid(lid);
+                    cacheLidPnMapping(sock, lidJid, participant);
+                    addParticipant(lidJid);
+                }
+            }
+        } catch (e) {}
+    }
+
+    const keys = [];
+    const seen = new Set();
+    const addKey = (participant = null) => {
+        if (isGroup && !fromMe && !participant) return;
+        const key = { remoteJid, fromMe, id };
+        if (participant) key.participant = participant;
+        const sig = JSON.stringify(key);
+        if (!seen.has(sig)) {
+            seen.add(sig);
+            keys.push(key);
+        }
+    };
+
+    if (isGroup && !fromMe) {
+        participantCandidates.forEach(addKey);
+    } else {
+        addKey(originalKey.participant ? normalizeJid(originalKey.participant) : null);
+    }
+
+    return keys;
+}
+
 async function deleteMessageHumanized(sock, message) {
     try {
-        await rateLimiter.waitUntilAllowed();
-        await HumanBehavior.naturalDelay(HumanBehavior.deletionDelay());
-
         const msgId = getMessageId(message);
 
-        if (!sock || !sock.sendMessage) {
+        if (!isSocketUsable(sock)) {
             addLog(`[X] deleteMessageHumanized: client Baileys indisponible pour ${msgId}`);
             return false;
         }
 
+        const chatId = normalizeJid(getMessageChatId(message));
+        const deleteKeys = await buildDeleteMessageKeys(sock, message);
+        if (!chatId || !deleteKeys.length) {
+            addLog(`[X] Suppression impossible pour ${msgId}: cle message incomplete (${summarizeMessageKey(message?.key)})`);
+            return false;
+        }
+
+        await rateLimiter.waitUntilAllowed();
+        await HumanBehavior.naturalDelay(HumanBehavior.deletionDelay());
+
+        let lastError = null;
+        for (const deleteKey of deleteKeys) {
+            if (!isSocketUsable(sock)) {
+                addLog(`[X] Suppression annulee pour ${msgId}: session deconnectee`);
+                return false;
+            }
+
+            try {
+                await sock.sendMessage(chatId, { delete: deleteKey });
+                rateLimiter.recordAction();
+                addLog(`[OK] Demande de suppression envoyee via Baileys pour ${msgId} (${summarizeMessageKey(deleteKey)})`);
+                return true;
+            } catch (e) {
+                lastError = e;
+                addLog(`[X] Suppression Baileys echouee pour ${msgId} (${summarizeMessageKey(deleteKey)}): ${e.message}`);
+                if (isConnectionClosedError(e)) {
+                    sock.isReady = false;
+                    sock._destroyed = true;
+                    return false;
+                }
+            }
+        }
+
+        if (lastError) {
+            addLog(`[X] Suppression impossible pour ${msgId}: ${lastError.message}`);
+            return false;
+        }
+
         try {
-            await sock.sendMessage(getMessageChatId(message), { delete: message.key });
+            await sock.sendMessage(chatId, { delete: message.key });
             rateLimiter.recordAction();
-            addLog(`[OK] Demande de suppression envoyee via Baileys pour ${msgId}`);
+            addLog(`[OK] Demande de suppression envoyee via Baileys pour ${msgId} (cle brute fallback)`);
             return true;
         } catch (e) {
-            addLog(`[X] Suppression Baileys echouee pour ${msgId}: ${e.message}`);
+            addLog(`[X] Suppression Baileys echouee pour ${msgId} (cle brute fallback): ${e.message}`);
+            if (isConnectionClosedError(e)) {
+                sock.isReady = false;
+                sock._destroyed = true;
+            }
             return false;
         }
 
@@ -5051,7 +5201,16 @@ class SessionManager {
                 const sessionData = getSessionData(sessionId);
                 this.clearInitialScanTimer(sessionId);
                 if (sessionData.config.AUTO_SCAN_ENABLED) {
-                    const startupDelay = HumanBehavior.gaussianRandom(45000, 15000);
+                    const startupDelay = Math.max(
+                        INITIAL_AUTO_SCAN_MIN_DELAY_MS,
+                        Math.min(
+                            INITIAL_AUTO_SCAN_MAX_DELAY_MS,
+                            HumanBehavior.gaussianRandom(
+                                (INITIAL_AUTO_SCAN_MIN_DELAY_MS + INITIAL_AUTO_SCAN_MAX_DELAY_MS) / 2,
+                                (INITIAL_AUTO_SCAN_MAX_DELAY_MS - INITIAL_AUTO_SCAN_MIN_DELAY_MS) / 4
+                            )
+                        )
+                    );
                     addLog('[TIMER] [' + sessionId + '] Premier scan dans ' + Math.round(startupDelay / 1000) + 's...');
                     const scheduledFor = sock;
                     const initialTimer = setTimeout(async () => {
@@ -5061,7 +5220,7 @@ class SessionManager {
                             addLog('[TIMER] [' + sessionId + '] Scan initial annule (session redemarree)');
                             return;
                         }
-                        try { await scanAllGroups(sessionId, { automatic: true }); }
+                        try { await scanAllGroups(sessionId, { automatic: true, maxMessageAgeMs: AUTOMATIC_SCAN_MAX_MESSAGE_AGE_MS }); }
                         catch (scanError) { addLog('[X] [' + sessionId + '] Erreur scan initial: ' + scanError.message); }
                         scheduleNextScan(sessionId);
                     }, startupDelay);
@@ -5370,12 +5529,42 @@ let isConnected = false;
 // 🔍 SCAN HUMANISÉ
 // ============================================================
 
+function isCurrentSessionSocket(sessionClient, sessionId = null) {
+    if (!isSocketUsable(sessionClient)) return false;
+    if (!sessionId) return true;
+    const session = sessionManager.sessions.get(sessionId);
+    return !!(session && session.client === sessionClient && session.data.status === 'connected');
+}
+
+function isMessageAlreadyProcessedForStore(sessionData, message) {
+    const processKey = getMessageProcessKey(message);
+    const legacyId = getMessageId(message);
+    if (sessionData) {
+        return (processKey && sessionData.isAlreadyProcessed(processKey))
+            || (legacyId && sessionData.isAlreadyProcessed(legacyId));
+    }
+    return (processKey && isAlreadyProcessed(processKey))
+        || (legacyId && isAlreadyProcessed(legacyId));
+}
+
+function markMessageProcessedForStore(sessionData, message) {
+    const processKey = getMessageProcessKey(message);
+    if (!processKey) return;
+    if (sessionData) sessionData.markAsProcessed(processKey);
+    else markAsProcessed(processKey);
+}
+
+function messageAgeMs(message) {
+    const ts = messageTimestampNumber(message);
+    if (!ts) return null;
+    return Date.now() - (ts * 1000);
+}
 
 async function scanOldMessages(chat, limit = 100, sessionId = null, options = {}) {
     const sessionData = sessionId ? getSessionData(sessionId) : null;
     const sessionClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : client;
 
-    if (!sessionClient || !sessionClient.info) {
+    if (!sessionClient || !sessionClient.info || !isCurrentSessionSocket(sessionClient, sessionId)) {
         if (sessionData) sessionData.addLog('[!] Client non disponible pour le scan');
         else addLog('[!] Client non disponible pour le scan');
         return { deleted: 0, scanned: 0, warned: 0 };
@@ -5436,21 +5625,31 @@ async function scanOldMessages(chat, limit = 100, sessionId = null, options = {}
     };
 
     for (const message of messages) {
+        if (!isCurrentSessionSocket(sessionClient, sessionId)) {
+            log('[SCAN] Scan interrompu: session deconnectee');
+            break;
+        }
         if (isMessageFromMe(message)) continue;
         scanned++;
 
         const msgId = getMessageId(message);
-        if (sessionData && sessionData.isAlreadyProcessed(msgId)) continue;
-        else if (!sessionData && isAlreadyProcessed(msgId)) continue;
+        if (isMessageAlreadyProcessedForStore(sessionData, message)) continue;
+
+        const maxAgeMs = Number(options.maxMessageAgeMs || 0);
+        const ageMs = messageAgeMs(message);
+        if (maxAgeMs > 0 && ageMs !== null && ageMs > maxAgeMs) continue;
 
         if (config.DELETE_STATUS_MENTIONS && isStatusMentionNotification(message)) {
             await waitBeforeScanAction();
             try {
-                if (sessionData) sessionData.markAsProcessed(msgId);
-                else markAsProcessed(msgId);
+                if (!isCurrentSessionSocket(sessionClient, sessionId)) {
+                    log('[STATUS] Suppression annulee: session deconnectee');
+                    break;
+                }
 
                 const wasDeleted = await deleteMessageHumanized(sessionClient, message);
                 if (wasDeleted) {
+                    markMessageProcessedForStore(sessionData, message);
                     deleted++;
                     if (sessionData) sessionData.stats.totalDeleted++;
                     else STATS.totalDeleted++;
@@ -5468,19 +5667,32 @@ async function scanOldMessages(chat, limit = 100, sessionId = null, options = {}
         if (!containsLink(message)) continue;
 
         const authorId = getMessageSender(message);
-        if (!authorId || authorId.includes('@g.us')) continue;
+        if (!authorId || authorId.includes('@g.us')) {
+            log('[SKIP] Lien ignore dans ' + chatInfo.name + ': auteur introuvable pour ' + msgId);
+            continue;
+        }
 
         const authorP = participants.find(p => participantMatches(p, authorId));
-        if (authorP?.isAdmin || authorP?.isSuperAdmin) continue;
+        if (authorP?.isAdmin || authorP?.isSuperAdmin) {
+            log('[SKIP] Lien ignore dans ' + chatInfo.name + ': auteur admin ' + authorId);
+            continue;
+        }
 
-        if (sessionData && sessionData.isUserExcluded(authorId, participants)) continue;
-        else if (!sessionData && isUserExcluded(authorId, participants)) continue;
+        if (sessionData && sessionData.isUserExcluded(authorId, participants)) {
+            log('[SKIP] Lien ignore dans ' + chatInfo.name + ': utilisateur exempte ' + authorId);
+            continue;
+        } else if (!sessionData && isUserExcluded(authorId, participants)) {
+            log('[SKIP] Lien ignore dans ' + chatInfo.name + ': utilisateur exempte ' + authorId);
+            continue;
+        }
 
         await waitBeforeScanAction();
 
         try {
-            if (sessionData) sessionData.markAsProcessed(msgId);
-            else markAsProcessed(msgId);
+            if (!isCurrentSessionSocket(sessionClient, sessionId)) {
+                log('[SCAN] Action annulee: session deconnectee avant suppression');
+                break;
+            }
 
             const contact = await getContactInfo(sessionClient, authorId);
             const mention = '@' + contact.number;
@@ -5488,12 +5700,18 @@ async function scanOldMessages(chat, limit = 100, sessionId = null, options = {}
                 ? (sessionData.warnings[chatInfo.jid]?.[authorId]?.length || 0)
                 : getWarningCount(chatInfo.jid, authorId);
 
-            if (await deleteMessageHumanized(sessionClient, message)) {
+            const deletedOk = await deleteMessageHumanized(sessionClient, message);
+            if (!isCurrentSessionSocket(sessionClient, sessionId)) {
+                log('[SCAN] Action interrompue apres tentative de suppression: session deconnectee');
+                break;
+            }
+            if (deletedOk) {
                 deleted++;
                 if (sessionData) sessionData.stats.totalDeleted++;
                 else STATS.totalDeleted++;
                 log('[DELETE] Ancien message supprime dans ' + chatInfo.name);
             }
+            markMessageProcessedForStore(sessionData, message);
 
             const banUser = async () => {
                 const banMsg = MessagePool.pick(MessagePool.bans, mention, config.MAX_WARNINGS);
@@ -5545,7 +5763,7 @@ async function scanOldMessages(chat, limit = 100, sessionId = null, options = {}
 
 async function scanAllGroups(sessionId = null, options = {}) {
     const sessionClient = sessionId ? sessionManager.sessions.get(sessionId)?.client : client;
-    if (!sessionClient || !sessionClient.info) {
+    if (!sessionClient || !sessionClient.info || !isCurrentSessionSocket(sessionClient, sessionId)) {
         addLog('[!] [' + sessionId + '] Client non disponible pour le scan');
         return { totalDeleted: 0, totalScanned: 0, totalWarned: 0 };
     }
@@ -5574,6 +5792,11 @@ async function scanAllGroups(sessionId = null, options = {}) {
             }, retryDelay);
             retryTimer.unref?.();
         }
+        return { totalDeleted: 0, totalScanned: 0, totalWarned: 0, deferred: true };
+    }
+
+    if (!isCurrentSessionSocket(sessionClient, sessionId)) {
+        addLog('[SCAN] Scan annule: session deconnectee apres chargement des groupes');
         return { totalDeleted: 0, totalScanned: 0, totalWarned: 0, deferred: true };
     }
 
@@ -5625,12 +5848,21 @@ async function scanAllGroups(sessionId = null, options = {}) {
     const sdScan = getSessionData(sessionId);
     const scanConfig = sdScan?.config || CONFIG;
     const scanLimit = scanConfig.SCAN_LIMIT || CONFIG.SCAN_LIMIT;
+    const maxMessageAgeMs = options.maxMessageAgeMs ?? (options.automatic ? AUTOMATIC_SCAN_MAX_MESSAGE_AGE_MS : 0);
 
     for (const group of shuffled) {
-        const result = await scanOldMessages(group, scanLimit, sessionId, options);
+        if (!isCurrentSessionSocket(sessionClient, sessionId)) {
+            addLog('[SCAN] Scan global interrompu: session deconnectee');
+            break;
+        }
+        const result = await scanOldMessages(group, scanLimit, sessionId, { ...options, maxMessageAgeMs });
         totalDeleted += result.deleted;
         totalScanned += result.scanned;
         totalWarned += result.warned || 0;
+        if (!isCurrentSessionSocket(sessionClient, sessionId)) {
+            addLog('[SCAN] Pause inter-groupe annulee: session deconnectee');
+            break;
+        }
         await HumanBehavior.naturalDelay(HumanBehavior.interGroupDelay(scanConfig));
     }
 
@@ -5660,7 +5892,7 @@ function scheduleNextScan(sessionId) {
         if (sdTimerInner.config.AUTO_SCAN_ENABLED && session && session.data.status === 'connected') {
             addLog(`[TIMER] [${sessionId}] Scan automatique programme...`);
             try {
-                await scanAllGroups(sessionId, { automatic: true });
+                await scanAllGroups(sessionId, { automatic: true, maxMessageAgeMs: AUTOMATIC_SCAN_MAX_MESSAGE_AGE_MS });
             } catch (scanError) {
                 addLog(`[X] [${sessionId}] Erreur scan programme: ${scanError.message}`);
             }
@@ -5803,12 +6035,11 @@ async function handleMessage(sock, message, sessionId) {
 
         if (sessionData.config.DELETE_STATUS_MENTIONS && botP?.isAdmin) {
             if (isStatusMentionNotification(message)) {
-                const msgId = getMessageId(message);
-                if (!sessionData.isAlreadyProcessed(msgId)) {
-                    sessionData.markAsProcessed(msgId);
+                if (!isMessageAlreadyProcessedForStore(sessionData, message)) {
                     sessionData.addLog('[STATUS] Notification de statut detectee (' + getMessageType(message) + ') de ' + senderId + ' dans ' + chat.name);
                     const wasDeleted = await deleteMessageHumanized(sock, message);
                     if (wasDeleted) {
+                        markMessageProcessedForStore(sessionData, message);
                         sessionData.stats.totalDeleted++;
                         sessionData.saveStats();
                         sessionData.addLog('[STATUS] Notification de statut supprimee dans ' + chat.name);
@@ -6049,38 +6280,53 @@ async function handleMessage(sock, message, sessionId) {
         if (!containsLink(message)) return;
 
         const msgId = getMessageId(message);
-        if (sessionData.isAlreadyProcessed(msgId)) return;
-        sessionData.markAsProcessed(msgId);
+        if (isMessageAlreadyProcessedForStore(sessionData, message)) return;
 
         const authorId = getMessageSender(message);
-        if (!authorId || authorId.includes('@g.us')) return;
+        if (!authorId || authorId.includes('@g.us')) {
+            sessionData.addLog('[SKIP] Lien ignore dans ' + chat.name + ': auteur introuvable pour ' + msgId);
+            return;
+        }
 
         const contact = await getContactInfo(sock, authorId);
         const authorNumber = contact?.number || jidNumber(authorId);
 
-        if (senderP?.isAdmin || senderP?.isSuperAdmin) return;
+        if (senderP?.isAdmin || senderP?.isSuperAdmin) {
+            sessionData.addLog('[ADMIN] ' + authorNumber + ' est admin, lien ignore');
+            return;
+        }
         const isAdmin = participants.some(p => (p.isAdmin || p.isSuperAdmin) && participantMatches(p, authorId));
         if (isAdmin) {
             sessionData.addLog('[ADMIN] ' + authorNumber + ' est admin, lien ignore');
             return;
         }
 
-        if (sessionData.isUserExcluded(authorId, participants) || sessionData.isUserExcluded(authorNumber, participants)) return;
+        if (sessionData.isUserExcluded(authorId, participants) || sessionData.isUserExcluded(authorNumber, participants)) {
+            sessionData.addLog('[SKIP] Lien ignore dans ' + chat.name + ': utilisateur exempte ' + authorNumber);
+            return;
+        }
 
         try { await markChatRead(sock, chat.jid); } catch (e) {}
 
         const mention = '@' + contact.number;
-        const warningCount = sessionData.addWarning(chat.jid, authorId);
-        const remaining = sessionData.config.MAX_WARNINGS - warningCount;
-        sessionData.stats.totalWarnings++;
-
         const messageBodyLength = getMessageBody(message)?.length || 0;
         try { await sock.sendMessage(chat.jid, { react: { text: '\uD83D\uDEAB', key: message.key } }); } catch (e) {}
         const wasDeleted = await deleteMessageHumanized(sock, message);
+        if (!isSocketUsable(sock)) {
+            sessionData.addLog('[SUPPR] Moderation interrompue: session deconnectee avant avertissement');
+            return;
+        }
+        markMessageProcessedForStore(sessionData, message);
         if (wasDeleted) {
             sessionData.stats.totalDeleted++;
             sessionData.addLog('[SUPPR] Message supprime de ' + authorId + ' dans ' + chat.name);
+        } else {
+            sessionData.addLog('[SUPPR] Echec suppression du lien de ' + authorId + ' dans ' + chat.name);
         }
+
+        const warningCount = sessionData.addWarning(chat.jid, authorId);
+        const remaining = sessionData.config.MAX_WARNINGS - warningCount;
+        sessionData.stats.totalWarnings++;
 
         if (warningCount >= sessionData.config.MAX_WARNINGS) {
             try {
